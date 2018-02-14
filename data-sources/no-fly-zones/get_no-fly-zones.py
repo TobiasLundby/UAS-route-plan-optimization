@@ -81,7 +81,7 @@ if __name__ == '__main__':
 				now = datetime.datetime.now()
 				# Save to file with proper naming
 				print 'Attempting to write file'
-				file_name = 'KmlUasZones_%d-%02d-%02d-%02d-%02d.txt' % (now.year, now.month, now.day, now.hour, now.minute)
+				file_name = 'KmlUasZones_%d-%02d-%02d-%02d-%02d.kml' % (now.year, now.month, now.day, now.hour, now.minute)
 				file = open(file_name, 'w')
 				file.write(result)
 				file.close()
