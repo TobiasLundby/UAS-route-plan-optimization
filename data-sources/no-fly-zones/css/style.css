@@ -1,0 +1,11 @@
+.column{
+    float: left;
+    width: 45%;
+    padding: 2%;
+}
+.left_column{
+    /* border-right: dashed 1px black; */
+}
+.right_column{
+    border-left: dashed 1px black;
+}

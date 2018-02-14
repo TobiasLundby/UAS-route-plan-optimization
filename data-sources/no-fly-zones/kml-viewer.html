@@ -1,0 +1,54 @@
+<!--
+2018-02-08 TL First version
+2018-02-09 TL Added interactive info about zones and basic analysis
+
+Description: Load an external KML using OpenLayers and provide interactive
+information to the user about the zones in the KML file.
+
+License: BSD 3-Clause
+-->
+<!DOCTYPE html>
+<html>
+    <head>
+    <title>KML</title>
+    <!-- Simply use the CSS from OL -->
+    <link rel="stylesheet" href="css/style.css" type="text/css">
+    <link rel="stylesheet" href="https://openlayers.org/en/v4.6.4/css/ol.css" type="text/css">
+    <!-- The line below is only needed for old environments like Internet Explorer and Android 4.x -->
+    <script src="https://cdn.polyfill.io/v2/polyfill.min.js?features=requestAnimationFrame,Element.prototype.classList,URL"></script>
+    <script src="https://openlayers.org/en/v4.6.4/build/ol.js"></script>
+    </head>
+    <body style="margin: 0; height: 100%; width: 100%;">
+        <!-- Page elements -->
+        <div id="map" class="map" style="height:100%;width:100%;"></div>
+        <div class="column left_column">
+            <h1>Map info</h1>
+            <div id="total_map_zones"><p>Total map zones: <i>calculating</i></p></div>
+            <h2>Zone types</h2>
+            <div class="column">
+                <div id="zone_types"><p><i>calculating</i></p></div>
+            </div>
+            <div class="column">
+                <div id="zone_types_cnt"><p><i>calculating</i></p></div>
+            </div>
+            <div style="clear:both;"></div>
+            <h2>Zones (<i><a id="displayText" href="javascript:toggle('displayText','zones');">show</a></i>)</h2>
+            <!-- <div id="zones_show_hide"><p>show</p></div> -->
+
+            <div id="zones" style="display: none"><p><i>calculating</i></p></div>
+        </div>
+        <div class="column right_column">
+            <h1>Interactive info</h1>
+            <h2>Cursor zone</h2>
+            <div id="info"><i>none</i></div>
+            <h2>Clicked zone</h2>
+            <div id="info_clicked"><i>none</i></div>
+        </div>
+        <div style="clear:both;"></div>
+        <div><center><p><i><a href="https://github.com/TobiasLundby" target="_blank">Tobias Lundby</a>, 2018</i></p></center></div>
+
+        <!-- Javascript for the page -->
+        <script src="js/ol-map.js"></script>
+        <script src="js/general.js"></script>
+    </body>
+</html>
