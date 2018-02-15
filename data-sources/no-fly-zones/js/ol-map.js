@@ -48,9 +48,11 @@ function iterate_features(){
     zone_names = [];
     zone_style = [];
     zone_style_cnt = [];
+    zone_names_and_style = [];
     var i, ii;
     for (i = 0, ii = features.length; i < ii; i++) {
         zone_names.push(features[i].get('name'));
+        zone_names_and_style.push(features[i].get('name').concat(' <i>(', features[i].get('styleUrl').split("uasZone_").pop(), ')</i>'));
         if (i==0) {
             // console.log(i,features[i].get('styleUrl').split("uasZone_").pop());
             zone_style.push(features[i].get('styleUrl').split("uasZone_").pop());
@@ -81,7 +83,8 @@ function iterate_features(){
     // console.log(tmp_sum);
     document.getElementById('zone_types').innerHTML = '<p>'.concat(zone_style.join('<br>'),'</p>');
     document.getElementById('zone_types_cnt').innerHTML = '<p>'.concat(zone_style_cnt.join('<br>'),'</p>');
-    document.getElementById('zones').innerHTML = '<p>'.concat(zone_names.join('<br>'),'</p>');
+    document.getElementById('zones').innerHTML = '<p>'.concat(zone_names_and_style.join('<br>'),'</p>');
+    //document.getElementById('zones').innerHTML = '<p>'.concat(zone_names.join('<br>'),'</p>');
     document.getElementById('total_map_zones').innerHTML = '<p>Total map zones: '.concat(features.length,'</p>');
     //console.log(features.length);
 }
