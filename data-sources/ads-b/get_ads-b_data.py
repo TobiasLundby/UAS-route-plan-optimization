@@ -16,7 +16,9 @@ print 'Importing libraries'
 import sys # exit (use quit() when you only want to terminate spawning script, not all)
 from urllib2 import urlopen, URLError, HTTPError
 import csv
+import json
 import time
+import datetime # datetime.now
 print 'Import done\n'
 
 forever = 60*60*24*365*100
@@ -26,8 +28,9 @@ class get_adsb_data_droneid():
     def __init__(self, debug):
         self.debug = debug
         self.aircraft_count = 0
+        self.ADSBdataFields = ['time_stamp','time_since_epoch','icao','flight','lat','lon','alt','track','speed']
         self.ADSBdataRaw = []
-        self.ADSBdataCSV = []
+        self.ADSBdataStructured = []
         for x in range(1, internet_connection_tries+1):
             if x != 1:
                 print "Checking internet connection, try", x
@@ -48,7 +51,7 @@ class get_adsb_data_droneid():
     def download_data(self):
         self.aircraft_count = 0
         self.ADSBdataRaw = []
-        self.ADSBdataCSV = []
+        self.ADSBdataStructured = []
         url = 'https://droneid.dk/tobias/adsb.php'
         if self.debug:
             print 'Attempting to download'
@@ -78,7 +81,7 @@ class get_adsb_data_droneid():
                     row[6] = int(row[6])
                     row[7] = int(row[7])
                     row[8] = int(row[8])
-                    self.ADSBdataCSV.append(row)
+                    self.ADSBdataStructured.append(row)
         self.aircraft_count = itr
         if self.aircraft_count == 0:
             print "ADS-B receiver seems to be down; no data recieved"
@@ -87,12 +90,22 @@ class get_adsb_data_droneid():
         response.close()
         if self.debug:
             print "Result read successfully"
+
+        # Make JSON Data
+        # for row in self.ADSBdataStructured:
+        #     print row
+    def print_data(self):
+        if self.aircraft_count > 0:
+            print self.ADSBdataStructured
     def print_raw(self):
         if self.aircraft_count > 0:
             print self.ADSBdataRaw
     def print_CSV(self):
         if self.aircraft_count > 0:
-            print self.ADSBdataCSV
+            print ",".join(self.ADSBdataFields)
+            for line in self.ADSBdataRaw:
+                print line
+            #print self.ADSBdataStructured
     def print_aircraft_pretty(self, aircraft_index):
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             print "Name:     ", self.get_name(aircraft_index)
@@ -109,31 +122,31 @@ class get_adsb_data_droneid():
     def get_time_stamp(self, aircraft_index):
         # GMT+1
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
-            return self.ADSBdataCSV[aircraft_index][0]
+            return self.ADSBdataStructured[aircraft_index][0]
         else: return None
     def get_time_since_epoch(self, aircraft_index):
         # https://www.epochconverter.com/
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
-            return self.ADSBdataCSV[aircraft_index][1]
+            return self.ADSBdataStructured[aircraft_index][1]
         else: return None
     def get_icao_addr(self, aircraft_index):
         # Use ex. World Aircraft Database to decode: https://junzisun.com/adb/
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
-            return self.ADSBdataCSV[aircraft_index][2]
+            return self.ADSBdataStructured[aircraft_index][2]
         else: return None
     def get_name(self, aircraft_index):
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
-            return self.ADSBdataCSV[aircraft_index][3]
+            return self.ADSBdataStructured[aircraft_index][3]
         else: return None
     def get_lat(self, aircraft_index):
         # unit: dot decimal
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
-            return self.ADSBdataCSV[aircraft_index][4]
+            return self.ADSBdataStructured[aircraft_index][4]
         else: return None
     def get_lng(self, aircraft_index):
         # unit: dot decimal
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
-            return self.ADSBdataCSV[aircraft_index][5]
+            return self.ADSBdataStructured[aircraft_index][5]
         else: return None
     def get_lon(self, aircraft_index): #same as get_lng
         # unit: dot decimal
@@ -141,7 +154,7 @@ class get_adsb_data_droneid():
     def get_alt_m(self, aircraft_index):
         # unit: m
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
-            return self.ADSBdataCSV[aircraft_index][6]
+            return self.ADSBdataStructured[aircraft_index][6]
         else: return None
     def get_alt_ft(self, aircraft_index):
         # unit: feet
@@ -149,7 +162,7 @@ class get_adsb_data_droneid():
     def get_track_deg(self, aircraft_index):
         # unit: degrees from north positive clockwise
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
-            return self.ADSBdataCSV[aircraft_index][7]
+            return self.ADSBdataStructured[aircraft_index][7]
         else: return None
     def get_track_rad(self, aircraft_index):
         # unit: radians
@@ -157,7 +170,7 @@ class get_adsb_data_droneid():
     def get_speed_kts(self, aircraft_index):
         # unit: knots, kts
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
-            return self.ADSBdataCSV[aircraft_index][8]
+            return self.ADSBdataStructured[aircraft_index][8]
         else: return None
     def get_speed_mps(self, aircraft_index):
         # unit: m/s
@@ -170,11 +183,11 @@ class get_adsb_data_droneid():
         return self.get_speed_kts(aircraft_index)*1.15078
     def get_aircraft_data(self, aircraft_index):
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
-            return self.ADSBdataCSV[aircraft_index]
+            return self.ADSBdataStructured[aircraft_index]
         else: return None
     def get_aircraft_data_from_name(self, aircraft):
         if self.aircraft_count != "" and type(aircraft)==str:
-            for line in self.ADSBdataCSV:
+            for line in self.ADSBdataStructured:
                 if line[3] == aircraft:
                     return line
             return []
@@ -182,7 +195,7 @@ class get_adsb_data_droneid():
     def get_aircraft_index(self, aircraft):
         if self.aircraft_count != "" and type(aircraft)==str:
             itr = 0
-            for line in self.ADSBdataCSV:
+            for line in self.ADSBdataStructured:
                 if line[3] == aircraft:
                     return itr
                 itr = itr+1
@@ -198,6 +211,15 @@ class get_adsb_data_droneid():
             sys.exit()
         else:
             return
+    def save_CSV_file(self):
+        now = datetime.datetime.now()
+        file_name = 'ADS-B_%d-%02d-%02d-%02d-%02d.csv' % (now.year, now.month, now.day, now.hour, now.minute)
+        output_file_CSV = open(file_name, 'w')
+        output_writer_CSV = csv.writer(output_file_CSV)
+        output_writer_CSV.writerow(self.ADSBdataFields)
+        for line in self.ADSBdataStructured:
+            output_writer_CSV.writerow(line)
+        output_file_CSV.close()
 
 def self_test():
     adsb_module_test = get_adsb_data_droneid(False)
@@ -219,15 +241,19 @@ if __name__ == '__main__':
     adsb_module.download_data()
 
     #adsb_module.print_raw()
-    adsb_module.print_aircraft_pretty(0)
-    adsb_module.print_aircraft_pretty(1)
-    adsb_module.print_aircraft_pretty(2)
-    adsb_module.print_aircraft_pretty(3)
-    adsb_module.print_aircraft_pretty(4)
-
-    adsb_module.print_aircraft_pretty(adsb_module.get_aircraft_index("VKG1305"))
-
-    adsb_module.check_input_aircraft_index(1)
+    #print "\n\n"
+    #adsb_module.print_CSV()
+    #adsb_module.print_data()
+    adsb_module.save_CSV_file()
+    #adsb_module.print_aircraft_pretty(0)
+    # adsb_module.print_aircraft_pretty(1)
+    # adsb_module.print_aircraft_pretty(2)
+    # adsb_module.print_aircraft_pretty(3)
+    # adsb_module.print_aircraft_pretty(4)
+    #
+    # adsb_module.print_aircraft_pretty(adsb_module.get_aircraft_index("VKG1305"))
+    #
+    # adsb_module.check_input_aircraft_index(1)
 
     #print adsb_module.get_aircraft_data_from_name("VKG1305")
     #print adsb_module.get_aircraft_data(adsb_module.get_aircraft_index("BAW798H"))
