@@ -27,10 +27,11 @@ import pandas as pd
 
 ### Define start
 MaxOperationWindSpeed_def = 12
-MaxOperationWindGusts_def = 15
+MaxOperationWindGusts_def = MaxOperationWindSpeed_def+5.14 # 10kts more than wind speed based on the tower at HCA Airport
 OperationMinTemperature_def = -10
 OperationMaxTemperature_def = 40
 use_apparent_temp = True # for the condition checking
+use_wind_gusts = False # for the condition checking
 ### Define end
 
 ### Class start
@@ -156,9 +157,10 @@ class ibm_weather_csv():
         if self.WindSpeedMpsS[sample_nr] > self.maxOperationWindSpeed:
             #print "WIND exceed"
             return False
-        if self.SurfaceWindGustsMpsS[sample_nr] > self.maxOperationWindGusts:
-            #print "GUST exceed"
-            return False
+        if use_wind_gusts:
+            if self.SurfaceWindGustsMpsS[sample_nr] > self.maxOperationWindGusts:
+                #print "GUST exceed"
+                return False
         return True
     def check_conditions_temp(self, sample_nr):
         # true = sattisfies temp conditions
@@ -349,8 +351,10 @@ class ibm_weather_csv():
         for i in range(self.samples):
             if self.check_conditions_all(i) == False:
                 in_period_count += 1
+                print self.DateSGMT[i]
             else:
                 if in_period_count > 0:
+                    print in_period_count
                     hours = in_period_count
                     periods.append (hours)
 
@@ -561,7 +565,7 @@ if __name__ == '__main__':
     periods_combined, hoursExcedingConditions, results_combined_arr  = reader.analyseCombined()
 
     # %%%%%%%%% histogram of Consequitive COMBINED hours - START %%%%%%%%%
-    p12 = figure(title="Combined analysis",tools="save",plot_width=reader.plotWidth/2,plot_height=reader.plotHeight)
+    p12 = figure(title="Combined analysis",tools="save",plot_width=reader.plotWidth,plot_height=reader.plotHeight)
     hist,bins=np.histogram(periods_combined,bins=30)
     p12.quad(top=hist, bottom=0, left=bins[:-1], right=bins[1:],line_color="blue")
     p12.xaxis.axis_label = 'Consequitive hours exceding conditions'
@@ -589,7 +593,7 @@ if __name__ == '__main__':
     interval['end'] = interval['start'] + pd.Timedelta(hours=24)#pd.Timedelta(hours=23,minutes=59,seconds=59)
     #print interval,"\n\n"
 
-    p14 = figure(x_axis_type='datetime', plot_height=1,plot_width=3, tools="box_zoom,reset,save,hover", y_range=(0, 24)) # the plot format/size is set by heigh and width and the sizing_mode makes it reponsive
+    p14 = figure(x_axis_type='datetime', plot_height=1,plot_width=3, tools="box_zoom,reset,save", x_range=(interval['start'][0], interval['end'][reader.days]), y_range=(0, 23)) # the plot format/size is set by heigh and width and the sizing_mode makes it reponsive
     # formatting
     p14.yaxis.minor_tick_line_color = None
     p14.ygrid[0].ticker.desired_num_ticks = 1
@@ -622,15 +626,17 @@ if __name__ == '__main__':
     p7.legend.click_policy = "hide"
 
     # %%%%%%%%% TEXT elements - START %%%%%%%%%
-    divHeader = Div(text="""<center><h1>Drone planning using weather data</h1><br /><h2>Data: IBM, %s, %0d</h2><p><i>Data visualzation and analysis by <a href="https://github.com/TobiasLundby" target="_blank">Tobias Lundby</a>, 2018</i></p></center>""" % (reader.city, reader.year), width = reader.plotWidth) # , width=200, height=100
-    divVisualization = Div(text="""<h2>Visualization</h2>""", width = reader.plotWidth) # , width=200, height=100
-    divWind = Div(text="""<h3>Wind</h3>""", width = reader.plotWidth) # , width=200, height=100
-    divTemp = Div(text="""<h3>Temperature</h3>""", width = reader.plotWidth) # , width=200, height=100
-    divPrecipitation = Div(text="""<h3>Precipitation</h3>""", width = reader.plotWidth) # , width=200, height=100
-    divIndividual = Div(text="""<h3>Individual analysis</h3>""", width = reader.plotWidth) # , width=200, height=100
+    # divTemplate = Div(text="", width = 800)
+    divHeader = Div(text="""<center><h1>Drone planning using weather data</h1><br /><h2>Data: IBM, %s, %0d</h2><p><i>Data visualzation and analysis by <a href="https://github.com/TobiasLundby" target="_blank">Tobias Lundby</a>, 2018</i></p></center>""" % (reader.city, reader.year)) # , width=200, height=100
+    divVisualization = Div(text="""<h2>Visualization</h2>""") # , width=200, height=100
+    divWind = Div(text="""<h3>Wind</h3>""") # , width=200, height=100
+    divTemp = Div(text="""<h3>Temperature</h3>""") # , width=200, height=100
+    divPrecipitation = Div(text="""<h3>Precipitation</h3>""") # , width=200, height=100
+    divIndividual = Div(text="""<h3>Individual analysis</h3>""") # , width=200, height=100
     divCombined = Div(text="""<h3>Combined analysis</h3><p>Wind and temperature excluding percipitation and snow</p>""", width = reader.plotWidth) # , width=200, height=100
-    divAnalysis = Div(text="""<h2>Data analysis</h2>""", width = reader.plotWidth) # , width=200, height=100
-    divExplanationP14 = Div(text="""<p><center>light green = flying OK<br>red = flying not OK, wind and temperature exceeding limits <br>orange = flying disencouraged, wind exceeding limit<br>blue = flying disencouraged, temperature exceeding limit<br><i>The dashed white lines represents the avg spring daytime (08:09-20:09)</i></center></p>""", width = reader.plotWidth)
+    divAnalysis = Div(text="""<h2>Data analysis</h2>""") # , width=200, height=100
+    divP14Title = Div(text="<h3>Illustrative weather analysis - combined wind and temperature</h3>")
+    divExplanationP14 = Div(text="""<p><center>light green = flying OK<br>red = flying not OK, wind and temperature exceeding limits <br>orange = flying disencouraged, wind exceeding limit<br>blue = flying disencouraged, temperature exceeding limit<br><i>The dashed white lines represents the avg spring daytime (08:09-20:09); source dmi.dk</i></center></p>""")
     # %%%%%%%%% TEXT elements - START %%%%%%%%%
 
     # %%%%%%%%% Generate layout %%%%%%%%%
@@ -654,6 +660,7 @@ if __name__ == '__main__':
             [widgetbox(divCombined)],
             [p12],
             [p13],
+            [divP14Title],
             [p14],
             [divExplanationP14]
         ], sizing_mode='scale_width') # None for no show and , sizing_mode='stretch_both'
