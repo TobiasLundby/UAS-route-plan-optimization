@@ -383,82 +383,111 @@ class ibm_weather_csv():
 ### Class end - Main start
 
 if __name__ == '__main__':
+    # Initialize and load data
     reader = ibm_weather_csv('DronePlanning/CleanedObservationsOdense.csv', 'Odense', 2016, MaxOperationWindSpeed_def, MaxOperationWindGusts_def, OperationMinTemperature_def, OperationMaxTemperature_def)
     reader.loadCSV()
 
 
-    # output to static HTML file
+    # Output to static HTML file
     output_file("webpages/output.html", title="Drone planning using weather data")
 
+
+    # %%%%%%%%%%%%%%%%%% WIND VISUALIZATION %%%%%%%%%%%%%%%%%%
+
+    # %%%%%%%%% time plot of WIND SPEED and GUST - START %%%%%%%%%
     # create a new plot
     p1 = reader.createTimePlot('Wind', 'Date and time', 'Wind speed [m/s]')
-
     # Plot content
-    #p.line(x, SurfaceTempCS, legend="Surface temperatures", line_dash="4 4")
-    #p.circle(x, SurfaceTempCS, legend="Surface temperatures", fill_color="white", size=8)
     p1.line(reader.DateSGMT, reader.SurfaceWindGustsMpsS, legend="Wind gusts - %s" % reader.city, alpha=0.8, color="green")
     p1.line(reader.DateSGMT, reader.WindSpeedMpsS, legend="Wind speed - %s" % reader.city, alpha=0.8)
     p1.line([reader.DateSGMT[0], reader.DateSGMT[-1]], [reader.maxOperationWindSpeed, reader.maxOperationWindSpeed], legend="Wind speed limit = %0d m/s" % reader.maxOperationWindSpeed, line_color="red", line_dash="2 4")
     p1.line([reader.DateSGMT[0], reader.DateSGMT[-1]], [reader.maxOperationWindGusts, reader.maxOperationWindGusts], legend="Gust speed limit = %0d m/s" % reader.maxOperationWindGusts, line_color="red", line_dash="4 2")
+    # %%%%%%%%% time plot of WIND SPEED and GUST - END %%%%%%%%%
 
-
+    # %%%%%%%%% histogram of WIND SPEED - START %%%%%%%%%
     p8 = figure(title="Wind speed",tools="save",plot_width=reader.plotWidth/2,plot_height=reader.plotHeight)
     hist,bins=np.histogram(reader.WindSpeedMpsS,bins=20)
     p8.quad(top=hist, bottom=0, left=bins[:-1], right=bins[1:],line_color="blue")
+    # Add labels
     p8.xaxis.axis_label = "Wind speed [m/s] - %s" % reader.city
     p8.yaxis.axis_label = 'Occurences'
+    # %%%%%%%%% histogram of WIND SPEED - END %%%%%%%%%
 
+    # %%%%%%%%% histogram of WIND GUST - START %%%%%%%%%
     p9 = figure(title="Wind gusts",tools="save",plot_width=reader.plotWidth/2,plot_height=reader.plotHeight)
     hist,bins=np.histogram(reader.SurfaceWindGustsMpsS,bins=20)
     p9.quad(top=hist, bottom=0, left=bins[:-1], right=bins[1:],line_color="blue")
+    # Add labels
     p9.xaxis.axis_label = "Wind gusts [m/s] - %s" % reader.city
     p9.yaxis.axis_label = 'Occurences'
+    # %%%%%%%%% histogram of WIND GUST - END %%%%%%%%%
 
+
+    # %%%%%%%%%%%%%%%%%% TEMPERATURE VISUALIZATION %%%%%%%%%%%%%%%%%%
+
+    # %%%%%%%%% time plot of TEMPERATURE (different types) - START %%%%%%%%%
     # create a new plot
     p2 = reader.createTimePlot('Temperature', 'Date and time', 'Temperature [°C]')
-
     # Plot content
-    #p.line(x, SurfaceTempCS, legend="Surface temperatures", line_dash="4 4")
-    #p.circle(x, SurfaceTempCS, legend="Surface temperatures", fill_color="white", size=8)
-
     p2.line(reader.DateSGMT, reader.SurfaceTempCS, legend="Temperature - %s" % reader.city, alpha=0.8)
     p2.line(reader.DateSGMT, reader.WindChillTemperatureCS, legend="Wind Chill Temperature - %s" % reader.city, alpha=0.8, color="green")
     p2.line(reader.DateSGMT, reader.ApparentTemperatureCS, legend="Apparent Temperature - %s" % reader.city, alpha=0.8, color="orange")
     p2.line(reader.DateSGMT, reader.SurfaceDewpointTemperatureCS, legend="Dewpoint Temperature - %s" % reader.city, alpha=0.8, color="green")
-
-
+    # Draw illustrative lines
     p2.line([reader.DateSGMT[0], reader.DateSGMT[-1]], [reader.minOperationTemperature, reader.minOperationTemperature], legend="Temperature min = %0d °C" % reader.minOperationTemperature, line_color="red", line_dash="2 4")
     p2.line([reader.DateSGMT[0], reader.DateSGMT[-1]], [reader.maxOperationTemperature, reader.maxOperationTemperature], legend="Temperature max = %0d °C" % reader.maxOperationTemperature, line_color="red", line_dash="4 2")
+    # %%%%%%%%% time plot of TEMPERATURE (different types) - END %%%%%%%%%
 
+    # %%%%%%%%% histogram of TEMPERATURE - START %%%%%%%%%
     p10 = figure(title="Temperature",tools="save",plot_width=reader.plotWidth/2,plot_height=reader.plotHeight)
     hist,bins=np.histogram(reader.SurfaceTempCS,bins=20)
     p10.quad(top=hist, bottom=0, left=bins[:-1], right=bins[1:],line_color="blue")
+    # Add labels
     p10.xaxis.axis_label = "Temperature [°C] - %s" % reader.city
     p10.yaxis.axis_label = 'Occurences'
+    # %%%%%%%%% histogram of TEMPERATURE - END %%%%%%%%%
 
+    # %%%%%%%%% histogram of Apparent TEMPERATURE - START %%%%%%%%%
     p11 = figure(title="Apparent Temperature",tools="save",plot_width=reader.plotWidth/2,plot_height=reader.plotHeight)
     hist,bins=np.histogram(reader.ApparentTemperatureCS,bins=20)
     p11.quad(top=hist, bottom=0, left=bins[:-1], right=bins[1:],line_color="blue")
+    # Add labels
     p11.xaxis.axis_label = "Apparent Temperature [°C] - %s" % reader.city
     p11.yaxis.axis_label = 'Occurences'
+    # %%%%%%%%% histogram of Apparent TEMPERATURE - END %%%%%%%%%
 
 
+    # %%%%%%%%%%%%%%%%%% PRECIPITATION VISUALIZATION %%%%%%%%%%%%%%%%%%
+
+    # %%%%%%%%% time plot of PRECIPITATION - START %%%%%%%%%
     # create a new plot
     p3 = reader.createTimePlot('Precipitation', 'Date and time', 'Precipitation [cm]')
     p3.line(reader.DateSGMT, reader.PrecipitationPreviousHourCmS, legend="Precipitation - %s" % reader.city, alpha=0.8)
+    # %%%%%%%%% time plot of PRECIPITATION - END %%%%%%%%%
 
+    # %%%%%%%%% time plot of PRECIPITATION:SNOWFALL - START %%%%%%%%%
     # create a new plot
     p4 = reader.createTimePlot('Snowfall', 'Date and time', 'Snowfall [cm]')
     p4.line(reader.DateSGMT, reader.SnowfallCmS, legend="Snowfall - %s" % reader.city, alpha=0.8)
+    # %%%%%%%%% time plot of PRECIPITATION:SNOWFALL - END %%%%%%%%%
 
+
+    # %%%%%%%%%%%%%%%%%% DATA ANALYSIS %%%%%%%%%%%%%%%%%%
+
+    # %%%%%%%%% Analysis WIND %%%%%%%%%
     periods_wind, hoursOfWind = reader.analyseWind()
     #print periods_wind
+
+    # %%%%%%%%% histogram of Consequitive WIND hours - START %%%%%%%%%
     p5 = figure(title="Wind analysis",tools="save",plot_width=reader.plotWidth/2,plot_height=reader.plotHeight)
     hist,bins=np.histogram(periods_wind,bins=30)
     p5.quad(top=hist, bottom=0, left=bins[:-1], right=bins[1:],line_color="blue")
     p5.xaxis.axis_label = 'Consequitive hours with wind velocity > %d m/s' % reader.maxOperationWindSpeed
     p5.yaxis.axis_label = 'Occurences'
+    # %%%%%%%%% histogram of Consequitive WIND hours - END %%%%%%%%%
 
+    # %%%%%%%%% WIND analysis plot - START %%%%%%%%%
+    # Explanation: it shows how many days there have been ex. 4 hours of wind exceding the conditions. In other words if there is occurences of hours with wind above conditions for more than 24 hours the whole day is unflyable.
     p7 = figure(
         tools="pan,box_zoom,reset,save,hover",
         title="Wind analysis: days with wind exceding conditions, divided in time intervals",
@@ -468,22 +497,33 @@ if __name__ == '__main__':
     )
     p7.line(range(25), hoursOfWind, alpha=0.6)
     p7.circle(range(25), hoursOfWind, size=10, alpha=0.8)
+    # %%%%%%%%% WIND analysis plot - END %%%%%%%%%
 
+    # %%%%%%%%% Analysis TEMPERATURE %%%%%%%%%
     periods_temperature = reader.analyseTemperature()
     #print periods_temperature
+
+    # %%%%%%%%% histogram of Consequitive TEMPERATURE hours - START %%%%%%%%%
     p6 = figure(title="Temperature analysis - using apparent temperature",tools="save",plot_width=reader.plotWidth/2,plot_height=reader.plotHeight)
     hist,bins=np.histogram(periods_temperature,bins=30)
     p6.quad(top=hist, bottom=0, left=bins[:-1], right=bins[1:],line_color="blue")
     p6.xaxis.axis_label = 'Consequitive hours with temperature < %d °C' % reader.minOperationTemperature
     p6.yaxis.axis_label = 'Occurences'
+    # %%%%%%%%% histogram of Consequitive TEMPERATURE hours - START %%%%%%%%%
 
+
+    # %%%%%%%%% Analysis COMBINED %%%%%%%%%
     periods_combined, hoursExcedingConditions = reader.analyseCombined()
+
+    # %%%%%%%%% histogram of Consequitive COMBINED hours - START %%%%%%%%%
     p12 = figure(title="Combined analysis",tools="save",plot_width=reader.plotWidth/2,plot_height=reader.plotHeight)
     hist,bins=np.histogram(periods_combined,bins=30)
     p12.quad(top=hist, bottom=0, left=bins[:-1], right=bins[1:],line_color="blue")
     p12.xaxis.axis_label = 'Consequitive hours exceding conditions'
     p12.yaxis.axis_label = 'Occurences'
+    # %%%%%%%%% histogram of Consequitive COMBINED hours - END %%%%%%%%%
 
+    # %%%%%%%%% COMBINED analysis plot - START %%%%%%%%%
     p13 = figure(
         tools="pan,box_zoom,reset,save,hover",
         title="Combined analysis: days with conditions exceding limits, divided in time intervals",
@@ -493,6 +533,9 @@ if __name__ == '__main__':
     )
     p13.line(range(25), hoursExcedingConditions, alpha=0.6)
     p13.circle(range(25), hoursExcedingConditions, size=10, alpha=0.8)
+    # %%%%%%%%% COMBINED analysis plot - END %%%%%%%%%
+
+    # %%%%%%%%%%%%%%%%%% Bokeh %%%%%%%%%%%%%%%%%%
 
     # Make legends clickable
     p1.legend.click_policy = "hide"
@@ -501,7 +544,7 @@ if __name__ == '__main__':
     p4.legend.click_policy = "hide"
     p7.legend.click_policy = "hide"
 
-    # Text
+    # %%%%%%%%% TEXT elements - START %%%%%%%%%
     divHeader = Div(text="""<center><h1>Drone planning using weather data</h1><br /><h2>Data: IBM, %s, %0d</h2><p><i>Data visualzation and analysis by <a href="https://github.com/TobiasLundby" target="_blank">Tobias Lundby</a>, 2018</i></p></center>""" % (reader.city, reader.year), width = reader.plotWidth) # , width=200, height=100
     divVisualization = Div(text="""<h2>Visualization</h2>""", width = reader.plotWidth) # , width=200, height=100
     divWind = Div(text="""<h3>Wind</h3>""", width = reader.plotWidth) # , width=200, height=100
@@ -510,6 +553,8 @@ if __name__ == '__main__':
     divIndividual = Div(text="""<h3>Individual analysis</h3>""", width = reader.plotWidth) # , width=200, height=100
     divCombined = Div(text="""<h3>Combined analysis</h3><p>Wind and temperature excluding percipitation and snow</p>""", width = reader.plotWidth) # , width=200, height=100
     divAnalysis = Div(text="""<h2>Data analysis</h2>""", width = reader.plotWidth) # , width=200, height=100
+    # %%%%%%%%% TEXT elements - START %%%%%%%%%
+
 
     # Generate layout
     #p = column(widgetbox(divExplanation),s1,s2)

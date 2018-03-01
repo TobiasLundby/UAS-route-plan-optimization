@@ -8,7 +8,8 @@ License: BSD 3-Clause
 
 // Use EPSG:3857 otherwise the view/projection is skewed, remember to convert the coords (GPS = WGS 84 = EPSG:4326, https://epsg.io/4326) we normally use with: ol.proj.transform([10.4, 55.9],  'EPSG:4326', 'EPSG:3857')
 var projection = ol.proj.get('EPSG:3857');
-var kml_url = 'http://localhost:8888/msc-ol/export.kml';
+//var kml_url = 'http://localhost:8888/msc-ol/export.kml';
+var kml_url = 'https://www.techgen.dk/msc/export.kml';
 // drone_nofly_dk.kml
 // KmlUasZones_2018-01-05-20-36.kml
 // https://www.techgen.dk/msc/export.kml
@@ -93,7 +94,7 @@ function add_no_fly_zones(){
     var source_nofly = new ol.source.Vector({
         url: kml_url,
         format: new ol.format.KML({
-            extractStyles: true,
+            extractStyles: true, // make this false to avoid the unsecure linking to the 'yellow push pin'
             extractAttributes: true,
             showLabels: true
         }),
