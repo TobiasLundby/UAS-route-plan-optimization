@@ -19,8 +19,10 @@ import numpy as np
 from bokeh.io import output_file, show
 from bokeh.layouts import gridplot, column, widgetbox, layout
 from bokeh.plotting import figure
+from bokeh.models import ColumnDataSource
 from bokeh.models.widgets import Div
 from datetime import datetime
+import pandas as pd
 ### Import end
 
 ### Define start
@@ -152,8 +154,10 @@ class ibm_weather_csv():
         # true = sattisfies wind conditions
         # self.WindSpeedMpsS[i] > self.maxOperationWindSpeed or self.SurfaceWindGustsMpsS[i] > self.maxOperationWindSpeed
         if self.WindSpeedMpsS[sample_nr] > self.maxOperationWindSpeed:
+            #print "WIND exceed"
             return False
         if self.SurfaceWindGustsMpsS[sample_nr] > self.maxOperationWindGusts:
+            #print "GUST exceed"
             return False
         return True
     def check_conditions_temp(self, sample_nr):
@@ -175,6 +179,20 @@ class ibm_weather_csv():
             return True
         else:
             return False
+    def check_conditions_all_with_type(self, sample_nr):
+        # no_fly = [ [ [0,2,0], [2,14,1], [14,24,2] ],[ [0,13,0], [13,15,2], [15,24,1] ], [ [0,5,0], [5,7,1], [7,24,2] ], [ [0,13,0], [13,17,2], [17,24,1] ], [ [0,2,0], [2,14,1], [14,24,2] ],[ [0,13,0], [13,15,2], [15,24,1] ], [ [0,5,0], [5,7,1], [7,24,2] ], [ [0,13,0], [13,17,2], [17,24,1] ] ]
+        condition_type = 0
+        if self.check_conditions_all(sample_nr):
+            condition_type = 0 # within conditions
+        elif self.check_conditions_wind(sample_nr) == False and self.check_conditions_temp(sample_nr) == False:
+            condition_type = 1 # all exceeding
+        elif self.check_conditions_wind(sample_nr) == False:
+            condition_type = 2 # wind exceeding
+        elif self.check_conditions_temp(sample_nr) == False:
+            condition_type = 3 # temp exceeding
+        #print condition_type
+        return condition_type
+
     ## Plot methods
     def createTimePlot(self, inTitle, inXAxis, inYAxis):
         return figure(
@@ -186,7 +204,7 @@ class ibm_weather_csv():
         )
     ## Analyzer methods
     def analyseWind(self):
-        # Calculate percentage statistics
+        # Calculate percentage statistics - simple how many samples are over the limit
         aboveThreshold = 0
         for i in range(self.samples):
         	if self.check_conditions_wind(i) == False:
@@ -201,9 +219,9 @@ class ibm_weather_csv():
         per_2h_count = 0
         per_3h_count = 0
         per_4h_count = 0
+        periodsAbove = []
 
         periods = []
-        periodsAbove = []
         in_period_count = 0
 
         for i in range(self.samples):
@@ -252,12 +270,12 @@ class ibm_weather_csv():
                 hoursOfWind[extreme_hour_count] +=1
             elif extreme_hour_count == 0:
                 noWindDays += 1
-        print hoursOfWind
+        #print hoursOfWind
 
         return [periods, hoursOfWind]
 
     def analyseTemperature(self):
-        # Calculate percentage statistics
+        # Calculate percentage statistics - simple how many samples are over the limit
         belowThreshold = 0
         for i in range(self.samples):
         	if self.check_conditions_temp(i) == False:
@@ -272,9 +290,9 @@ class ibm_weather_csv():
         per_2h_count = 0
         per_3h_count = 0
         per_4h_count = 0
+        periodsAbove = []
 
         periods = []
-        periodsAbove = []
         in_period_count = 0
 
         for i in range(self.samples):
@@ -308,7 +326,7 @@ class ibm_weather_csv():
 
         return periods
     def analyseCombined(self):
-        # Calculate percentage statistics
+        # Calculate percentage statistics - simple how many samples are over the limit
         excedingConditions = 0
         for i in range(self.samples):
         	if self.check_conditions_all(i) == False:
@@ -323,9 +341,9 @@ class ibm_weather_csv():
         per_2h_count = 0
         per_3h_count = 0
         per_4h_count = 0
+        periodsAbove = []
 
         periods = []
-        periodsAbove = []
         in_period_count = 0
 
         for i in range(self.samples):
@@ -376,9 +394,36 @@ class ibm_weather_csv():
                 #     print "day: ", day
             elif extreme_hour_count == 0:
                 withinDays += 1
-        print hoursExcedingConditions
+        #print hoursExcedingConditions
 
-        return [periods, hoursExcedingConditions]
+
+        #
+        # no_fly = [ [ [0,2,0], [2,14,1], [14,24,2] ],[ [0,13,0], [13,15,2], [15,24,1] ], [ [0,5,0], [5,7,1], [7,24,2] ], [ [0,13,0], [13,17,2], [17,24,1] ], [ [0,2,0], [2,14,1], [14,24,2] ],[ [0,13,0], [13,15,2], [15,24,1] ], [ [0,5,0], [5,7,1], [7,24,2] ], [ [0,13,0], [13,17,2], [17,24,1] ] ]
+        combind_results = []
+        day_result = []
+        cur_start_hour = 0
+        cur_hour = 0
+        last_result = 0
+        cur_result = 0
+        #for day in range(self.days): # itr days
+        for day in range(self.days): # itr days
+            cur_start_hour = 0
+            last_result = 0
+            day_result = []
+            for sample in range(24): # itr samples
+                cur_hour = sample
+                cur_result = self.check_conditions_all_with_type(day*24+sample)
+                if cur_result != last_result:
+                    day_result.append([cur_start_hour, cur_hour, last_result])
+                    last_result = cur_result
+                    cur_start_hour = cur_hour
+                #print self.DateSGMT[sample]
+                if sample == 23:
+                    day_result.append([cur_start_hour, cur_hour, last_result])
+            combind_results.append(day_result)
+        #print combind_results
+
+        return [periods, hoursExcedingConditions, combind_results]
 
 ### Class end - Main start
 
@@ -513,7 +558,7 @@ if __name__ == '__main__':
 
 
     # %%%%%%%%% Analysis COMBINED %%%%%%%%%
-    periods_combined, hoursExcedingConditions = reader.analyseCombined()
+    periods_combined, hoursExcedingConditions, results_combined_arr  = reader.analyseCombined()
 
     # %%%%%%%%% histogram of Consequitive COMBINED hours - START %%%%%%%%%
     p12 = figure(title="Combined analysis",tools="save",plot_width=reader.plotWidth/2,plot_height=reader.plotHeight)
@@ -535,6 +580,38 @@ if __name__ == '__main__':
     p13.circle(range(25), hoursExcedingConditions, size=10, alpha=0.8)
     # %%%%%%%%% COMBINED analysis plot - END %%%%%%%%%
 
+    # %%%%%%%%% Illustrative COMBINED analysis plot - START %%%%%%%%%
+    start_time = reader.DateSGMT[0].strftime('%m/%d/%Y')
+    #print start_time
+    rng = pd.date_range(start=start_time, periods=reader.days+1, freq='D' ) # reader.days+1
+    #print rng
+    interval = pd.DataFrame({'start' : rng })
+    interval['end'] = interval['start'] + pd.Timedelta(hours=24)#pd.Timedelta(hours=23,minutes=59,seconds=59)
+    #print interval,"\n\n"
+
+    p14 = figure(x_axis_type='datetime', plot_height=1,plot_width=3, tools="box_zoom,reset,save,hover", y_range=(0, 24)) # the plot format/size is set by heigh and width and the sizing_mode makes it reponsive
+    # formatting
+    p14.yaxis.minor_tick_line_color = None
+    p14.ygrid[0].ticker.desired_num_ticks = 1
+    for date_itr in range(len(results_combined_arr)):
+        for internal_itr in range(len(results_combined_arr[date_itr])):
+            if results_combined_arr[date_itr][internal_itr][2] == 0: # 0 = palegreen color = within conditions
+                p14.quad(left=interval['start'][date_itr],right=interval['end'][date_itr],bottom=results_combined_arr[date_itr][internal_itr][0], top=results_combined_arr[date_itr][internal_itr][1], color="palegreen")
+            if results_combined_arr[date_itr][internal_itr][2] == 1: # 1 = red color = all exceeding
+                p14.quad(left=interval['start'][date_itr],right=interval['end'][date_itr],bottom=results_combined_arr[date_itr][internal_itr][0], top=results_combined_arr[date_itr][internal_itr][1], color="red")
+            if results_combined_arr[date_itr][internal_itr][2] == 2: # 2 = orange color = wind exceeding
+                p14.quad(left=interval['start'][date_itr],right=interval['end'][date_itr],bottom=results_combined_arr[date_itr][internal_itr][0], top=results_combined_arr[date_itr][internal_itr][1], color="orange")
+            if results_combined_arr[date_itr][internal_itr][2] == 3: # 3 = royalblue color = temp exceeding
+                p14.quad(left=interval['start'][date_itr],right=interval['end'][date_itr],bottom=results_combined_arr[date_itr][internal_itr][0], top=results_combined_arr[date_itr][internal_itr][1], color="royalblue")
+    # Add axis labels
+    p14.xaxis.axis_label = "Date"
+    p14.yaxis.axis_label = "Time"
+    # Add lines to illustrate daylight. The times are based on the spring mean day https://www.dmi.dk/nyheder/arkiv/nyheder-2012/daglaengden-dykker-under-ti-timer/
+    p14.line([interval['start'][0], interval['end'][reader.days]], [8.15, 8.15],   line_color="white", line_dash="2 4")
+    p14.line([interval['start'][0], interval['end'][reader.days]], [20.15, 20.15], line_color="white", line_dash="2 4")
+    # %%%%%%%%% Illustrative COMBINED analysis plot - END %%%%%%%%%
+
+
     # %%%%%%%%%%%%%%%%%% Bokeh %%%%%%%%%%%%%%%%%%
 
     # Make legends clickable
@@ -553,12 +630,12 @@ if __name__ == '__main__':
     divIndividual = Div(text="""<h3>Individual analysis</h3>""", width = reader.plotWidth) # , width=200, height=100
     divCombined = Div(text="""<h3>Combined analysis</h3><p>Wind and temperature excluding percipitation and snow</p>""", width = reader.plotWidth) # , width=200, height=100
     divAnalysis = Div(text="""<h2>Data analysis</h2>""", width = reader.plotWidth) # , width=200, height=100
+    divExplanationP14 = Div(text="""<p><center>light green = flying OK<br>red = flying not OK, wind and temperature exceeding limits <br>orange = flying disencouraged, wind exceeding limit<br>blue = flying disencouraged, temperature exceeding limit<br><i>The dashed white lines represents the avg spring daytime (08:09-20:09)</i></center></p>""", width = reader.plotWidth)
     # %%%%%%%%% TEXT elements - START %%%%%%%%%
 
-
-    # Generate layout
+    # %%%%%%%%% Generate layout %%%%%%%%%
     #p = column(widgetbox(divExplanation),s1,s2)
-    p = layout([
+    p = layout(children=[
             [widgetbox(divHeader)],
             [widgetbox(divVisualization)],
             [widgetbox(divWind)],
@@ -576,9 +653,14 @@ if __name__ == '__main__':
             [p7],
             [widgetbox(divCombined)],
             [p12],
-            [p13]
-        ]) # None for no show and , sizing_mode='stretch_both'
+            [p13],
+            [p14],
+            [divExplanationP14]
+        ], sizing_mode='scale_width') # None for no show and , sizing_mode='stretch_both'
+    # p = layout(children=[[p1],
+    #         [p14]],
+    #         sizing_mode='scale_width') # None for no show and , sizing_mode='stretch_both'
 
-        # show the results
+    # show the results
     show(p)
 ### Main end
