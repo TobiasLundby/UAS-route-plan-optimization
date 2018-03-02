@@ -30,8 +30,10 @@ MaxOperationWindSpeed_def = 12
 MaxOperationWindGusts_def = MaxOperationWindSpeed_def+5.14 # 10kts more than wind speed based on the tower at HCA Airport
 OperationMinTemperature_def = -10
 OperationMaxTemperature_def = 40
+icing_temp_diff_tolerance = 0.5 # the allowed difference between the surface temperature and dewpoint temperature
 use_apparent_temp = True # for the condition checking
 use_wind_gusts = False # for the condition checking
+use_icing_test = True # for the condition checking
 ### Define end
 
 ### Class start
@@ -56,7 +58,7 @@ class ibm_weather_csv():
         self.SurfaceTempCS = []
         self.ApparentTemperatureCS = []
         self.WindChillTemperatureCS = []
-        self.SurfaceDewpointTemperatureCS = []
+        self.SurfaceDewpointTempCS = [] # SurfaceDewpointTemperatureCelsius
 
         self.PrecipitationPreviousHourCmS = []
         self.SnowfallCmS = []
@@ -85,7 +87,7 @@ class ibm_weather_csv():
         self.SurfaceTempCS = []
         self.ApparentTemperatureCS = []
         self.WindChillTemperatureCS = []
-        self.SurfaceDewpointTemperatureCS = []
+        self.SurfaceDewpointTempCS = []
 
         self.PrecipitationPreviousHourCmS = []
         self.SnowfallCmS = []
@@ -126,7 +128,7 @@ class ibm_weather_csv():
 
                 #SurfaceDewpointTemperatureCelsius
                 SurfaceDewpointTemperatureC = float(row['SurfaceDewpointTemperatureCelsius'])
-                self.SurfaceDewpointTemperatureCS.append(SurfaceDewpointTemperatureC)
+                self.SurfaceDewpointTempCS.append(SurfaceDewpointTemperatureC)
 
                 PrecipitationPreviousHourCm = float(row['PrecipitationPreviousHourCentimeters'])
                 self.PrecipitationPreviousHourCmS.append(PrecipitationPreviousHourCm)
@@ -176,8 +178,21 @@ class ibm_weather_csv():
             if self.SurfaceTempCS[sample_nr] > self.maxOperationTemperature:
                 return False
             return True
+    def check_conditions_icing(self, sample_nr):
+        # true = no icing, false = icing possiblity
+        if use_icing_test:
+            diff_SurfaceTem_SurfaceDewpointTemp = abs(self.SurfaceTempCS[sample_nr] - self.SurfaceDewpointTempCS[sample_nr])
+            # if self.SurfaceTempCS[sample_nr] < 0:
+            #     print "Icing: date ", self.DateSGMT[sample_nr], "diff:", diff_SurfaceTem_SurfaceDewpointTemp, "temp:", self.SurfaceTempCS[sample_nr]
+            if diff_SurfaceTem_SurfaceDewpointTemp < icing_temp_diff_tolerance and self.SurfaceTempCS[sample_nr] < 0:
+                return False
+            else:
+                return True
+        else:
+            return True
     def check_conditions_all(self, sample_nr):
-        if self.check_conditions_wind(sample_nr) and self.check_conditions_temp(sample_nr):
+        self.check_conditions_icing(sample_nr)
+        if self.check_conditions_wind(sample_nr) and self.check_conditions_temp(sample_nr) and self.check_conditions_icing(sample_nr):
             return True
         else:
             return False
@@ -186,12 +201,14 @@ class ibm_weather_csv():
         condition_type = 0
         if self.check_conditions_all(sample_nr):
             condition_type = 0 # within conditions
-        elif self.check_conditions_wind(sample_nr) == False and self.check_conditions_temp(sample_nr) == False:
+        elif self.check_conditions_wind(sample_nr) == False and self.check_conditions_temp(sample_nr) == False and self.check_conditions_icing(sample_nr) == False:
             condition_type = 1 # all exceeding
         elif self.check_conditions_wind(sample_nr) == False:
             condition_type = 2 # wind exceeding
         elif self.check_conditions_temp(sample_nr) == False:
             condition_type = 3 # temp exceeding
+        elif self.check_conditions_icing(sample_nr) == False:
+            condition_type = 4 # temp exceeding
         #print condition_type
         return condition_type
 
@@ -207,6 +224,7 @@ class ibm_weather_csv():
     ## Analyzer methods
     def analyseWind(self):
         # Calculate percentage statistics - simple how many samples are over the limit
+        print "Wind analysis"
         aboveThreshold = 0
         for i in range(self.samples):
         	if self.check_conditions_wind(i) == False:
@@ -278,6 +296,7 @@ class ibm_weather_csv():
 
     def analyseTemperature(self):
         # Calculate percentage statistics - simple how many samples are over the limit
+        print "Temperature analysis"
         belowThreshold = 0
         for i in range(self.samples):
         	if self.check_conditions_temp(i) == False:
@@ -329,6 +348,7 @@ class ibm_weather_csv():
         return periods
     def analyseCombined(self):
         # Calculate percentage statistics - simple how many samples are over the limit
+        print "Combined analysis"
         excedingConditions = 0
         for i in range(self.samples):
         	if self.check_conditions_all(i) == False:
@@ -351,10 +371,10 @@ class ibm_weather_csv():
         for i in range(self.samples):
             if self.check_conditions_all(i) == False:
                 in_period_count += 1
-                print self.DateSGMT[i]
+                #print self.DateSGMT[i]
             else:
                 if in_period_count > 0:
-                    print in_period_count
+                    #print in_period_count
                     hours = in_period_count
                     periods.append (hours)
 
@@ -481,7 +501,7 @@ if __name__ == '__main__':
     p2.line(reader.DateSGMT, reader.SurfaceTempCS, legend="Temperature - %s" % reader.city, alpha=0.8)
     p2.line(reader.DateSGMT, reader.WindChillTemperatureCS, legend="Wind Chill Temperature - %s" % reader.city, alpha=0.8, color="green")
     p2.line(reader.DateSGMT, reader.ApparentTemperatureCS, legend="Apparent Temperature - %s" % reader.city, alpha=0.8, color="orange")
-    p2.line(reader.DateSGMT, reader.SurfaceDewpointTemperatureCS, legend="Dewpoint Temperature - %s" % reader.city, alpha=0.8, color="green")
+    p2.line(reader.DateSGMT, reader.SurfaceDewpointTempCS, legend="Dewpoint Temperature - %s" % reader.city, alpha=0.8, color="green")
     # Draw illustrative lines
     p2.line([reader.DateSGMT[0], reader.DateSGMT[-1]], [reader.minOperationTemperature, reader.minOperationTemperature], legend="Temperature min = %0d °C" % reader.minOperationTemperature, line_color="red", line_dash="2 4")
     p2.line([reader.DateSGMT[0], reader.DateSGMT[-1]], [reader.maxOperationTemperature, reader.maxOperationTemperature], legend="Temperature max = %0d °C" % reader.maxOperationTemperature, line_color="red", line_dash="4 2")
@@ -607,6 +627,8 @@ if __name__ == '__main__':
                 p14.quad(left=interval['start'][date_itr],right=interval['end'][date_itr],bottom=results_combined_arr[date_itr][internal_itr][0], top=results_combined_arr[date_itr][internal_itr][1], color="orange")
             if results_combined_arr[date_itr][internal_itr][2] == 3: # 3 = royalblue color = temp exceeding
                 p14.quad(left=interval['start'][date_itr],right=interval['end'][date_itr],bottom=results_combined_arr[date_itr][internal_itr][0], top=results_combined_arr[date_itr][internal_itr][1], color="royalblue")
+            if results_combined_arr[date_itr][internal_itr][2] == 4: # 3 = magenta color = temp exceeding
+                p14.quad(left=interval['start'][date_itr],right=interval['end'][date_itr],bottom=results_combined_arr[date_itr][internal_itr][0], top=results_combined_arr[date_itr][internal_itr][1], color="magenta")
     # Add axis labels
     p14.xaxis.axis_label = "Date"
     p14.yaxis.axis_label = "Time"
@@ -636,7 +658,7 @@ if __name__ == '__main__':
     divCombined = Div(text="""<h3>Combined analysis</h3><p>Wind and temperature excluding percipitation and snow</p>""", width = reader.plotWidth) # , width=200, height=100
     divAnalysis = Div(text="""<h2>Data analysis</h2>""") # , width=200, height=100
     divP14Title = Div(text="<h3>Illustrative weather analysis - combined wind and temperature</h3>")
-    divExplanationP14 = Div(text="""<p><center>light green = flying OK<br>red = flying not OK, wind and temperature exceeding limits <br>orange = flying disencouraged, wind exceeding limit<br>blue = flying disencouraged, temperature exceeding limit<br><i>The dashed white lines represents the avg spring daytime (08:09-20:09); source dmi.dk</i></center></p>""")
+    divExplanationP14 = Div(text="""<p><center>light green = flying OK<br>red = flying not OK, wind and temperature exceeding limits <br>orange = flying disencouraged, wind exceeding limit<br>blue = flying disencouraged, temperature exceeding limit<br>magenta = flying disencouraged, icing possibility<br><i>The dashed white lines represents the avg spring daytime (08:09-20:09); source dmi.dk</i></center></p>""")
     # %%%%%%%%% TEXT elements - START %%%%%%%%%
 
     # %%%%%%%%% Generate layout %%%%%%%%%
