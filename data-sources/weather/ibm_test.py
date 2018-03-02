@@ -224,7 +224,7 @@ class ibm_weather_csv():
     ## Analyzer methods
     def analyseWind(self):
         # Calculate percentage statistics - simple how many samples are over the limit
-        print "Wind analysis"
+        print "\nWind analysis"
         aboveThreshold = 0
         for i in range(self.samples):
         	if self.check_conditions_wind(i) == False:
@@ -296,7 +296,7 @@ class ibm_weather_csv():
 
     def analyseTemperature(self):
         # Calculate percentage statistics - simple how many samples are over the limit
-        print "Temperature analysis"
+        print "\nTemperature analysis"
         belowThreshold = 0
         for i in range(self.samples):
         	if self.check_conditions_temp(i) == False:
@@ -348,15 +348,15 @@ class ibm_weather_csv():
         return periods
     def analyseCombined(self):
         # Calculate percentage statistics - simple how many samples are over the limit
-        print "Combined analysis"
+        print "\nCombined analysis"
         excedingConditions = 0
         for i in range(self.samples):
         	if self.check_conditions_all(i) == False:
         		excedingConditions += 1
                 #print self.DateSGMT[i], self.WindSpeedMpsS[i]
         if self.debugText:
-            print 'Number of samples exceding conditions = ', excedingConditions
-            print 'Percentage of samples exceding conditions = ', excedingConditions/(self.samples * 1.0)*100.0, '%'
+            print 'Number of samples exceeding conditions = ', excedingConditions
+            print 'Percentage of samples exceeding conditions = ', excedingConditions/(self.samples * 1.0)*100.0, '%'
 
         # Calculate consecutive periods with max conditions
         per_1h_count = 0
@@ -391,7 +391,7 @@ class ibm_weather_csv():
 
                 in_period_count = 0
         if self.debugText:
-            print 'Number of periods with reports exceding conditions = ', len(periods)
+            print 'Number of periods with reports exceeding conditions = ', len(periods)
 
             print '0-1 hour : ', per_1h_count
             print '1-2 hours: ', per_2h_count
@@ -559,7 +559,7 @@ if __name__ == '__main__':
     # Explanation: it shows how many days there have been ex. 4 hours of wind exceding the conditions. In other words if there is occurences of hours with wind above conditions for more than 24 hours the whole day is unflyable.
     p7 = figure(
         tools="pan,box_zoom,reset,save,hover",
-        title="Wind analysis: days with wind exceding conditions, divided in time intervals",
+        title="Wind analysis: days with wind exceeding conditions, divided in time intervals",
         x_axis_label='Hours with wind velocity > %d m/s (capped below 2 hours)' % reader.maxOperationWindSpeed,
         y_axis_label='Days',
         plot_height = reader.plotHeight, plot_width = reader.plotWidth
@@ -588,15 +588,15 @@ if __name__ == '__main__':
     p12 = figure(title="Combined analysis",tools="save",plot_width=reader.plotWidth,plot_height=reader.plotHeight)
     hist,bins=np.histogram(periods_combined,bins=30)
     p12.quad(top=hist, bottom=0, left=bins[:-1], right=bins[1:],line_color="blue")
-    p12.xaxis.axis_label = 'Consequitive hours exceding conditions'
+    p12.xaxis.axis_label = 'Consequitive hours exceeding conditions'
     p12.yaxis.axis_label = 'Occurences'
     # %%%%%%%%% histogram of Consequitive COMBINED hours - END %%%%%%%%%
 
     # %%%%%%%%% COMBINED analysis plot - START %%%%%%%%%
     p13 = figure(
         tools="pan,box_zoom,reset,save,hover",
-        title="Combined analysis: days with conditions exceding limits, divided in time intervals",
-        x_axis_label='Hours exceding conditions (capped below 2 hours)',
+        title="Combined analysis: days with conditions exceeding limits, divided in time intervals",
+        x_axis_label='Hours exceeding conditions (capped below 2 hours)',
         y_axis_label='Days',
         plot_height = reader.plotHeight, plot_width = reader.plotWidth
     )
