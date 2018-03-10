@@ -1,15 +1,18 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
+Descriptors: TL = Tobias Lundby (tobiaslundby@gmail.com)
 2018-01-29 TL First version
 2018-01-30 TL Refined version with safety measures for internet connection and empty response
 """
 
 """
 Description:
-This scripts downloads ADS-B from a source provided by Kjeld Jensen (kjen@mmmi.sdu.dk) and parses it accordingly for easy use
+This scripts downloads ADS-B data from a source provided by Kjeld Jensen (kjen@mmmi.sdu.dk) and parses it accordingly for easy use
 The script support redownload using the 'download_data' method
 License: BSD 3-Clause
+Data source: https://droneid.dk/tobias/adsb.php
+Data readme: https://droneid.dk/tobias/vejledning.txt
 """
 
 print 'Importing libraries'
