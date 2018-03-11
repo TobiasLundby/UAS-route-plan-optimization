@@ -18,7 +18,10 @@ from urllib2 import urlopen, URLError, HTTPError
 
 class internet_tools():
     def __init__(self, in_test_addr = 'http://216.58.207.206'):
-        self.test_addr = in_test_addr
+        if isinstance(in_test_addr, str):
+            self.test_addr = in_test_addr
+        else:
+            self.test_addr = 'http://216.58.207.206'
     def internet_on(self, timeout_in = 2):
         # Based on code snippet from unutbu (https://stackoverflow.com/users/190597/unutbu)
         # IP find by: 'dig google.com +trace'

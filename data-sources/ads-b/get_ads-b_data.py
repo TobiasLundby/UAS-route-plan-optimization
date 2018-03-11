@@ -27,7 +27,7 @@ import time
 import datetime # datetime.now
 #print 'Import done\n'
 
-forever = 60*60*24*365*100
+forever = 60*60*24*365*100  # 100 years excl. leap year
 internet_connection_tries = 5
 
 class adsb_data():
@@ -75,11 +75,12 @@ class adsb_data():
 
                 csv_reader = csv.reader( [ line ] )
                 for row in csv_reader:
-                    row[4] = float(row[4])
-                    row[5] = float(row[5])
-                    row[6] = int(row[6])
-                    row[7] = int(row[7])
-                    row[8] = int(row[8])
+                    row[1] = int(row[1]) # epoch time
+                    row[4] = float(row[4]) # lat
+                    row[5] = float(row[5]) # lng
+                    row[6] = int(row[6]) # alt
+                    row[7] = int(row[7]) # track
+                    row[8] = int(row[8]) # speed
                     self.ADSBdataStructured.append(row)
         self.aircraft_count = itr
         if self.aircraft_count == 0:
@@ -104,7 +105,6 @@ class adsb_data():
             print ",".join(self.ADSBdataFields)
             for line in self.ADSBdataRaw:
                 print line
-            #print self.ADSBdataStructured
     def print_aircraft_pretty(self, aircraft_index):
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             print "Name:     ", self.get_name(aircraft_index)
@@ -118,6 +118,17 @@ class adsb_data():
     def print_format(self):
         #Format is $time_stamp,$time_since_epoch,$icao,$flight,$lat,$lon,$alt,$track,$speed\n
         print "time_stamp,time_since_epoch,icao,flight,lat,lon,alt,track,speed"
+    def print_description(self):
+        print """\nField description:
+        time_stamp: Formatted time stamp
+        time: seconds since Epoch
+        icao: ICAO aircraft ID
+        flight: Flight name (if available)
+        lat: [Decimal degrees]
+        lon: [Decimal degrees]
+        alt: [m]
+        trk: Track [degrees]
+        hsp: Horizontal speed [kts]"""
     def get_time_stamp(self, aircraft_index):
         # GMT+1
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
