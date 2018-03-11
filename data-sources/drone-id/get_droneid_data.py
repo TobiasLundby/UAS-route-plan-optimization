@@ -66,7 +66,7 @@ class droneid_data():
         for line in response:
 
             line = line.rstrip()
-            print line
+            #print line
             if line != "":
                 itr = itr+1
                 #print "Line",itr,":",line
@@ -90,10 +90,10 @@ class droneid_data():
                         row[10] = int(row[10])
                     row[11] = int(row[11]) # sim
                     self.DroneIDdataStructured.append(row)
-        print itr
+        #print itr
         self.drone_count = itr
         if self.drone_count == 0:
-            print "ADS-B receiver seems to be down; no data recieved"
+            print "No DroneIDs seems to be online"
         if self.debug:
             print "Entries:",self.drone_count
         response.close()
@@ -101,8 +101,8 @@ class droneid_data():
             print "Result read successfully"
 
         # Make JSON Data
-        for row in self.DroneIDdataStructured:
-            print row
+        # for row in self.DroneIDdataStructured:
+        #     print row
     def print_data(self):
         if self.drone_count > 0:
             print self.DroneIDdataStructured
@@ -116,16 +116,20 @@ class droneid_data():
                 print line
     def print_drone_pretty(self, drone_index):
         if self.drone_count > drone_index and type(drone_index)==int:
+            if self.get_sim(drone_index):
+                print "NOTE: SIMULATED DRONE (link quality and battery SoC hardcoded)"
             print "ID:          ", self.get_id(drone_index)
             print "Name:        ", self.get_name(drone_index)
             print "Timestamp:   ", self.get_time_stamp(drone_index)
             print "Lat:         ", self.get_lat(drone_index)
             print "Lng:         ", self.get_lng(drone_index)
+            print "OSM link:    ", 'http://www.openstreetmap.org/?mlat=%s&mlon=%s&zoom=16' % (self.get_lat(drone_index),self.get_lng(drone_index))
+            print "Google link:  "  'http://maps.google.com/maps?q=%s+%s' % (self.get_lat(drone_index),self.get_lng(drone_index))
             print "Altitude:    ", self.get_alt_m(drone_index), 'm'
             print "Accuracy:    ", self.get_acc(drone_index)
             print "Fix type:    ", self.get_fix(drone_index)
             print "Link quailty:", self.get_lnk(drone_index), '%'
-            print "Bettery SoC: ", self.get_eng(drone_index), '%'
+            print "Battery SoC: ", self.get_eng(drone_index), '%'
             print "Simulated:   ", self.get_sim(drone_index)
     def print_format(self):
         print "time_stamp,time_since_epoch,id,name,lat,lon,alt,acc,fix,lnk,eng,sim"
@@ -216,8 +220,8 @@ if __name__ == '__main__':
 
     droneid_module = droneid_data(False)
     droneid_module.download_data()
-    droneid_module.print_data()
+    #droneid_module.print_data()
     droneid_module.print_drone_pretty(0)
-    droneid_module.print_description()
+    #droneid_module.print_description()
     #droneid_module.print_raw()
     #droneid_module.print_CSV()

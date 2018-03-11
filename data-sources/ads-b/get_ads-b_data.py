@@ -107,14 +107,16 @@ class adsb_data():
                 print line
     def print_aircraft_pretty(self, aircraft_index):
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
-            print "Name:     ", self.get_name(aircraft_index)
-            print "ICAO:     ", self.get_icao_addr(aircraft_index)
-            print "Timestamp:", self.get_time_stamp(aircraft_index)
-            print "Lat:      ", self.get_lat(aircraft_index)
-            print "Lng:      ", self.get_lng(aircraft_index)
-            print "Speed:    ", self.get_speed_kts(aircraft_index), "kts -", self.get_speed_mps(aircraft_index), "m/s -", self.get_speed_kph(aircraft_index), "k/h -", self.get_speed_mph(aircraft_index), "miles/h"
-            print "Altitude: ", self.get_alt_m(aircraft_index), "m -", self.get_alt_ft(aircraft_index), "ft"
-            print "Track:    ", self.get_track_deg(aircraft_index), "° -", self.get_track_rad(aircraft_index), "rad\n"
+            print "Name:       ", self.get_name(aircraft_index)
+            print "ICAO:       ", self.get_icao_addr(aircraft_index)
+            print "Timestamp:  ", self.get_time_stamp(aircraft_index)
+            print "Lat:        ", self.get_lat(aircraft_index)
+            print "Lng:        ", self.get_lng(aircraft_index)
+            print "OSM link:   ", 'http://www.openstreetmap.org/?mlat=%s&mlon=%s&zoom=16' % (self.get_lat(aircraft_index),self.get_lng(aircraft_index))
+            print "Google link:"  'http://maps.google.com/maps?q=%s+%s' % (self.get_lat(aircraft_index),self.get_lng(aircraft_index))
+            print "Speed:      ", self.get_speed_kts(aircraft_index), "kts -", self.get_speed_mps(aircraft_index), "m/s -", self.get_speed_kph(aircraft_index), "k/h -", self.get_speed_mph(aircraft_index), "miles/h"
+            print "Altitude:   ", self.get_alt_m(aircraft_index), "m -", self.get_alt_ft(aircraft_index), "ft"
+            print "Track:      ", self.get_track_deg(aircraft_index), "° -", self.get_track_rad(aircraft_index), "rad\n"
     def print_format(self):
         #Format is $time_stamp,$time_since_epoch,$icao,$flight,$lat,$lon,$alt,$track,$speed\n
         print "time_stamp,time_since_epoch,icao,flight,lat,lon,alt,track,speed"
