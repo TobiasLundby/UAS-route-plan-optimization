@@ -1,10 +1,10 @@
 # UAS route plan optimization
-Master project by Tobias Lundby at the SDU UAS Center concerning UAS route planning optimized in space and time based on aviation safety and operational efficiency parameters
+Master project by **Tobias Lundby** at **the SDU UAS Center** concerning **_UAS route planning optimized in space and time based on aviation safety and operational efficiency parameters_**
 
-Supervisor: Kjeld Jensen, The Maersk Mc-Kinney Moller Institute, SDU UAS Center
+_Supervisor:_ Kjeld Jensen, The Maersk Mc-Kinney Moller Institute, SDU UAS Center
 
-Co-supervisor: Kristian Husum Terkildsen, The Maersk Mc-Kinney Moller Institute, SDU UAS Center
+_Co-supervisor:_ Kristian Husum Terkildsen, The Maersk Mc-Kinney Moller Institute, SDU UAS Center
 
-Core partner: IBM
+_Core partner:_ IBM
 
-Case partners: ROCKWOOL, Odense University Hospital, and Falck
+_Case partners:_ ROCKWOOL, Odense University Hospital, and Falck
