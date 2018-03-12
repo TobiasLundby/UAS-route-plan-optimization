@@ -76,6 +76,7 @@ class droneid_data():
                 csv_reader = csv.reader( [ line ] )
                 for row in csv_reader:
                     row[1] = int(row[1]) # epoch time
+                    row[2] = int(row[2]) # id
                     row[4] = float(row[4]) # lat
                     row[5] = float(row[5]) # lng
                     row[6] = int(row[6]) # alt
@@ -165,6 +166,16 @@ class droneid_data():
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][1]
         else: return None
+    def get_time_since_epoch_formatted_UTC(self, drone_index):
+        # https://www.epochconverter.com/
+        if self.drone_count > drone_index and type(drone_index)==int:
+            return datetime.datetime.fromtimestamp(self.DroneIDdataStructured[drone_index][1], pytz.UTC).strftime('%Y-%m-%d %H:%M:%S')
+        else: return None
+    def get_time_since_epoch_formatted_local(self, drone_index):
+        # https://www.epochconverter.com/
+        if self.drone_count > drone_index and type(drone_index)==int:
+            return datetime.datetime.fromtimestamp(self.DroneIDdataStructured[drone_index][1]).strftime('%Y-%m-%d %H:%M:%S')
+        else: return None
     def get_id(self, drone_index):
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][2]
@@ -208,6 +219,30 @@ class droneid_data():
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][11]
         else: return None
+    def get_drone_data(self, drone_index):
+        if self.drone_count > drone_index and type(drone_index)==int:
+            return self.DroneIDdataStructured[drone_index]
+        else: return None
+    def get_drone_data_from_name(self, drone):
+        if self.drone_count > 0:
+            if drone != "" and type(drone)==str:
+                for line in self.DroneIDdataStructured:
+                    if line[3] == drone:
+                        return line
+                return []
+            else: return None
+        else: return None
+    def get_drone_index(self, drone):
+        if self.drone_count > 0:
+            if drone != "" and type(drone)==str:
+                itr = 0
+                for line in self.DroneIDdataStructured:
+                    if line[3] == drone:
+                        return itr
+                    itr = itr+1
+                return None
+            else: return None
+        else: return None
 
 if __name__ == '__main__':
     # Run self test
@@ -217,6 +252,10 @@ if __name__ == '__main__':
     droneid_module.download_data()
     #droneid_module.print_data()
     droneid_module.print_drone_pretty(0)
+    #print droneid_module.get_drone_data(0)
+    #print droneid_module.get_drone_data_from_name('000901')
+    #print droneid_module.get_drone_index('000901')
+    #print droneid_module.get_time_since_epoch_formatted_local(0)
     #droneid_module.print_description()
     #droneid_module.print_raw()
     #droneid_module.print_CSV()

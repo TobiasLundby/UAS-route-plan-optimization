@@ -143,6 +143,16 @@ class adsb_data():
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             return self.ADSBdataStructured[aircraft_index][1]
         else: return None
+    def get_time_since_epoch_formatted_UTC(self, aircraft_index):
+        # https://www.epochconverter.com/
+        if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
+            return datetime.datetime.fromtimestamp(self.ADSBdataStructured[aircraft_index][1], pytz.UTC).strftime('%Y-%m-%d %H:%M:%S')
+        else: return None
+    def get_time_since_epoch_formatted_local(self, aircraft_index):
+        # https://www.epochconverter.com/
+        if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
+            return datetime.datetime.fromtimestamp(self.ADSBdataStructured[aircraft_index][1]).strftime('%Y-%m-%d %H:%M:%S')
+        else: return None
     def get_icao_addr(self, aircraft_index):
         # Use ex. World Aircraft Database to decode: https://junzisun.com/adb/
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
@@ -200,11 +210,13 @@ class adsb_data():
             return self.ADSBdataStructured[aircraft_index]
         else: return None
     def get_aircraft_data_from_name(self, aircraft):
-        if self.aircraft_count != "" and type(aircraft)==str:
-            for line in self.ADSBdataStructured:
-                if line[3] == aircraft:
-                    return line
-            return []
+        if self.aircraft_count > 0:
+            if aircraft != "" and type(aircraft)==str:
+                for line in self.ADSBdataStructured:
+                    if line[3] == aircraft:
+                        return line
+                return []
+            else: return None
         else: return None
     def get_aircraft_index(self, aircraft):
         if self.aircraft_count != "" and type(aircraft)==str:
