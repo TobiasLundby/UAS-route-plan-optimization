@@ -25,6 +25,7 @@ import csv
 import json
 import time
 import datetime # datetime.now
+import pytz # timezones in the datetime format
 #print 'Import done\n'
 
 forever = 60*60*24*365*100  # 100 years excl. leap year
@@ -110,6 +111,7 @@ class adsb_data():
             print "Name:       ", self.get_name(aircraft_index)
             print "ICAO:       ", self.get_icao_addr(aircraft_index)
             print "Timestamp:  ", self.get_time_stamp(aircraft_index)
+            print "Epoch time:  ", self.get_time_since_epoch(drone_index),'- local:', datetime.datetime.fromtimestamp(self.get_time_since_epoch(aircraft_index)).strftime('%Y-%m-%d %H:%M:%S'),'- UTC:',datetime.datetime.fromtimestamp(self.get_time_since_epoch(aircraft_index), pytz.UTC).strftime('%Y-%m-%d %H:%M:%S')
             print "Lat:        ", self.get_lat(aircraft_index)
             print "Lng:        ", self.get_lng(aircraft_index)
             print "OSM link:   ", 'http://www.openstreetmap.org/?mlat=%s&mlon=%s&zoom=16' % (self.get_lat(aircraft_index),self.get_lng(aircraft_index))

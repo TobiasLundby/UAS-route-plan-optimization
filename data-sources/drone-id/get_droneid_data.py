@@ -24,6 +24,7 @@ import csv
 import json
 import time
 import datetime # datetime.now
+import pytz # timezones in the datetime format
 #print 'Import done\n'
 
 forever = 60*60*24*365*100 # 100 years excl. leap year
@@ -121,6 +122,7 @@ class droneid_data():
             print "ID:          ", self.get_id(drone_index)
             print "Name:        ", self.get_name(drone_index)
             print "Timestamp:   ", self.get_time_stamp(drone_index)
+            print "Epoch time:  ", self.get_time_since_epoch(drone_index),'- local:', datetime.datetime.fromtimestamp(self.get_time_since_epoch(drone_index)).strftime('%Y-%m-%d %H:%M:%S'),'- UTC:',datetime.datetime.fromtimestamp(self.get_time_since_epoch(drone_index), pytz.UTC).strftime('%Y-%m-%d %H:%M:%S')
             print "Lat:         ", self.get_lat(drone_index)
             print "Lng:         ", self.get_lng(drone_index)
             print "OSM link:    ", 'http://www.openstreetmap.org/?mlat=%s&mlon=%s&zoom=16' % (self.get_lat(drone_index),self.get_lng(drone_index))
@@ -164,52 +166,45 @@ class droneid_data():
             return self.DroneIDdataStructured[drone_index][1]
         else: return None
     def get_id(self, drone_index):
-        # https://www.epochconverter.com/
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][2]
         else: return None
     def get_name(self, drone_index):
-        # https://www.epochconverter.com/
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][3]
         else: return None
     def get_lat(self, drone_index):
-        # https://www.epochconverter.com/
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][4]
         else: return None
     def get_lng(self, drone_index):
-        # https://www.epochconverter.com/
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][5]
         else: return None
     def get_alt_m(self, drone_index):
-        # https://www.epochconverter.com/
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][6]
         else: return None
+    def get_alt_ft(self, drone_index):
+        # unit: feet
+        return self.get_alt_m(drone_index)*3.28084
     def get_acc(self, drone_index):
-        # https://www.epochconverter.com/
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][7]
         else: return None
     def get_fix(self, drone_index):
-        # https://www.epochconverter.com/
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][8]
         else: return None
     def get_lnk(self, drone_index):
-        # https://www.epochconverter.com/
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][9]
         else: return None
     def get_eng(self, drone_index):
-        # https://www.epochconverter.com/
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][10]
         else: return None
     def get_sim(self, drone_index):
-        # https://www.epochconverter.com/
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][11]
         else: return None
