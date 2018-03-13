@@ -37,7 +37,8 @@ class droneid_data():
         self.url = 'https://droneid.dk/tobias/droneid.php'
         self.debug = debug
         self.aircraft_count = 0
-        self.DroneIDdataFields = ['time_stamp','time_since_epoch','id','name','lat','lon','alt','acc','fix','lnk','eng','sim']
+        self.DroneIDdataFieldsRaw = ['time_stamp','time_since_epoch','id','name','lat','lon','alt','acc','fix','lnk','eng','sim']
+        self.DroneIDdataFields = ['time_stamp','time_since_epoch','id','name','lat','lon','alt','acc','fix','lnk','eng','sim','time_since_epoch_oldS','lat_oldS','lng_oldS','alt_oldS']
         self.DroneIDdataRaw = []
         self.DroneIDdataStructured = []
         for x in range(1, internet_connection_tries+1):
@@ -92,6 +93,12 @@ class droneid_data():
                     else:
                         row[10] = int(row[10])
                     row[11] = int(row[11]) # sim
+                    # Make arrays for 'time_since_epoch_oldS','lat_oldS','lng_oldS','alt_oldS'
+                    row.append([])
+                    row.append([])
+                    row.append([])
+                    row.append([])
+                    #row[12].append(row[1])
                     self.DroneIDdataStructured.append(row)
         #print itr
         self.drone_count = itr
@@ -152,18 +159,19 @@ class droneid_data():
                     if drone_index_old != None:
                         print "Already seen", row[3], ", id:", drone_index_old
                         # Update values: time, epoch, lat, lng, alt, acc, fix, lng, eng
-                        self.DroneIDdataStructured[drone_index_old][0] = row[0]
-                        self.DroneIDdataStructured[drone_index_old][1] = row[1]
-                        self.DroneIDdataStructured[drone_index_old][4] = row[4]
-                        self.DroneIDdataStructured[drone_index_old][5] = row[5]
-                        self.DroneIDdataStructured[drone_index_old][6] = row[6]
-                        self.DroneIDdataStructured[drone_index_old][7] = row[7]
-                        self.DroneIDdataStructured[drone_index_old][8] = row[8]
-                        self.DroneIDdataStructured[drone_index_old][9] = row[9]
-                        self.DroneIDdataStructured[drone_index_old][10] = row[10]
-
-                        # Update the raw entry
-                        self.DroneIDdataRaw[drone_index_old] = line
+                        if self.DroneIDdataStructured[drone_index_old][1] < row[1] or self.DroneIDdataStructured[drone_index_old][7] < row[7]:
+                            # New or better data received
+                            self.DroneIDdataStructured[drone_index_old][0] = row[0]
+                            self.DroneIDdataStructured[drone_index_old][1] = row[1]
+                            self.DroneIDdataStructured[drone_index_old][4] = row[4]
+                            self.DroneIDdataStructured[drone_index_old][5] = row[5]
+                            self.DroneIDdataStructured[drone_index_old][6] = row[6]
+                            self.DroneIDdataStructured[drone_index_old][7] = row[7]
+                            self.DroneIDdataStructured[drone_index_old][8] = row[8]
+                            self.DroneIDdataStructured[drone_index_old][9] = row[9]
+                            self.DroneIDdataStructured[drone_index_old][10] = row[10]
+                            # Update the raw entry
+                            self.DroneIDdataRaw[drone_index_old] = line
                     else:
                         print "New", row[3], ", appending specific drone data"
                         row[11] = int(row[11]) # sim, not used for updating
