@@ -18,6 +18,7 @@ Data readme: https://droneid.dk/tobias/vejledning.txt
 import os, sys # exit (use quit() when you only want to terminate spawning script, not all)
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from internet_tools import internet_tools
+from droneid_simulator import droneid_simulator
 
 from urllib2 import urlopen, URLError, HTTPError
 import csv
@@ -33,6 +34,7 @@ internet_connection_tries = 5
 class droneid_data():
     def __init__(self, debug):
         self.internet_tester = internet_tools()
+        self.url = 'https://droneid.dk/tobias/droneid.php'
         self.debug = debug
         self.aircraft_count = 0
         self.DroneIDdataFields = ['time_stamp','time_since_epoch','id','name','lat','lon','alt','acc','fix','lnk','eng','sim']
@@ -51,11 +53,10 @@ class droneid_data():
         self.drone_count = 0
         self.DroneIDdataRaw = []
         self.DroneIDdataStructured = []
-        url = 'https://droneid.dk/tobias/droneid.php'
         if self.debug:
             print 'Attempting to download'
         try:
-            response = urlopen(url)
+            response = urlopen(self.url)
         except HTTPError as e:
             result = '%s' % (e.code)
         except URLError as e:
@@ -105,6 +106,73 @@ class droneid_data():
         # Make JSON Data
         # for row in self.DroneIDdataStructured:
         #     print row
+    def update_data(self):
+        print '\nUpdate begun'
+        self.drone_count_new = 0
+
+        if self.debug:
+            print 'Attempting to download'
+        try:
+            response = urlopen(self.url)
+        except HTTPError as e:
+            result = '%s' % (e.code)
+        except URLError as e:
+            result = '%s %s' % (e.code, e.reason)
+        else:
+            if self.debug:
+                print 'No errors encountered during download, attempting to read result'
+
+        # begin data analysis
+        itr = 0
+        for line in response:
+            line = line.rstrip()
+            #print line
+            if line != "":
+                itr = itr+1 # note +1 higher than the index
+                #print "Line",itr,":",line
+                csv_reader = csv.reader( [ line ] )
+                for row in csv_reader:
+                    row[1] = int(row[1]) # epoch time
+                    row[2] = int(row[2]) # id
+                    row[4] = float(row[4]) # lat
+                    row[5] = float(row[5]) # lng
+                    row[6] = int(row[6]) # alt
+                    row[7] = int(row[7]) # acc
+                    row[8] = int(row[8]) # fix
+                    if row[9] == '': # catch a simulated drone and set link to 100%
+                        row[9] = int(100)
+                    else:
+                        row[9] = int(row[9]) # lnk
+                    if row[10] == '': # catch a simulated drone and set battery to 100%
+                        row[10] = int(100) # eng
+                    else:
+                        row[10] = int(row[10])
+
+                    drone_index_old = self.get_drone_index_from_id(row[2])
+                    if drone_index_old != None:
+                        print "Already seen", row[3], ", id:", drone_index_old
+                        # Update values: time, epoch, lat, lng, alt, acc, fix, lng, eng
+                        self.DroneIDdataStructured[drone_index_old][0] = row[0]
+                        self.DroneIDdataStructured[drone_index_old][1] = row[1]
+                        self.DroneIDdataStructured[drone_index_old][4] = row[4]
+                        self.DroneIDdataStructured[drone_index_old][5] = row[5]
+                        self.DroneIDdataStructured[drone_index_old][6] = row[6]
+                        self.DroneIDdataStructured[drone_index_old][7] = row[7]
+                        self.DroneIDdataStructured[drone_index_old][8] = row[8]
+                        self.DroneIDdataStructured[drone_index_old][9] = row[9]
+                        self.DroneIDdataStructured[drone_index_old][10] = row[10]
+
+                        # Update the raw entry
+                        self.DroneIDdataRaw[drone_index_old] = line
+                    else:
+                        print "New", row[3], ", appending specific drone data"
+                        row[11] = int(row[11]) # sim, not used for updating
+                        # Add entry to structured
+                        self.DroneIDdataRaw.append(line)
+                        self.DroneIDdataStructured.append(row)
+                        self.drone_count = self.drone_count + 1
+
+        print 'Update done\n'
     def print_data(self):
         if self.drone_count > 0:
             print self.DroneIDdataStructured
@@ -232,7 +300,7 @@ class droneid_data():
                 return []
             else: return None
         else: return None
-    def get_drone_index(self, drone):
+    def get_drone_index_from_name(self, drone):
         if self.drone_count > 0:
             if drone != "" and type(drone)==str:
                 itr = 0
@@ -243,18 +311,64 @@ class droneid_data():
                 return None
             else: return None
         else: return None
+    def get_drone_index_from_id(self, drone_id):
+        if self.drone_count > 0:
+            if drone_id >= 0 and type(drone_id)==int:
+                itr = 0
+                for line in self.DroneIDdataStructured:
+                    if line[2] == drone_id:
+                        return itr
+                    itr = itr+1
+                return None
+            else: return None
+        else: return None
 
 if __name__ == '__main__':
     # Run self test
     # self test function not made yet
 
+    LOG_TEST_DATA = [
+		{
+			'aid': 900,
+			'lat': 55.395,
+			'lng': 10.371,
+			'alt': 50,
+		},
+		{
+			'aid': 901,
+			'lat': 55.396,
+			'lng': 10.372,
+			'alt': 100,
+		}
+	]
+
+    simulator_module = droneid_simulator()
+    simulator_module.send_log_entry (LOG_TEST_DATA[0])
+
     droneid_module = droneid_data(False)
     droneid_module.download_data()
     #droneid_module.print_data()
-    droneid_module.print_drone_pretty(0)
+    #droneid_module.print_drone_pretty(0)
+    droneid_module.print_raw()
+    droneid_module.print_data()
+
+    time.sleep(2)
+    simulator_module.send_log_entry (LOG_TEST_DATA[0])
+    simulator_module.send_log_entry (LOG_TEST_DATA[1])
+    droneid_module.update_data()
+    droneid_module.print_raw()
+    droneid_module.print_data()
+
+    time.sleep(2)
+    simulator_module.send_log_entry (LOG_TEST_DATA[0])
+    simulator_module.send_log_entry (LOG_TEST_DATA[1])
+    droneid_module.update_data()
+    droneid_module.print_raw()
+    droneid_module.print_data()
     #print droneid_module.get_drone_data(0)
     #print droneid_module.get_drone_data_from_name('000901')
-    #print droneid_module.get_drone_index('000901')
+    #print droneid_module.get_drone_index_from_id(901)
+    #print droneid_module.get_drone_index_from_name('000901')
     #print droneid_module.get_time_since_epoch_formatted_local(0)
     #droneid_module.print_description()
     #droneid_module.print_raw()

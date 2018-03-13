@@ -32,8 +32,9 @@ forever = 60*60*24*365*100  # 100 years excl. leap year
 internet_connection_tries = 5
 
 class adsb_data():
-    def __init__(self, debug):
+    def __init__(self, debug = False):
         self.internet_tester = internet_tools()
+        self.url = 'https://droneid.dk/tobias/adsb.php'
         self.debug = debug
         self.aircraft_count = 0
         self.ADSBdataFields = ['time_stamp','time_since_epoch','icao','flight','lat','lon','alt','track','speed']
@@ -52,11 +53,10 @@ class adsb_data():
         self.aircraft_count = 0
         self.ADSBdataRaw = []
         self.ADSBdataStructured = []
-        url = 'https://droneid.dk/tobias/adsb.php'
         if self.debug:
             print 'Attempting to download'
         try:
-            response = urlopen(url)
+            response = urlopen(self.url)
         except HTTPError as e:
             result = '%s' % (e.code)
         except URLError as e:

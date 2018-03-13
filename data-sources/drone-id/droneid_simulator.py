@@ -8,7 +8,7 @@ Descriptors: KJ = Kjeld Jensen (kjen@mmmi.sdu.dk), TL = Tobias Lundby (tobiaslun
 
 """
 Description:
-
+Simulator class for the DroneID project where drones manually can be added to the system.
 License: BSD 3-Clause
 """
 
@@ -17,7 +17,7 @@ import requests
 #print 'Import done\n'
 
 class droneid_simulator():
-	def __init__(self,debug):
+	def __init__(self,debug = False):
 		self.debug = debug
 	def send_log_entry(self, log):
 		r = requests.post("https://droneid.dk/tobias/droneid_log.php", data={'aid': log['aid'], 'lat': log['lat'], 'lon': log['lng'], 'alt': log['alt']})
