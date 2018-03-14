@@ -79,7 +79,7 @@ class adsb_data():
                     row[1] = int(row[1]) # epoch time
                     row[4] = float(row[4]) # lat
                     row[5] = float(row[5]) # lng
-                    row[6] = int(row[6]) # alt
+                    row[6] = float(row[6]) # alt
                     row[7] = int(row[7]) # track
                     row[8] = int(row[8]) # speed
                     self.ADSBdataStructured.append(row)

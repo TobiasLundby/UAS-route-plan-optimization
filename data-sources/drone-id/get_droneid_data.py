@@ -81,8 +81,8 @@ class droneid_data():
                     row[2] = int(row[2]) # id
                     row[4] = float(row[4]) # lat
                     row[5] = float(row[5]) # lng
-                    row[6] = int(row[6]) # alt
-                    row[7] = int(row[7]) # acc
+                    row[6] = float(row[6]) # alt
+                    row[7] = float(row[7]) # acc
                     row[8] = int(row[8]) # fix
                     if row[9] == '': # catch a simulated drone and set link to 100%
                         row[9] = int(100)
@@ -143,8 +143,8 @@ class droneid_data():
                     row[2] = int(row[2]) # id
                     row[4] = float(row[4]) # lat
                     row[5] = float(row[5]) # lng
-                    row[6] = int(row[6]) # alt
-                    row[7] = int(row[7]) # acc
+                    row[6] = float(row[6]) # alt
+                    row[7] = float(row[7]) # acc
                     row[8] = int(row[8]) # fix
                     if row[9] == '': # catch a simulated drone and set link to 100%
                         row[9] = int(100)
@@ -158,23 +158,33 @@ class droneid_data():
                     drone_index_old = self.get_drone_index_from_id(row[2])
                     if drone_index_old != None:
                         print "Already seen", row[3], ", id:", drone_index_old
-                        # Update values: time, epoch, lat, lng, alt, acc, fix, lng, eng
                         if self.DroneIDdataStructured[drone_index_old][1] < row[1] or self.DroneIDdataStructured[drone_index_old][7] < row[7]:
                             # New or better data received
-                            self.DroneIDdataStructured[drone_index_old][0] = row[0]
-                            self.DroneIDdataStructured[drone_index_old][1] = row[1]
-                            self.DroneIDdataStructured[drone_index_old][4] = row[4]
-                            self.DroneIDdataStructured[drone_index_old][5] = row[5]
-                            self.DroneIDdataStructured[drone_index_old][6] = row[6]
-                            self.DroneIDdataStructured[drone_index_old][7] = row[7]
-                            self.DroneIDdataStructured[drone_index_old][8] = row[8]
-                            self.DroneIDdataStructured[drone_index_old][9] = row[9]
-                            self.DroneIDdataStructured[drone_index_old][10] = row[10]
+                            # save old values: 'time_since_epoch_oldS','lat_oldS','lng_oldS','alt_oldS'
+                            self.DroneIDdataStructured[drone_index_old][12].append(self.DroneIDdataStructured[drone_index_old][1]) # 'time_since_epoch_oldS'
+                            self.DroneIDdataStructured[drone_index_old][13].append(self.DroneIDdataStructured[drone_index_old][4]) # 'lat_oldS'
+                            self.DroneIDdataStructured[drone_index_old][14].append(self.DroneIDdataStructured[drone_index_old][5]) # 'lng_oldS'
+                            self.DroneIDdataStructured[drone_index_old][15].append(self.DroneIDdataStructured[drone_index_old][6]) # 'alt_oldS'
+                            # Update values: time, epoch, lat, lng, alt, acc, fix, lnk, eng
+                            self.DroneIDdataStructured[drone_index_old][0] = row[0] # time
+                            self.DroneIDdataStructured[drone_index_old][1] = row[1] # epoch
+                            self.DroneIDdataStructured[drone_index_old][4] = row[4] # lat
+                            self.DroneIDdataStructured[drone_index_old][5] = row[5] # lng
+                            self.DroneIDdataStructured[drone_index_old][6] = row[6] # alt
+                            self.DroneIDdataStructured[drone_index_old][7] = row[7] # acc
+                            self.DroneIDdataStructured[drone_index_old][8] = row[8] # fix
+                            self.DroneIDdataStructured[drone_index_old][9] = row[9] # lnk
+                            self.DroneIDdataStructured[drone_index_old][10] = row[10] # eng
                             # Update the raw entry
                             self.DroneIDdataRaw[drone_index_old] = line
                     else:
                         print "New", row[3], ", appending specific drone data"
                         row[11] = int(row[11]) # sim, not used for updating
+                        # Make arrays for 'time_since_epoch_oldS','lat_oldS','lng_oldS','alt_oldS'
+                        row.append([])
+                        row.append([])
+                        row.append([])
+                        row.append([])
                         # Add entry to structured
                         self.DroneIDdataRaw.append(line)
                         self.DroneIDdataStructured.append(row)
@@ -344,35 +354,55 @@ if __name__ == '__main__':
 		},
 		{
 			'aid': 901,
-			'lat': 55.396,
-			'lng': 10.372,
+			'lat': 55.395,
+			'lng': 10.371,
 			'alt': 100,
 		}
 	]
 
-    simulator_module = droneid_simulator()
+    simulator_module = droneid_simulator(True)
     simulator_module.send_log_entry (LOG_TEST_DATA[0])
 
     droneid_module = droneid_data(False)
     droneid_module.download_data()
     #droneid_module.print_data()
     #droneid_module.print_drone_pretty(0)
-    droneid_module.print_raw()
-    droneid_module.print_data()
+    # droneid_module.print_raw()
+    # droneid_module.print_data()
 
-    time.sleep(2)
-    simulator_module.send_log_entry (LOG_TEST_DATA[0])
-    simulator_module.send_log_entry (LOG_TEST_DATA[1])
-    droneid_module.update_data()
-    droneid_module.print_raw()
-    droneid_module.print_data()
+    # time.sleep(2)
+    # simulator_module.send_log_entry (LOG_TEST_DATA[0])
+    # simulator_module.send_log_entry (LOG_TEST_DATA[1])
+    # droneid_module.update_data()
+    # droneid_module.print_raw()
+    # droneid_module.print_data()
+    #
+    # time.sleep(2)
+    # simulator_module.send_log_entry (LOG_TEST_DATA[0])
+    # simulator_module.send_log_entry (LOG_TEST_DATA[1])
+    # droneid_module.update_data()
+    # droneid_module.print_raw()
+    # droneid_module.print_data()
 
-    time.sleep(2)
-    simulator_module.send_log_entry (LOG_TEST_DATA[0])
-    simulator_module.send_log_entry (LOG_TEST_DATA[1])
-    droneid_module.update_data()
-    droneid_module.print_raw()
-    droneid_module.print_data()
+    ctr = 0
+    while True:
+        time.sleep(1)
+        ctr = ctr + 1
+        if ctr == 10:
+            LOG_TEST_DATA[0]['lat'] = LOG_TEST_DATA[0]['lat'] + 0.001
+            LOG_TEST_DATA[0]['lng'] = LOG_TEST_DATA[0]['lng'] + 0.001
+            LOG_TEST_DATA[0]['alt'] = LOG_TEST_DATA[0]['alt'] + 1
+            simulator_module.send_log_entry (LOG_TEST_DATA[0])
+
+            LOG_TEST_DATA[1]['lat'] = LOG_TEST_DATA[1]['lat'] - 0.001
+            LOG_TEST_DATA[1]['lng'] = LOG_TEST_DATA[1]['lng'] - 0.001
+            LOG_TEST_DATA[1]['alt'] = LOG_TEST_DATA[1]['alt'] + 1
+            simulator_module.send_log_entry (LOG_TEST_DATA[1])
+            ctr = 0
+        droneid_module.update_data()
+        droneid_module.print_raw()
+        droneid_module.print_data()
+
     #print droneid_module.get_drone_data(0)
     #print droneid_module.get_drone_data_from_name('000901')
     #print droneid_module.get_drone_index_from_id(901)
