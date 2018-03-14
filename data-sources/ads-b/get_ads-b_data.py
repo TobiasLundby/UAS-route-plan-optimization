@@ -369,7 +369,9 @@ if __name__ == '__main__':
     #print "\n\n"
     #adsb_module.print_CSV()
     #adsb_module.print_data()
-    adsb_module.save_CSV_file()
+    # # adsb_module.save_CSV_file()
+
+    adsb_module.update_data()
     #adsb_module.print_aircraft_pretty(0)
     # adsb_module.print_aircraft_pretty(1)
     # adsb_module.print_aircraft_pretty(2)
