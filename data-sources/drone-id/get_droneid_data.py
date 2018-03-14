@@ -3,12 +3,14 @@
 """
 Descriptors: TL = Tobias Lundby (tobiaslundby@gmail.com)
 2018-03-09 TL First version
+2018-03-12 TL Started expanding functions
+2018-03-14 TL Class completed
 """
 
 """
 Description:
 This scripts downloads DroneID data from a source provided by Kjeld Jensen (kjen@mmmi.sdu.dk) and parses it accordingly for easy use
-The script support redownload using the 'download_data' method
+The script support redownload using the 'download_data' method.
 License: BSD 3-Clause
 Data source: https://droneid.dk/tobias/droneid.php
 Data readme: https://droneid.dk/tobias/vejledning.txt
@@ -119,7 +121,7 @@ class droneid_data():
     def update_data(self, max_history_data = inf):
         if self.debug:
             print '\nUpdate begun'
-        self.drone_count_new = 0
+        self.drone_new_data_count = 0
 
         if self.debug:
             print 'Attempting to download'
@@ -159,7 +161,7 @@ class droneid_data():
                     else:
                         row[10] = int(row[10])
 
-                    drone_index_old = self.get_drone_index_from_id(row[2])
+                    drone_index_old = self.get_drone_index_from_id(row[2]) # match id's to see if it exists
                     if drone_index_old != None:
                         if self.debug:
                             print "Already seen", row[3], ", id:", drone_index_old
@@ -190,6 +192,7 @@ class droneid_data():
                             self.DroneIDdataStructured[drone_index_old][10] = row[10] # eng
                             # Update the raw entry
                             self.DroneIDdataRaw[drone_index_old] = line
+                            self.drone_new_data_count = self.drone_new_data_count + 1
                     else:
                         if self.debug:
                             print "New", row[3], ", appending specific drone data"
@@ -327,6 +330,20 @@ class droneid_data():
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][11]
         else: return None
+    def get_time_since_epoch_history(self, drone_index):
+        # Returns the epoch time history inclusive the current last epoch time (not included in history array)
+        if self.drone_count > drone_index and type(drone_index)==int:
+            return_arr = self.DroneIDdataStructured[drone_index][12]
+            return_arr.append(self.get_time_since_epoch(drone_index))
+            return return_arr
+        else: return None
+    def get_lat_history(self, drone_index):
+        # Returns the epoch time history inclusive the current last epoch time (not included in history array)
+        if self.drone_count > drone_index and type(drone_index)==int:
+            return_arr = self.DroneIDdataStructured[drone_index][13]
+            return_arr.append(self.get_lat(drone_index))
+            return return_arr
+        else: return None
     def get_drones_all(self):
         if self.drone_count > 0:
             return self.DroneIDdataStructured
@@ -388,14 +405,14 @@ if __name__ == '__main__':
     LOG_TEST_DATA = [
 		{
 			'aid': 900,
-			'lat': 55.395,
-			'lng': 10.371,
+			'lat': 55.399,
+			'lng': 10.385,
 			'alt': 50,
 		},
 		{
 			'aid': 901,
-			'lat': 55.395,
-			'lng': 10.371,
+			'lat': 55.399,
+			'lng': 10.385,
 			'alt': 100,
 		}
 	]
@@ -428,15 +445,15 @@ if __name__ == '__main__':
     while True:
         time.sleep(1)
         ctr = ctr + 1
-        if ctr == 10:
-            LOG_TEST_DATA[0]['lat'] = LOG_TEST_DATA[0]['lat'] + 0.001
-            LOG_TEST_DATA[0]['lng'] = LOG_TEST_DATA[0]['lng'] + 0.001
-            LOG_TEST_DATA[0]['alt'] = LOG_TEST_DATA[0]['alt'] + 1
+        if ctr == 9:
+            LOG_TEST_DATA[0]['lat'] = LOG_TEST_DATA[0]['lat'] + 0.0001
+            LOG_TEST_DATA[0]['lng'] = LOG_TEST_DATA[0]['lng'] + 0.0001
+            LOG_TEST_DATA[0]['alt'] = LOG_TEST_DATA[0]['alt'] + 0.1
             simulator_module.send_log_entry (LOG_TEST_DATA[0])
 
-            LOG_TEST_DATA[1]['lat'] = LOG_TEST_DATA[1]['lat'] - 0.001
-            LOG_TEST_DATA[1]['lng'] = LOG_TEST_DATA[1]['lng'] - 0.001
-            LOG_TEST_DATA[1]['alt'] = LOG_TEST_DATA[1]['alt'] + 1
+            LOG_TEST_DATA[1]['lat'] = LOG_TEST_DATA[1]['lat'] - 0.0001
+            LOG_TEST_DATA[1]['lng'] = LOG_TEST_DATA[1]['lng'] - 0.0001
+            LOG_TEST_DATA[1]['alt'] = LOG_TEST_DATA[1]['alt'] + 0.1
             simulator_module.send_log_entry (LOG_TEST_DATA[1])
             ctr = 0
         droneid_module.update_data(3)

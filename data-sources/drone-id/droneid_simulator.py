@@ -4,6 +4,7 @@
 Descriptors: KJ = Kjeld Jensen (kjen@mmmi.sdu.dk), TL = Tobias Lundby (tobiaslundby@gmail.com)
 2018-03-?? KJ Example code
 2018-03-09 TL Fork of KJ example code
+2018-03-12 TL Made into class for use in other programs
 """
 
 """
@@ -31,14 +32,14 @@ if __name__ == '__main__':
 	LOG_TEST_DATA = [
 		{
 			'aid': 900,
-			'lat': 55.395,
-			'lng': 10.371,
+			'lat': 55.399,
+			'lng': 10.385,
 			'alt': 50,
 		},
 		{
 			'aid': 901,
-			'lat': 55.396,
-			'lng': 10.372,
+			'lat': 55.400,
+			'lng': 10.386,
 			'alt': 100,
 		}
 	]

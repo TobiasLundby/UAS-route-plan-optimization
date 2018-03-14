@@ -4,6 +4,9 @@
 Descriptors: TL = Tobias Lundby (tobiaslundby@gmail.com)
 2018-01-29 TL First version
 2018-01-30 TL Refined version with safety measures for internet connection and empty response
+---------- TL Expanded class
+2018-03-13 TL Class almost done, missing update function but allows redownload but no remembering
+2018-03-14 TL Made update function, but it is not tested because the receiver is down
 """
 
 """
@@ -29,6 +32,7 @@ import pytz # timezones in the datetime format
 #print 'Import done\n'
 
 forever = 60*60*24*365*100  # 100 years excl. leap year
+inf = 4294967295 # 32bit from 0
 internet_connection_tries = 5
 
 class adsb_data():
@@ -37,7 +41,8 @@ class adsb_data():
         self.url = 'https://droneid.dk/tobias/adsb.php'
         self.debug = debug
         self.aircraft_count = 0
-        self.ADSBdataFields = ['time_stamp','time_since_epoch','icao','flight','lat','lon','alt','track','speed']
+        self.ADSBdataFieldsRaw = ['time_stamp','time_since_epoch','icao','flight','lat','lon','alt','track','speed']
+        self.ADSBdataFields = ['time_stamp','time_since_epoch','icao','flight','lat','lon','alt','track','speed','time_since_epoch_oldS','lat_oldS','lng_oldS','alt_oldS','track_oldS','speed_oldS']
         self.ADSBdataRaw = []
         self.ADSBdataStructured = []
         for x in range(1, internet_connection_tries+1):
@@ -82,6 +87,12 @@ class adsb_data():
                     row[6] = float(row[6]) # alt
                     row[7] = int(row[7]) # track
                     row[8] = int(row[8]) # speed
+                    row.append([]) # time_since_epoch_oldS
+                    row.append([]) # lat_oldS
+                    row.append([]) # lng_oldS
+                    row.append([]) # alt_oldS
+                    row.append([]) # track_oldS
+                    row.append([]) # speed_oldS
                     self.ADSBdataStructured.append(row)
         self.aircraft_count = itr
         if self.aircraft_count == 0:
@@ -95,6 +106,90 @@ class adsb_data():
         # Make JSON Data
         # for row in self.ADSBdataStructured:
         #     print row
+    def update_data(self, max_history_data = inf):
+        if self.debug:
+            print '\nUpdate begun'
+        self.aircraft_new_data_count = 0
+
+        if self.debug:
+            print 'Attempting to download'
+        try:
+            response = urlopen(self.url)
+        except HTTPError as e:
+            result = '%s' % (e.code)
+        except URLError as e:
+            result = '%s %s' % (e.code, e.reason)
+        else:
+            if self.debug:
+                print 'No errors encountered during download, attempting to read result'
+
+        # begin data analysis
+        itr = 0
+        for line in response:
+            line = line.rstrip()
+            #print line
+            if line != "":
+                itr = itr+1 # note +1 higher than the index
+                #print "Line",itr,":",line
+                csv_reader = csv.reader( [ line ] )
+                for row in csv_reader:
+                    row[1] = int(row[1]) # epoch time
+                    row[4] = float(row[4]) # lat
+                    row[5] = float(row[5]) # lng
+                    row[6] = float(row[6]) # alt
+                    row[7] = int(row[7]) # track
+                    row[8] = int(row[8]) # speed
+
+                    aircraft_index_old = self.get_aircraft_index(row[3]) # match aircraft name to see if it exists
+                    if aircraft_index_old != None:
+                        if self.debug:
+                            print "Already seen", row[3], ", id:", aircraft_index_old
+                        if self.ADSBdataStructured[1] < row[1]:
+                            # New data received
+                            # Remove data which exceeds max_history_data limit
+                            if len(self.ADSBdataStructured[aircraft_index_old][9]) >= max_history_data:
+                                # print len(self.ADSBdataStructured[aircraft_index_old][9])
+                                # print len(self.ADSBdataStructured[aircraft_index_old][9])-max_history_data
+                                self.ADSBdataStructured[aircraft_index_old][9] = self.ADSBdataStructured[aircraft_index_old][9][len(self.ADSBdataStructured[aircraft_index_old][9])-(max_history_data-1):len(self.ADSBdataStructured[aircraft_index_old][9])]
+                                self.ADSBdataStructured[aircraft_index_old][10] = self.ADSBdataStructured[aircraft_index_old][10][len(self.ADSBdataStructured[aircraft_index_old][10])-(max_history_data-1):len(self.ADSBdataStructured[aircraft_index_old][10])]
+                                self.ADSBdataStructured[aircraft_index_old][11] = self.ADSBdataStructured[aircraft_index_old][11][len(self.ADSBdataStructured[aircraft_index_old][11])-(max_history_data-1):len(self.ADSBdataStructured[aircraft_index_old][11])]
+                                self.ADSBdataStructured[aircraft_index_old][12] = self.ADSBdataStructured[aircraft_index_old][12][len(self.ADSBdataStructured[aircraft_index_old][12])-(max_history_data-1):len(self.ADSBdataStructured[aircraft_index_old][12])]
+                                self.ADSBdataStructured[aircraft_index_old][13] = self.ADSBdataStructured[aircraft_index_old][13][len(self.ADSBdataStructured[aircraft_index_old][13])-(max_history_data-1):len(self.ADSBdataStructured[aircraft_index_old][13])]
+                                self.ADSBdataStructured[aircraft_index_old][14] = self.ADSBdataStructured[aircraft_index_old][14][len(self.ADSBdataStructured[aircraft_index_old][14])-(max_history_data-1):len(self.ADSBdataStructured[aircraft_index_old][14])]
+                            # save old values: 'time_since_epoch_oldS','lat_oldS','lng_oldS','alt_oldS','track_oldS','speed_oldS'
+                            self.ADSBdataStructured[aircraft_index_old][9].append(self.ADSBdataStructured[aircraft_index_old][1]) # time_since_epoch_oldS
+                            self.ADSBdataStructured[aircraft_index_old][10].append(self.ADSBdataStructured[aircraft_index_old][4]) # lat_oldS
+                            self.ADSBdataStructured[aircraft_index_old][11].append(self.ADSBdataStructured[aircraft_index_old][5]) # lng_oldS
+                            self.ADSBdataStructured[aircraft_index_old][12].append(self.ADSBdataStructured[aircraft_index_old][6]) # alt_oldS
+                            self.ADSBdataStructured[aircraft_index_old][13].append(self.ADSBdataStructured[aircraft_index_old][7]) # track_oldS
+                            self.ADSBdataStructured[aircraft_index_old][14].append(self.ADSBdataStructured[aircraft_index_old][8]) # speed_oldS
+                            # Update values: time, epoch, lat, lon, alt, track, speed
+                            self.ADSBdataStructured[aircraft_index_old][0] = row[0] # time
+                            self.ADSBdataStructured[aircraft_index_old][1] = row[1] # epoch
+                            self.ADSBdataStructured[aircraft_index_old][4] = row[4] # lat
+                            self.ADSBdataStructured[aircraft_index_old][5] = row[5] # lng
+                            self.ADSBdataStructured[aircraft_index_old][6] = row[6] # alt
+                            self.ADSBdataStructured[aircraft_index_old][7] = row[7] # track
+                            self.ADSBdataStructured[aircraft_index_old][8] = row[8] # speed
+                            # Update the raw entry
+                            self.ADSBdataFieldsRaw[aircraft_index_old] = line
+                            self.aircraft_new_data_count = self.aircraft_new_data_count + 1
+                        else:
+                            if self.debug:
+                                print "New", row[3], ", appending specific aircraft data"
+                            # Make arrays for 'time_since_epoch_oldS','lat_oldS','lng_oldS','alt_oldS'
+                            row.append([]) # time_since_epoch_oldS
+                            row.append([]) # lat_oldS
+                            row.append([]) # lng_oldS
+                            row.append([]) # alt_oldS
+                            row.append([]) # track_oldS
+                            row.append([]) # speed_oldS
+                            # Add entry to structured
+                            self.ADSBdataRaw.append(line)
+                            self.ADSBdataStructured.append(row)
+                            self.aircraft_count = self.aircraft_count + 1
+        if self.debug:
+            print 'Update done\n'
     def print_data(self):
         if self.aircraft_count > 0:
             print self.ADSBdataStructured
