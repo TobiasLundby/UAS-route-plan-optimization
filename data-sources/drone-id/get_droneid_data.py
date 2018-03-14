@@ -29,13 +29,15 @@ import pytz # timezones in the datetime format
 #print 'Import done\n'
 
 forever = 60*60*24*365*100 # 100 years excl. leap year
+inf = 4294967295 # 32bit from 0
 internet_connection_tries = 5
 
 class droneid_data():
-    def __init__(self, debug):
+    def __init__(self, debug = False, force_sim_to_real = False):
         self.internet_tester = internet_tools()
         self.url = 'https://droneid.dk/tobias/droneid.php'
         self.debug = debug
+        self.force_sim_to_real = force_sim_to_real
         self.aircraft_count = 0
         self.DroneIDdataFieldsRaw = ['time_stamp','time_since_epoch','id','name','lat','lon','alt','acc','fix','lnk','eng','sim']
         self.DroneIDdataFields = ['time_stamp','time_since_epoch','id','name','lat','lon','alt','acc','fix','lnk','eng','sim','time_since_epoch_oldS','lat_oldS','lng_oldS','alt_oldS']
@@ -92,7 +94,8 @@ class droneid_data():
                         row[10] = int(100) # eng
                     else:
                         row[10] = int(row[10])
-                    row[11] = int(row[11]) # sim
+                    if self.force_sim_to_real == True: row[11] = 0
+                    else: row[11] = int(row[11]) # sim
                     # Make arrays for 'time_since_epoch_oldS','lat_oldS','lng_oldS','alt_oldS'
                     row.append([])
                     row.append([])
@@ -113,8 +116,9 @@ class droneid_data():
         # Make JSON Data
         # for row in self.DroneIDdataStructured:
         #     print row
-    def update_data(self):
-        print '\nUpdate begun'
+    def update_data(self, max_history_data = inf):
+        if self.debug:
+            print '\nUpdate begun'
         self.drone_count_new = 0
 
         if self.debug:
@@ -157,9 +161,18 @@ class droneid_data():
 
                     drone_index_old = self.get_drone_index_from_id(row[2])
                     if drone_index_old != None:
-                        print "Already seen", row[3], ", id:", drone_index_old
+                        if self.debug:
+                            print "Already seen", row[3], ", id:", drone_index_old
                         if self.DroneIDdataStructured[drone_index_old][1] < row[1] or self.DroneIDdataStructured[drone_index_old][7] < row[7]:
                             # New or better data received
+                            # Remove data which exceeds max_history_data limit
+                            if len(self.DroneIDdataStructured[drone_index_old][12]) >= max_history_data:
+                                # print len(self.DroneIDdataStructured[drone_index_old][15])
+                                # print len(self.DroneIDdataStructured[drone_index_old][15])-max_history_data
+                                self.DroneIDdataStructured[drone_index_old][12] = self.DroneIDdataStructured[drone_index_old][12][len(self.DroneIDdataStructured[drone_index_old][12])-(max_history_data-1):len(self.DroneIDdataStructured[drone_index_old][12])]
+                                self.DroneIDdataStructured[drone_index_old][13] = self.DroneIDdataStructured[drone_index_old][14][len(self.DroneIDdataStructured[drone_index_old][13])-(max_history_data-1):len(self.DroneIDdataStructured[drone_index_old][13])]
+                                self.DroneIDdataStructured[drone_index_old][14] = self.DroneIDdataStructured[drone_index_old][15][len(self.DroneIDdataStructured[drone_index_old][14])-(max_history_data-1):len(self.DroneIDdataStructured[drone_index_old][14])]
+                                self.DroneIDdataStructured[drone_index_old][15] = self.DroneIDdataStructured[drone_index_old][15][len(self.DroneIDdataStructured[drone_index_old][15])-(max_history_data-1):len(self.DroneIDdataStructured[drone_index_old][15])]
                             # save old values: 'time_since_epoch_oldS','lat_oldS','lng_oldS','alt_oldS'
                             self.DroneIDdataStructured[drone_index_old][12].append(self.DroneIDdataStructured[drone_index_old][1]) # 'time_since_epoch_oldS'
                             self.DroneIDdataStructured[drone_index_old][13].append(self.DroneIDdataStructured[drone_index_old][4]) # 'lat_oldS'
@@ -178,8 +191,10 @@ class droneid_data():
                             # Update the raw entry
                             self.DroneIDdataRaw[drone_index_old] = line
                     else:
-                        print "New", row[3], ", appending specific drone data"
-                        row[11] = int(row[11]) # sim, not used for updating
+                        if self.debug:
+                            print "New", row[3], ", appending specific drone data"
+                        if self.force_sim_to_real == True: row[11] = 0
+                        else: row[11] = int(row[11]) # sim, not used for updating
                         # Make arrays for 'time_since_epoch_oldS','lat_oldS','lng_oldS','alt_oldS'
                         row.append([])
                         row.append([])
@@ -189,8 +204,15 @@ class droneid_data():
                         self.DroneIDdataRaw.append(line)
                         self.DroneIDdataStructured.append(row)
                         self.drone_count = self.drone_count + 1
-
-        print 'Update done\n'
+        if self.debug:
+            print 'Update done\n'
+    def clear_history_data(self):
+        if self.drone_count > 0:
+            for line in self.DroneIDdataStructured:
+                line[12] = []
+                line[13] = []
+                line[14] = []
+                line[15] = []
     def print_data(self):
         if self.drone_count > 0:
             print self.DroneIDdataStructured
@@ -305,6 +327,24 @@ class droneid_data():
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][11]
         else: return None
+    def get_drones_all(self):
+        if self.drone_count > 0:
+            return self.DroneIDdataStructured
+        return None
+    def get_drones_real(self):
+        return_arr = []
+        if self.drone_count > 0:
+            for line in self.DroneIDdataStructured:
+                if line[11] == 0: # sim = 0 = real drone
+                    return_arr.append(line)
+        return return_arr
+    def get_drones_sim(self):
+        return_arr = []
+        if self.drone_count > 0:
+            for line in self.DroneIDdataStructured:
+                if line[11] == 1: # sim = 1 = simulated drone
+                    return_arr.append(line)
+        return return_arr
     def get_drone_data(self, drone_index):
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index]
@@ -360,10 +400,10 @@ if __name__ == '__main__':
 		}
 	]
 
-    simulator_module = droneid_simulator(True)
+    simulator_module = droneid_simulator(False)
     simulator_module.send_log_entry (LOG_TEST_DATA[0])
 
-    droneid_module = droneid_data(False)
+    droneid_module = droneid_data()
     droneid_module.download_data()
     #droneid_module.print_data()
     #droneid_module.print_drone_pretty(0)
@@ -399,9 +439,10 @@ if __name__ == '__main__':
             LOG_TEST_DATA[1]['alt'] = LOG_TEST_DATA[1]['alt'] + 1
             simulator_module.send_log_entry (LOG_TEST_DATA[1])
             ctr = 0
-        droneid_module.update_data()
-        droneid_module.print_raw()
-        droneid_module.print_data()
+        droneid_module.update_data(3)
+        #droneid_module.print_raw()
+        #droneid_module.print_data()
+        print droneid_module.get_drones_sim()
 
     #print droneid_module.get_drone_data(0)
     #print droneid_module.get_drone_data_from_name('000901')

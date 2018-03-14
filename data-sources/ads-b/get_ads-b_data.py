@@ -205,6 +205,10 @@ class adsb_data():
     def get_speed_mph(self, aircraft_index):
         # unit: m/s
         return self.get_speed_kts(aircraft_index)*1.15078
+    def get_aircraft_all(self, aircraft_index):
+        if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
+            return self.ADSBdataStructured
+        return None
     def get_aircraft_data(self, aircraft_index):
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             return self.ADSBdataStructured[aircraft_index]
