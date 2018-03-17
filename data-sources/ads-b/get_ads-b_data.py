@@ -349,14 +349,17 @@ class adsb_data():
             sys.exit()
         else:
             return
-    def save_CSV_file(self):
+    def save_CSV_file(self, include_history = False):
         now = datetime.datetime.now()
         file_name = 'ADS-B_%d-%02d-%02d-%02d-%02d.csv' % (now.year, now.month, now.day, now.hour, now.minute)
         output_file_CSV = open(file_name, 'w')
         output_writer_CSV = csv.writer(output_file_CSV)
         output_writer_CSV.writerow(self.ADSBdataFields)
         for line in self.ADSBdataStructured:
-            output_writer_CSV.writerow(line)
+            if include_history == True:
+                output_writer_CSV.writerow(line)
+            else:
+                output_writer_CSV.writerow(line[0:9]) # the rest of the fields only include history data
         output_file_CSV.close()
 
 def self_test():
