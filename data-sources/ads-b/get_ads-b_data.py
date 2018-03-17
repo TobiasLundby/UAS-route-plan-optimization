@@ -34,6 +34,19 @@ import pytz # timezones in the datetime format
 forever = 60*60*24*365*100  # 100 years excl. leap year
 inf = 4294967295 # 32bit from 0
 internet_connection_tries = 5
+m_to_feet = 3.280839895
+feet_to_m = 0.3048
+deg_to_rad = 0.01745329252
+rad_to_deg = 57.295779513
+
+mps_to_kts = 1.9438444924574
+kts_to_mps = 0.51444444444
+mps_to_kph = 3.6
+kph_to_mps = 0.27777777777778
+mps_to_mph = 2.2369362920544
+mph_to_mps = 0.44704
+kph_to_mph = kph_to_mps*mps_to_mph
+mph_to_kph = mph_to_mps*mps_to_kph
 
 class adsb_data():
     def __init__(self, debug = False):
@@ -227,7 +240,7 @@ class adsb_data():
         lon: [Decimal degrees]
         alt: [m]
         trk: Track [degrees]
-        hsp: Horizontal speed [kts]"""
+        hsp: Horizontal speed [m/s]"""
     def get_time_stamp(self, aircraft_index):
         # GMT+1
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
@@ -277,7 +290,7 @@ class adsb_data():
         else: return None
     def get_alt_ft(self, aircraft_index):
         # unit: feet
-        return self.get_alt_m(aircraft_index)*3.28084
+        return self.get_alt_m(aircraft_index)*m_to_feet
     def get_track_deg(self, aircraft_index):
         # unit: degrees from north positive clockwise
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
@@ -285,21 +298,21 @@ class adsb_data():
         else: return None
     def get_track_rad(self, aircraft_index):
         # unit: radians
-        return self.get_track_deg(aircraft_index)*0.0174533
-    def get_speed_kts(self, aircraft_index):
-        # unit: knots, kts
+        return self.get_track_deg(aircraft_index)*deg_to_rad
+    def get_speed_mps(self, aircraft_index):
+        # unit: m/s
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             return self.ADSBdataStructured[aircraft_index][8]
         else: return None
-    def get_speed_mps(self, aircraft_index):
-        # unit: m/s
-        return self.get_speed_kts(aircraft_index)*0.514444
+    def get_speed_kts(self, aircraft_index):
+        # unit: knots, kts
+        return self.get_speed_mps(aircraft_index)*mps_to_kts
     def get_speed_kph(self, aircraft_index):
         # unit: m/s
-        return self.get_speed_kts(aircraft_index)*1.852
+        return self.get_speed_kts(aircraft_index)*mps_to_kph
     def get_speed_mph(self, aircraft_index):
         # unit: m/s
-        return self.get_speed_kts(aircraft_index)*1.15078
+        return self.get_speed_mps(aircraft_index)*mps_to_mph
     def get_aircraft_all(self, aircraft_index):
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             return self.ADSBdataStructured
@@ -369,9 +382,9 @@ if __name__ == '__main__':
     #print "\n\n"
     #adsb_module.print_CSV()
     #adsb_module.print_data()
-    # # adsb_module.save_CSV_file()
+    adsb_module.save_CSV_file()
 
-    adsb_module.update_data()
+    # adsb_module.update_data()
     #adsb_module.print_aircraft_pretty(0)
     # adsb_module.print_aircraft_pretty(1)
     # adsb_module.print_aircraft_pretty(2)
