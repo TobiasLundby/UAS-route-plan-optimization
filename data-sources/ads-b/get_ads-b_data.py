@@ -382,7 +382,10 @@ class adsb_data():
             file_name = file_in_subfolder + '/' + ('ADS-B_%d-%02d-%02d-%02d-%02d.csv' % (now.year, now.month, now.day, now.hour, now.minute))
         output_file_CSV = open(file_name, 'w')
         output_writer_CSV = csv.writer(output_file_CSV)
-        output_writer_CSV.writerow(self.ADSBdataFields)
+        if include_history == True:
+            output_writer_CSV.writerow(self.ADSBdataFields)
+        else:
+            output_writer_CSV.writerow(self.ADSBdataFieldsRaw)
         for line in self.ADSBdataStructured:
             if include_history == True:
                 output_writer_CSV.writerow(line)
