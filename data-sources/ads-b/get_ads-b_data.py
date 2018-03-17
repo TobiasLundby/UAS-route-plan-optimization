@@ -48,6 +48,8 @@ mph_to_mps = 0.44704
 kph_to_mph = kph_to_mps*mps_to_mph
 mph_to_kph = mph_to_mps*mps_to_kph
 
+run_modes = ['pi','test']
+
 class adsb_data():
     def __init__(self, debug = False):
         self.internet_tester = internet_tools()
@@ -108,6 +110,9 @@ class adsb_data():
                     row.append([]) # speed_oldS
                     self.ADSBdataStructured.append(row)
         self.aircraft_count = itr
+        # print len(self.ADSBdataStructured)
+        # print len(self.ADSBdataRaw)
+
         if self.aircraft_count == 0:
             print "ADS-B receiver seems to be down; no data recieved"
         if self.debug:
@@ -153,12 +158,18 @@ class adsb_data():
                     row[7] = int(row[7]) # track
                     row[8] = int(row[8]) # speed
 
-                    aircraft_index_old = self.get_aircraft_index(row[3]) # match aircraft name to see if it exists
+                    aircraft_index_old = self.get_aircraft_index_from_icao(row[2]) # match aircraft name to see if it exists
                     if aircraft_index_old != None:
+                        #print "Aircraft old index:", aircraft_index_old
+                        #print "Old timestamp:", self.ADSBdataStructured[aircraft_index_old][1]
+                        #print "New timestamp:", row[1]
+                        #print "Timestamp newer:", self.ADSBdataStructured[aircraft_index_old][1] < row[1]
                         if self.debug:
                             print "Already seen", row[3], ", id:", aircraft_index_old
-                        if self.ADSBdataStructured[1] < row[1]:
+                        if self.ADSBdataStructured[aircraft_index_old][1] < row[1]:
                             # New data received
+                            if self.debug:
+                                print " New data received"
                             # Remove data which exceeds max_history_data limit
                             if len(self.ADSBdataStructured[aircraft_index_old][9]) >= max_history_data:
                                 # print len(self.ADSBdataStructured[aircraft_index_old][9])
@@ -185,27 +196,32 @@ class adsb_data():
                             self.ADSBdataStructured[aircraft_index_old][7] = row[7] # track
                             self.ADSBdataStructured[aircraft_index_old][8] = row[8] # speed
                             # Update the raw entry
-                            self.ADSBdataFieldsRaw[aircraft_index_old] = line
+                            #print "Raw length:",len(self.ADSBdataRaw)
+                            self.ADSBdataRaw[aircraft_index_old] = line
                             self.aircraft_new_data_count = self.aircraft_new_data_count + 1
-                        else:
-                            if self.debug:
-                                print "New", row[3], ", appending specific aircraft data"
-                            # Make arrays for 'time_since_epoch_oldS','lat_oldS','lng_oldS','alt_oldS'
-                            row.append([]) # time_since_epoch_oldS
-                            row.append([]) # lat_oldS
-                            row.append([]) # lng_oldS
-                            row.append([]) # alt_oldS
-                            row.append([]) # track_oldS
-                            row.append([]) # speed_oldS
-                            # Add entry to structured
-                            self.ADSBdataRaw.append(line)
-                            self.ADSBdataStructured.append(row)
-                            self.aircraft_count = self.aircraft_count + 1
+                    else:
+                        if self.debug:
+                            print "New", row[3], ", appending specific aircraft data"
+                        # Make arrays for 'time_since_epoch_oldS','lat_oldS','lng_oldS','alt_oldS'
+                        row.append([]) # time_since_epoch_oldS
+                        row.append([]) # lat_oldS
+                        row.append([]) # lng_oldS
+                        row.append([]) # alt_oldS
+                        row.append([]) # track_oldS
+                        row.append([]) # speed_oldS
+                        # Add entry to structured
+                        self.ADSBdataRaw.append(line)
+                        self.ADSBdataStructured.append(row)
+                        self.aircraft_count = self.aircraft_count + 1
         if self.debug:
             print 'Update done\n'
-    def print_data(self):
+    def print_data(self, print_line_by_line = False):
         if self.aircraft_count > 0:
-            print self.ADSBdataStructured
+            if print_line_by_line == True:
+                for line in self.ADSBdataStructured:
+                    print line
+            else:
+                print self.ADSBdataStructured
     def print_raw(self):
         if self.aircraft_count > 0:
             print self.ADSBdataRaw
@@ -331,10 +347,19 @@ class adsb_data():
             else: return None
         else: return None
     def get_aircraft_index(self, aircraft):
-        if self.aircraft_count != "" and type(aircraft)==str:
+        if aircraft != "" and type(aircraft)==str:
             itr = 0
             for line in self.ADSBdataStructured:
                 if line[3] == aircraft:
+                    return itr
+                itr = itr+1
+            return None
+        else: return None
+    def get_aircraft_index_from_icao(self, icao):
+        if icao != "" and type(icao)==str:
+            itr = 0
+            for line in self.ADSBdataStructured:
+                if line[2] == icao:
                     return itr
                 itr = itr+1
             return None
@@ -376,30 +401,60 @@ def self_test():
     print "Self test not PASSED, terminating\n"
     sys.exit()
 
+def update_data_func():
+    time.sleep(5)
+    print "\n"
+    adsb_module.update_data(1)
+    adsb_module.print_data(True)
+
 if __name__ == '__main__':
-    # Run self test
-    self_test()
+    #print 'Number of arguments:', len(sys.argv), 'arguments.'
+    #print 'Argument List:', str(sys.argv)
+    if len(sys.argv) > 1:
+        #print "Enough arguments provided"
+        # Run self test
+        self_test()
 
-    adsb_module = adsb_data(False)
+        adsb_module = adsb_data(False)
 
-    adsb_module.download_data()
+        adsb_module.download_data()
 
-    #adsb_module.print_raw()
-    #print "\n\n"
-    #adsb_module.print_CSV()
-    #adsb_module.print_data()
-    adsb_module.save_CSV_file("ads-b_data")
+        if sys.argv[1] == run_modes[0]:
+            print 'Entering', run_modes[0],'logger mode'
+            adsb_module.save_CSV_file("ads-b_data")
+        elif  sys.argv[1] == run_modes[1]:
+            print 'Entering', run_modes[1],'logger mode'
 
-    # adsb_module.update_data()
-    #adsb_module.print_aircraft_pretty(0)
-    # adsb_module.print_aircraft_pretty(1)
-    # adsb_module.print_aircraft_pretty(2)
-    # adsb_module.print_aircraft_pretty(3)
-    # adsb_module.print_aircraft_pretty(4)
-    #
-    # adsb_module.print_aircraft_pretty(adsb_module.get_aircraft_index("VKG1305"))
-    #
-    # adsb_module.check_input_aircraft_index(1)
+            #adsb_module.print_raw()
+            #print "\n\n"
+            #adsb_module.print_CSV()
+            adsb_module.print_data(True)
+            ## adsb_module.save_CSV_file("ads-b_data")
 
-    #print adsb_module.get_aircraft_data_from_name("VKG1305")
-    #print adsb_module.get_aircraft_data(adsb_module.get_aircraft_index("BAW798H"))
+            # while True:
+            #     print "\n"
+            #     time.sleep(5)
+            #     adsb_module.update_data(1)
+            #     adsb_module.print_data(True)
+            try:
+                while True:
+                    update_data_func()
+            except KeyboardInterrupt:
+                pass
+            print "Stopping due to keyboard interrupt"
+            #adsb_module.print_aircraft_pretty(0)
+            # adsb_module.print_aircraft_pretty(1)
+            # adsb_module.print_aircraft_pretty(2)
+            # adsb_module.print_aircraft_pretty(3)
+            # adsb_module.print_aircraft_pretty(4)
+            #
+            # adsb_module.print_aircraft_pretty(adsb_module.get_aircraft_index("VKG1305"))
+            #
+            # adsb_module.check_input_aircraft_index(1)
+
+            #print adsb_module.get_aircraft_data_from_name("VKG1305")
+            #print adsb_module.get_aircraft_data(adsb_module.get_aircraft_index("BAW798H"))
+    else:
+        print "Proper use of script requires argument to set mode"
+        print " Modes:", run_modes
+        print " Example: python", sys.argv[0], run_modes[0]
