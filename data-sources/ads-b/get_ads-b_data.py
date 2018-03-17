@@ -349,9 +349,12 @@ class adsb_data():
             sys.exit()
         else:
             return
-    def save_CSV_file(self, include_history = False):
+    def save_CSV_file(self, file_in_subfolder = "", include_history = False):
         now = datetime.datetime.now()
-        file_name = 'ADS-B_%d-%02d-%02d-%02d-%02d.csv' % (now.year, now.month, now.day, now.hour, now.minute)
+        if file_in_subfolder == "":
+            file_name = 'ADS-B_%d-%02d-%02d-%02d-%02d.csv' % (now.year, now.month, now.day, now.hour, now.minute)
+        else:
+            file_name = file_in_subfolder + '/' + ('ADS-B_%d-%02d-%02d-%02d-%02d.csv' % (now.year, now.month, now.day, now.hour, now.minute))
         output_file_CSV = open(file_name, 'w')
         output_writer_CSV = csv.writer(output_file_CSV)
         output_writer_CSV.writerow(self.ADSBdataFields)
@@ -385,7 +388,7 @@ if __name__ == '__main__':
     #print "\n\n"
     #adsb_module.print_CSV()
     #adsb_module.print_data()
-    adsb_module.save_CSV_file()
+    adsb_module.save_CSV_file("ads-b_data")
 
     # adsb_module.update_data()
     #adsb_module.print_aircraft_pretty(0)
