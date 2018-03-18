@@ -24,6 +24,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from internet_tools import internet_tools
 
 from urllib2 import urlopen, URLError, HTTPError
+from httplib import HTTPException
 import csv
 import json
 import time
@@ -48,7 +49,7 @@ mph_to_mps = 0.44704
 kph_to_mph = kph_to_mps*mps_to_mph
 mph_to_kph = mph_to_mps*mps_to_kph
 
-run_modes = ['pi','test']
+run_modes = ['pi','test','no_save']
 
 class adsb_data():
     def __init__(self, debug = False):
@@ -75,15 +76,26 @@ class adsb_data():
         self.ADSBdataStructured = []
         if self.debug:
             print 'Attempting to download'
+
         try:
             response = urlopen(self.url)
-        except HTTPError as e:
-            result = '%s' % (e.code)
-        except URLError as e:
-            result = '%s %s' % (e.code, e.reason)
+        except HTTPError, e:
+            print 'The server couldn\'t fulfill the request.'
+            print 'Error code: ', e.code
+        except URLError, e:
+            print 'We failed to reach a server.'
+            print 'Reason: ', e.reason
+        except IOError, e:
+            if hasattr(e, 'reason'):
+                print 'We failed to reach a server.'
+                print 'Reason: ', e.reason
+            elif hasattr(e, 'code'):
+                print 'The server couldn\'t fulfill the request.'
+                print 'Error code: ', e.code
         else:
             if self.debug:
                 print 'No errors encountered during download, attempting to read result'
+
         itr = 0
         for line in response:
 
@@ -131,12 +143,22 @@ class adsb_data():
 
         if self.debug:
             print 'Attempting to download'
+
         try:
             response = urlopen(self.url)
-        except HTTPError as e:
-            result = '%s' % (e.code)
-        except URLError as e:
-            result = '%s %s' % (e.code, e.reason)
+        except HTTPError, e:
+            print 'The server couldn\'t fulfill the request.'
+            print 'Error code: ', e.code
+        except URLError, e:
+            print 'We failed to reach a server.'
+            print 'Reason: ', e.reason
+        except IOError, e:
+            if hasattr(e, 'reason'):
+                print 'We failed to reach a server.'
+                print 'Reason: ', e.reason
+            elif hasattr(e, 'code'):
+                print 'The server couldn\'t fulfill the request.'
+                print 'Error code: ', e.code
         else:
             if self.debug:
                 print 'No errors encountered during download, attempting to read result'
@@ -174,14 +196,14 @@ class adsb_data():
                             if len(self.ADSBdataStructured[aircraft_index_old][9]) >= max_history_data:
                                 # print len(self.ADSBdataStructured[aircraft_index_old][9])
                                 # print len(self.ADSBdataStructured[aircraft_index_old][9])-max_history_data
-                                self.ADSBdataStructured[aircraft_index_old][9] = self.ADSBdataStructured[aircraft_index_old][9][len(self.ADSBdataStructured[aircraft_index_old][9])-(max_history_data-1):len(self.ADSBdataStructured[aircraft_index_old][9])]
+                                self.ADSBdataStructured[aircraft_index_old][9]  = self.ADSBdataStructured[aircraft_index_old][9][len(self.ADSBdataStructured[aircraft_index_old][9])-(max_history_data-1):len(self.ADSBdataStructured[aircraft_index_old][9])]
                                 self.ADSBdataStructured[aircraft_index_old][10] = self.ADSBdataStructured[aircraft_index_old][10][len(self.ADSBdataStructured[aircraft_index_old][10])-(max_history_data-1):len(self.ADSBdataStructured[aircraft_index_old][10])]
                                 self.ADSBdataStructured[aircraft_index_old][11] = self.ADSBdataStructured[aircraft_index_old][11][len(self.ADSBdataStructured[aircraft_index_old][11])-(max_history_data-1):len(self.ADSBdataStructured[aircraft_index_old][11])]
                                 self.ADSBdataStructured[aircraft_index_old][12] = self.ADSBdataStructured[aircraft_index_old][12][len(self.ADSBdataStructured[aircraft_index_old][12])-(max_history_data-1):len(self.ADSBdataStructured[aircraft_index_old][12])]
                                 self.ADSBdataStructured[aircraft_index_old][13] = self.ADSBdataStructured[aircraft_index_old][13][len(self.ADSBdataStructured[aircraft_index_old][13])-(max_history_data-1):len(self.ADSBdataStructured[aircraft_index_old][13])]
                                 self.ADSBdataStructured[aircraft_index_old][14] = self.ADSBdataStructured[aircraft_index_old][14][len(self.ADSBdataStructured[aircraft_index_old][14])-(max_history_data-1):len(self.ADSBdataStructured[aircraft_index_old][14])]
                             # save old values: 'time_since_epoch_oldS','lat_oldS','lng_oldS','alt_oldS','track_oldS','speed_oldS'
-                            self.ADSBdataStructured[aircraft_index_old][9].append(self.ADSBdataStructured[aircraft_index_old][1]) # time_since_epoch_oldS
+                            self.ADSBdataStructured[aircraft_index_old][9].append( self.ADSBdataStructured[aircraft_index_old][1]) # time_since_epoch_oldS
                             self.ADSBdataStructured[aircraft_index_old][10].append(self.ADSBdataStructured[aircraft_index_old][4]) # lat_oldS
                             self.ADSBdataStructured[aircraft_index_old][11].append(self.ADSBdataStructured[aircraft_index_old][5]) # lng_oldS
                             self.ADSBdataStructured[aircraft_index_old][12].append(self.ADSBdataStructured[aircraft_index_old][6]) # alt_oldS
@@ -333,6 +355,8 @@ class adsb_data():
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             return self.ADSBdataStructured
         return None
+    def get_no_aircrafts(self):
+        return self.aircraft_count
     def get_aircraft_data(self, aircraft_index):
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             return self.ADSBdataStructured[aircraft_index]
@@ -377,11 +401,17 @@ class adsb_data():
     def save_CSV_file(self, file_in_subfolder = "", include_history = False):
         now = datetime.datetime.now()
         if file_in_subfolder == "":
-            file_name = 'ADS-B_%d-%02d-%02d-%02d-%02d.csv' % (now.year, now.month, now.day, now.hour, now.minute)
+            if include_history == True:
+                file_name = ('ADS-B_%d-%02d-%02d-%02d-%02d' % (now.year, now.month, now.day, now.hour, now.minute)) + '_hist' + '.csv'
+            else:
+                file_name = ('ADS-B_%d-%02d-%02d-%02d-%02d.csv' % (now.year, now.month, now.day, now.hour, now.minute))
         else:
-            file_name = file_in_subfolder + '/' + ('ADS-B_%d-%02d-%02d-%02d-%02d.csv' % (now.year, now.month, now.day, now.hour, now.minute))
+            if include_history == True:
+                file_name = file_in_subfolder + '/' + ('ADS-B_%d-%02d-%02d-%02d-%02d' % (now.year, now.month, now.day, now.hour, now.minute)) + '_hist' + '.csv'
+            else:
+                file_name = file_in_subfolder + '/' + ('ADS-B_%d-%02d-%02d-%02d-%02d.csv' % (now.year, now.month, now.day, now.hour, now.minute))
         output_file_CSV = open(file_name, 'w')
-        output_writer_CSV = csv.writer(output_file_CSV)
+        output_writer_CSV = csv.writer(output_file_CSV,quoting=csv.QUOTE_MINIMAL)
         if include_history == True:
             output_writer_CSV.writerow(self.ADSBdataFields)
         else:
@@ -389,6 +419,7 @@ class adsb_data():
         for line in self.ADSBdataStructured:
             if include_history == True:
                 output_writer_CSV.writerow(line)
+                #print line
             else:
                 output_writer_CSV.writerow(line[0:9]) # the rest of the fields only include history data
         output_file_CSV.close()
@@ -404,12 +435,6 @@ def self_test():
     print "Self test not PASSED, terminating\n"
     sys.exit()
 
-def update_data_func():
-    time.sleep(5)
-    print "\n"
-    adsb_module.update_data(1)
-    adsb_module.print_data(True)
-
 if __name__ == '__main__':
     #print 'Number of arguments:', len(sys.argv), 'arguments.'
     #print 'Argument List:', str(sys.argv)
@@ -423,41 +448,57 @@ if __name__ == '__main__':
         adsb_module.download_data()
 
         if sys.argv[1] == run_modes[0]:
-            print 'Entering', run_modes[0],'logger mode'
+            print 'Entering', run_modes[0],' mode'
             adsb_module.save_CSV_file("ads-b_data")
         elif  sys.argv[1] == run_modes[1]:
-            print 'Entering', run_modes[1],'logger mode'
+            print 'Entering', run_modes[1],' mode'
 
-            #adsb_module.print_raw()
-            #print "\n\n"
-            #adsb_module.print_CSV()
-            adsb_module.print_data(True)
-            ## adsb_module.save_CSV_file("ads-b_data")
-
-            # while True:
-            #     print "\n"
-            #     time.sleep(5)
-            #     adsb_module.update_data(1)
-            #     adsb_module.print_data(True)
+            save_ctr = 0
             try:
                 while True:
-                    update_data_func()
+                    time.sleep(1)
+                    print "\nUpdating data before - ", adsb_module.get_no_aircrafts()
+                    adsb_module.update_data()
+                    print "Updating data after - ", adsb_module.get_no_aircrafts()
+                    #adsb_module.print_data(True)
+                    if save_ctr%1800 == 0:
+                        print "Save_ctr:", save_ctr, "- calc", save_ctr%10, "- equal 0", save_ctr%10 == 0
+                        adsb_module.save_CSV_file("",True)
+                    save_ctr = save_ctr + 1
             except KeyboardInterrupt:
                 pass
             print "Stopping due to keyboard interrupt"
-            #adsb_module.print_aircraft_pretty(0)
-            # adsb_module.print_aircraft_pretty(1)
-            # adsb_module.print_aircraft_pretty(2)
-            # adsb_module.print_aircraft_pretty(3)
-            # adsb_module.print_aircraft_pretty(4)
-            #
-            # adsb_module.print_aircraft_pretty(adsb_module.get_aircraft_index("VKG1305"))
-            #
-            # adsb_module.check_input_aircraft_index(1)
+            print "\nSaving data"
+            adsb_module.save_CSV_file("",True)
 
-            #print adsb_module.get_aircraft_data_from_name("VKG1305")
-            #print adsb_module.get_aircraft_data(adsb_module.get_aircraft_index("BAW798H"))
+        elif  sys.argv[1] == run_modes[2]:
+            print 'Entering', run_modes[2],' mode'
+
+            try:
+                while True:
+                    time.sleep(1)
+                    print "\nUpdating data before - ", adsb_module.get_no_aircrafts()
+                    adsb_module.update_data()
+                    print "Updating data after - ", adsb_module.get_no_aircrafts()
+                    #adsb_module.print_data(True)
+            except KeyboardInterrupt:
+                pass
+            print "Stopping due to keyboard interrupt"
+
+        else:
+            print "Provided argument does not match any known script argument"
     else:
         print "Proper use of script requires argument to set mode"
         print " Modes:", run_modes
         print " Example: python", sys.argv[0], run_modes[0]
+
+# unused code - for fast copying
+        #adsb_module.print_raw()
+        #adsb_module.print_CSV()
+        #adsb_module.print_data(True)
+        #adsb_module.print_data(True)
+        #adsb_module.print_aircraft_pretty(0)
+        #adsb_module.print_aircraft_pretty(adsb_module.get_aircraft_index("VKG1305"))
+        # dsb_module.check_input_aircraft_index(1)
+        #print adsb_module.get_aircraft_data_from_name("VKG1305")
+        #print adsb_module.get_aircraft_data(adsb_module.get_aircraft_index("BAW798H"))

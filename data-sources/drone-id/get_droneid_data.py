@@ -58,17 +58,29 @@ class droneid_data():
         self.drone_count = 0
         self.DroneIDdataRaw = []
         self.DroneIDdataStructured = []
+
         if self.debug:
             print 'Attempting to download'
+
         try:
             response = urlopen(self.url)
-        except HTTPError as e:
-            result = '%s' % (e.code)
-        except URLError as e:
-            result = '%s %s' % (e.code, e.reason)
+        except HTTPError, e:
+            print 'The server couldn\'t fulfill the request.'
+            print 'Error code: ', e.code
+        except URLError, e:
+            print 'We failed to reach a server.'
+            print 'Reason: ', e.reason
+        except IOError, e:
+            if hasattr(e, 'reason'):
+                print 'We failed to reach a server.'
+                print 'Reason: ', e.reason
+            elif hasattr(e, 'code'):
+                print 'The server couldn\'t fulfill the request.'
+                print 'Error code: ', e.code
         else:
             if self.debug:
                 print 'No errors encountered during download, attempting to read result'
+
         itr = 0
         for line in response:
 
@@ -125,12 +137,22 @@ class droneid_data():
 
         if self.debug:
             print 'Attempting to download'
+
         try:
             response = urlopen(self.url)
-        except HTTPError as e:
-            result = '%s' % (e.code)
-        except URLError as e:
-            result = '%s %s' % (e.code, e.reason)
+        except HTTPError, e:
+            print 'The server couldn\'t fulfill the request.'
+            print 'Error code: ', e.code
+        except URLError, e:
+            print 'We failed to reach a server.'
+            print 'Reason: ', e.reason
+        except IOError, e:
+            if hasattr(e, 'reason'):
+                print 'We failed to reach a server.'
+                print 'Reason: ', e.reason
+            elif hasattr(e, 'code'):
+                print 'The server couldn\'t fulfill the request.'
+                print 'Error code: ', e.code
         else:
             if self.debug:
                 print 'No errors encountered during download, attempting to read result'
