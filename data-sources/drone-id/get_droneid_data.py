@@ -68,11 +68,11 @@ class droneid_data():
             print 'The server couldn\'t fulfill the request.'
             print 'Error code: ', e.code
         except URLError, e:
-            print 'We failed to reach a server.'
+            print 'Failed to reach server.'
             print 'Reason: ', e.reason
         except IOError, e:
             if hasattr(e, 'reason'):
-                print 'We failed to reach a server.'
+                print 'Failed to reach server.'
                 print 'Reason: ', e.reason
             elif hasattr(e, 'code'):
                 print 'The server couldn\'t fulfill the request.'
@@ -81,55 +81,55 @@ class droneid_data():
             if self.debug:
                 print 'No errors encountered during download, attempting to read result'
 
-        itr = 0
-        for line in response:
+            itr = 0
+            for line in response:
 
-            line = line.rstrip()
-            #print line
-            if line != "":
-                itr = itr+1
-                #print "Line",itr,":",line
-                self.DroneIDdataRaw.append(line)
+                line = line.rstrip()
+                #print line
+                if line != "":
+                    itr = itr+1
+                    #print "Line",itr,":",line
+                    self.DroneIDdataRaw.append(line)
 
-                csv_reader = csv.reader( [ line ] )
-                for row in csv_reader:
-                    row[1] = int(row[1]) # epoch time
-                    row[2] = int(row[2]) # id
-                    row[4] = float(row[4]) # lat
-                    row[5] = float(row[5]) # lng
-                    row[6] = float(row[6]) # alt
-                    row[7] = float(row[7]) # acc
-                    row[8] = int(row[8]) # fix
-                    if row[9] == '': # catch a simulated drone and set link to 100%
-                        row[9] = int(100)
-                    else:
-                        row[9] = int(row[9]) # lnk
-                    if row[10] == '': # catch a simulated drone and set battery to 100%
-                        row[10] = int(100) # eng
-                    else:
-                        row[10] = int(row[10])
-                    if self.force_sim_to_real == True: row[11] = 0
-                    else: row[11] = int(row[11]) # sim
-                    # Make arrays for 'time_since_epoch_oldS','lat_oldS','lng_oldS','alt_oldS'
-                    row.append([])
-                    row.append([])
-                    row.append([])
-                    row.append([])
-                    #row[12].append(row[1])
-                    self.DroneIDdataStructured.append(row)
-        #print itr
-        self.drone_count = itr
-        if self.drone_count == 0:
-            print "No DroneIDs seems to be online"
-        if self.debug:
-            print "Entries:",self.drone_count
-        response.close()
-        if self.debug:
-            print "Result read successfully"
+                    csv_reader = csv.reader( [ line ] )
+                    for row in csv_reader:
+                        row[1] = int(row[1]) # epoch time
+                        row[2] = int(row[2]) # id
+                        row[4] = float(row[4]) # lat
+                        row[5] = float(row[5]) # lng
+                        row[6] = float(row[6]) # alt
+                        row[7] = float(row[7]) # acc
+                        row[8] = int(row[8]) # fix
+                        if row[9] == '': # catch a simulated drone and set link to 100%
+                            row[9] = int(100)
+                        else:
+                            row[9] = int(row[9]) # lnk
+                        if row[10] == '': # catch a simulated drone and set battery to 100%
+                            row[10] = int(100) # eng
+                        else:
+                            row[10] = int(row[10])
+                        if self.force_sim_to_real == True: row[11] = 0
+                        else: row[11] = int(row[11]) # sim
+                        # Make arrays for 'time_since_epoch_oldS','lat_oldS','lng_oldS','alt_oldS'
+                        row.append([])
+                        row.append([])
+                        row.append([])
+                        row.append([])
+                        #row[12].append(row[1])
+                        self.DroneIDdataStructured.append(row)
+            #print itr
+            self.drone_count = itr
+            if self.drone_count == 0:
+                print "No DroneIDs seems to be online"
+            if self.debug:
+                print "Entries:",self.drone_count
+            response.close()
+            if self.debug:
+                print "Result read successfully"
 
-        # Make JSON Data
-        # for row in self.DroneIDdataStructured:
-        #     print row
+            # Make JSON Data
+            # for row in self.DroneIDdataStructured:
+            #     print row
     def update_data(self, max_history_data = inf):
         if self.debug:
             print '\nUpdate begun'
@@ -144,11 +144,11 @@ class droneid_data():
             print 'The server couldn\'t fulfill the request.'
             print 'Error code: ', e.code
         except URLError, e:
-            print 'We failed to reach a server.'
+            print 'Failed to reach server.'
             print 'Reason: ', e.reason
         except IOError, e:
             if hasattr(e, 'reason'):
-                print 'We failed to reach a server.'
+                print 'Failed to reach server.'
                 print 'Reason: ', e.reason
             elif hasattr(e, 'code'):
                 print 'The server couldn\'t fulfill the request.'
@@ -157,80 +157,80 @@ class droneid_data():
             if self.debug:
                 print 'No errors encountered during download, attempting to read result'
 
-        # begin data analysis
-        itr = 0
-        for line in response:
-            line = line.rstrip()
-            #print line
-            if line != "":
-                itr = itr+1 # note +1 higher than the index
-                #print "Line",itr,":",line
-                csv_reader = csv.reader( [ line ] )
-                for row in csv_reader:
-                    row[1] = int(row[1]) # epoch time
-                    row[2] = int(row[2]) # id
-                    row[4] = float(row[4]) # lat
-                    row[5] = float(row[5]) # lng
-                    row[6] = float(row[6]) # alt
-                    row[7] = float(row[7]) # acc
-                    row[8] = int(row[8]) # fix
-                    if row[9] == '': # catch a simulated drone and set link to 100%
-                        row[9] = int(100)
-                    else:
-                        row[9] = int(row[9]) # lnk
-                    if row[10] == '': # catch a simulated drone and set battery to 100%
-                        row[10] = int(100) # eng
-                    else:
-                        row[10] = int(row[10])
+            # begin data analysis
+            itr = 0
+            for line in response:
+                line = line.rstrip()
+                #print line
+                if line != "":
+                    itr = itr+1 # note +1 higher than the index
+                    #print "Line",itr,":",line
+                    csv_reader = csv.reader( [ line ] )
+                    for row in csv_reader:
+                        row[1] = int(row[1]) # epoch time
+                        row[2] = int(row[2]) # id
+                        row[4] = float(row[4]) # lat
+                        row[5] = float(row[5]) # lng
+                        row[6] = float(row[6]) # alt
+                        row[7] = float(row[7]) # acc
+                        row[8] = int(row[8]) # fix
+                        if row[9] == '': # catch a simulated drone and set link to 100%
+                            row[9] = int(100)
+                        else:
+                            row[9] = int(row[9]) # lnk
+                        if row[10] == '': # catch a simulated drone and set battery to 100%
+                            row[10] = int(100) # eng
+                        else:
+                            row[10] = int(row[10])
 
-                    drone_index_old = self.get_drone_index_from_id(row[2]) # match id's to see if it exists
-                    if drone_index_old != None:
-                        if self.debug:
-                            print "Already seen", row[3], ", id:", drone_index_old
-                        if self.DroneIDdataStructured[drone_index_old][1] < row[1] or self.DroneIDdataStructured[drone_index_old][7] < row[7]:
-                            # New or better data received
-                            # Remove data which exceeds max_history_data limit
-                            if len(self.DroneIDdataStructured[drone_index_old][12]) >= max_history_data:
-                                # print len(self.DroneIDdataStructured[drone_index_old][15])
-                                # print len(self.DroneIDdataStructured[drone_index_old][15])-max_history_data
-                                self.DroneIDdataStructured[drone_index_old][12] = self.DroneIDdataStructured[drone_index_old][12][len(self.DroneIDdataStructured[drone_index_old][12])-(max_history_data-1):len(self.DroneIDdataStructured[drone_index_old][12])]
-                                self.DroneIDdataStructured[drone_index_old][13] = self.DroneIDdataStructured[drone_index_old][14][len(self.DroneIDdataStructured[drone_index_old][13])-(max_history_data-1):len(self.DroneIDdataStructured[drone_index_old][13])]
-                                self.DroneIDdataStructured[drone_index_old][14] = self.DroneIDdataStructured[drone_index_old][15][len(self.DroneIDdataStructured[drone_index_old][14])-(max_history_data-1):len(self.DroneIDdataStructured[drone_index_old][14])]
-                                self.DroneIDdataStructured[drone_index_old][15] = self.DroneIDdataStructured[drone_index_old][15][len(self.DroneIDdataStructured[drone_index_old][15])-(max_history_data-1):len(self.DroneIDdataStructured[drone_index_old][15])]
-                            # save old values: 'time_since_epoch_oldS','lat_oldS','lng_oldS','alt_oldS'
-                            self.DroneIDdataStructured[drone_index_old][12].append(self.DroneIDdataStructured[drone_index_old][1]) # 'time_since_epoch_oldS'
-                            self.DroneIDdataStructured[drone_index_old][13].append(self.DroneIDdataStructured[drone_index_old][4]) # 'lat_oldS'
-                            self.DroneIDdataStructured[drone_index_old][14].append(self.DroneIDdataStructured[drone_index_old][5]) # 'lng_oldS'
-                            self.DroneIDdataStructured[drone_index_old][15].append(self.DroneIDdataStructured[drone_index_old][6]) # 'alt_oldS'
-                            # Update values: time, epoch, lat, lng, alt, acc, fix, lnk, eng
-                            self.DroneIDdataStructured[drone_index_old][0] = row[0] # time
-                            self.DroneIDdataStructured[drone_index_old][1] = row[1] # epoch
-                            self.DroneIDdataStructured[drone_index_old][4] = row[4] # lat
-                            self.DroneIDdataStructured[drone_index_old][5] = row[5] # lng
-                            self.DroneIDdataStructured[drone_index_old][6] = row[6] # alt
-                            self.DroneIDdataStructured[drone_index_old][7] = row[7] # acc
-                            self.DroneIDdataStructured[drone_index_old][8] = row[8] # fix
-                            self.DroneIDdataStructured[drone_index_old][9] = row[9] # lnk
-                            self.DroneIDdataStructured[drone_index_old][10] = row[10] # eng
-                            # Update the raw entry
-                            self.DroneIDdataRaw[drone_index_old] = line
-                            self.drone_new_data_count = self.drone_new_data_count + 1
-                    else:
-                        if self.debug:
-                            print "New", row[3], ", appending specific drone data"
-                        if self.force_sim_to_real == True: row[11] = 0
-                        else: row[11] = int(row[11]) # sim, not used for updating
-                        # Make arrays for 'time_since_epoch_oldS','lat_oldS','lng_oldS','alt_oldS'
-                        row.append([])
-                        row.append([])
-                        row.append([])
-                        row.append([])
-                        # Add entry to structured
-                        self.DroneIDdataRaw.append(line)
-                        self.DroneIDdataStructured.append(row)
-                        self.drone_count = self.drone_count + 1
-        if self.debug:
-            print 'Update done\n'
+                        drone_index_old = self.get_drone_index_from_id(row[2]) # match id's to see if it exists
+                        if drone_index_old != None:
+                            if self.debug:
+                                print "Already seen", row[3], ", id:", drone_index_old
+                            if self.DroneIDdataStructured[drone_index_old][1] < row[1] or self.DroneIDdataStructured[drone_index_old][7] < row[7]:
+                                # New or better data received
+                                # Remove data which exceeds max_history_data limit
+                                if len(self.DroneIDdataStructured[drone_index_old][12]) >= max_history_data:
+                                    # print len(self.DroneIDdataStructured[drone_index_old][15])
+                                    # print len(self.DroneIDdataStructured[drone_index_old][15])-max_history_data
+                                    self.DroneIDdataStructured[drone_index_old][12] = self.DroneIDdataStructured[drone_index_old][12][len(self.DroneIDdataStructured[drone_index_old][12])-(max_history_data-1):len(self.DroneIDdataStructured[drone_index_old][12])]
+                                    self.DroneIDdataStructured[drone_index_old][13] = self.DroneIDdataStructured[drone_index_old][14][len(self.DroneIDdataStructured[drone_index_old][13])-(max_history_data-1):len(self.DroneIDdataStructured[drone_index_old][13])]
+                                    self.DroneIDdataStructured[drone_index_old][14] = self.DroneIDdataStructured[drone_index_old][15][len(self.DroneIDdataStructured[drone_index_old][14])-(max_history_data-1):len(self.DroneIDdataStructured[drone_index_old][14])]
+                                    self.DroneIDdataStructured[drone_index_old][15] = self.DroneIDdataStructured[drone_index_old][15][len(self.DroneIDdataStructured[drone_index_old][15])-(max_history_data-1):len(self.DroneIDdataStructured[drone_index_old][15])]
+                                # save old values: 'time_since_epoch_oldS','lat_oldS','lng_oldS','alt_oldS'
+                                self.DroneIDdataStructured[drone_index_old][12].append(self.DroneIDdataStructured[drone_index_old][1]) # 'time_since_epoch_oldS'
+                                self.DroneIDdataStructured[drone_index_old][13].append(self.DroneIDdataStructured[drone_index_old][4]) # 'lat_oldS'
+                                self.DroneIDdataStructured[drone_index_old][14].append(self.DroneIDdataStructured[drone_index_old][5]) # 'lng_oldS'
+                                self.DroneIDdataStructured[drone_index_old][15].append(self.DroneIDdataStructured[drone_index_old][6]) # 'alt_oldS'
+                                # Update values: time, epoch, lat, lng, alt, acc, fix, lnk, eng
+                                self.DroneIDdataStructured[drone_index_old][0] = row[0] # time
+                                self.DroneIDdataStructured[drone_index_old][1] = row[1] # epoch
+                                self.DroneIDdataStructured[drone_index_old][4] = row[4] # lat
+                                self.DroneIDdataStructured[drone_index_old][5] = row[5] # lng
+                                self.DroneIDdataStructured[drone_index_old][6] = row[6] # alt
+                                self.DroneIDdataStructured[drone_index_old][7] = row[7] # acc
+                                self.DroneIDdataStructured[drone_index_old][8] = row[8] # fix
+                                self.DroneIDdataStructured[drone_index_old][9] = row[9] # lnk
+                                self.DroneIDdataStructured[drone_index_old][10] = row[10] # eng
+                                # Update the raw entry
+                                self.DroneIDdataRaw[drone_index_old] = line
+                                self.drone_new_data_count = self.drone_new_data_count + 1
+                        else:
+                            if self.debug:
+                                print "New", row[3], ", appending specific drone data"
+                            if self.force_sim_to_real == True: row[11] = 0
+                            else: row[11] = int(row[11]) # sim, not used for updating
+                            # Make arrays for 'time_since_epoch_oldS','lat_oldS','lng_oldS','alt_oldS'
+                            row.append([])
+                            row.append([])
+                            row.append([])
+                            row.append([])
+                            # Add entry to structured
+                            self.DroneIDdataRaw.append(line)
+                            self.DroneIDdataStructured.append(row)
+                            self.drone_count = self.drone_count + 1
+            if self.debug:
+                print 'Update done\n'
     def clear_history_data(self):
         if self.drone_count > 0:
             for line in self.DroneIDdataStructured:
