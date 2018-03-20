@@ -4,7 +4,10 @@
 Descriptors: TL = Tobias Lundby (tobiaslundby@gmail.com)
 2018-03-09 TL First version
 2018-03-12 TL Started expanding functions
-2018-03-14 TL Class completed
+2018-03-14 TL Functions improved and added update function
+2018-03-17 TL Stability improvements and testing
+2018-03-18 TL Continued 'stability improvements ...'
+2018-03-19 TL Continued 'stability improvements ...'
 """
 
 """

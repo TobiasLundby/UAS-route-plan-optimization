@@ -7,6 +7,9 @@ Descriptors: TL = Tobias Lundby (tobiaslundby@gmail.com)
 ---------- TL Expanded class
 2018-03-13 TL Class almost done, missing update function but allows redownload but no remembering
 2018-03-14 TL Made update function, but it is not tested because the receiver is down
+2018-03-16 TL Added run modes
+2018-03-17 TL Stability improvements
+2018-03-18 TL Continued stability improvements
 """
 
 """
