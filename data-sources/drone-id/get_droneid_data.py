@@ -439,11 +439,23 @@ if __name__ == '__main__':
 			'lat': 55.399,
 			'lng': 10.385,
 			'alt': 100,
+		},
+        {
+			'aid': 902,
+			'lat': 55.399,
+			'lng': 10.385,
+			'alt': 50,
+		},
+		{
+			'aid': 903,
+			'lat': 55.399,
+			'lng': 10.385,
+			'alt': 100,
 		}
 	]
 
     simulator_module = droneid_simulator(False)
-    simulator_module.send_log_entry (LOG_TEST_DATA[0])
+    simulator_module.send_log_entry (LOG_TEST_DATA[2])
 
     droneid_module = droneid_data()
     droneid_module.download_data()
@@ -471,15 +483,15 @@ if __name__ == '__main__':
         time.sleep(1)
         ctr = ctr + 1
         if ctr == 9:
-            LOG_TEST_DATA[0]['lat'] = LOG_TEST_DATA[0]['lat'] + 0.0001
-            LOG_TEST_DATA[0]['lng'] = LOG_TEST_DATA[0]['lng'] + 0.0001
-            LOG_TEST_DATA[0]['alt'] = LOG_TEST_DATA[0]['alt'] + 0.1
-            simulator_module.send_log_entry (LOG_TEST_DATA[0])
+            LOG_TEST_DATA[2]['lat'] = LOG_TEST_DATA[2]['lat'] + 0.0001
+            LOG_TEST_DATA[2]['lng'] = LOG_TEST_DATA[2]['lng'] + 0.0001
+            LOG_TEST_DATA[2]['alt'] = LOG_TEST_DATA[2]['alt'] + 0.1
+            simulator_module.send_log_entry (LOG_TEST_DATA[2])
 
-            LOG_TEST_DATA[1]['lat'] = LOG_TEST_DATA[1]['lat'] - 0.0001
-            LOG_TEST_DATA[1]['lng'] = LOG_TEST_DATA[1]['lng'] - 0.0001
-            LOG_TEST_DATA[1]['alt'] = LOG_TEST_DATA[1]['alt'] + 0.1
-            simulator_module.send_log_entry (LOG_TEST_DATA[1])
+            LOG_TEST_DATA[3]['lat'] = LOG_TEST_DATA[3]['lat'] - 0.0001
+            LOG_TEST_DATA[3]['lng'] = LOG_TEST_DATA[3]['lng'] - 0.0001
+            LOG_TEST_DATA[3]['alt'] = LOG_TEST_DATA[3]['alt'] + 0.1
+            simulator_module.send_log_entry (LOG_TEST_DATA[3])
             ctr = 0
         droneid_module.update_data(3)
         #droneid_module.print_raw()
