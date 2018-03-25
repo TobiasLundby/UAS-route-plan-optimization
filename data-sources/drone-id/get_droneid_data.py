@@ -37,6 +37,8 @@ forever = 60*60*24*365*100 # 100 years excl. leap year
 inf = 4294967295 # 32bit from 0
 internet_connection_tries = 5
 
+run_modes = ['test']
+
 class droneid_data():
     def __init__(self, debug = False, force_sim_to_real = False):
         self.internet_tester = internet_tools()
@@ -424,85 +426,105 @@ class droneid_data():
         else: return None
 
 if __name__ == '__main__':
-    # Run self test
-    # self test function not made yet
 
-    LOG_TEST_DATA = [
-		{
-			'aid': 900,
-			'lat': 55.399,
-			'lng': 10.385,
-			'alt': 50,
-		},
-		{
-			'aid': 901,
-			'lat': 55.399,
-			'lng': 10.385,
-			'alt': 100,
-		},
-        {
-			'aid': 902,
-			'lat': 55.399,
-			'lng': 10.385,
-			'alt': 50,
-		},
-		{
-			'aid': 903,
-			'lat': 55.399,
-			'lng': 10.385,
-			'alt': 100,
-		}
-	]
+    if len(sys.argv) > 1:
+        #print "Enough arguments provided"
+        # Run self test
+        # self test function not made yet
 
-    simulator_module = droneid_simulator(False)
-    simulator_module.send_log_entry (LOG_TEST_DATA[2])
+        # Define testdata
+        LOG_TEST_DATA = [
+            {
+                'aid': 900,
+                'lat': 55.399,
+                'lng': 10.385,
+                'alt': 50,
+            },
+            {
+                'aid': 901,
+                'lat': 55.399,
+                'lng': 10.385,
+                'alt': 100,
+            },
+            {
+                'aid': 902,
+                'lat': 55.399,
+                'lng': 10.385,
+                'alt': 50,
+            },
+            {
+                'aid': 903,
+                'lat': 55.399,
+                'lng': 10.385,
+                'alt': 100,
+            }
+        ]
 
-    droneid_module = droneid_data()
-    droneid_module.download_data()
-    #droneid_module.print_data()
-    #droneid_module.print_drone_pretty(0)
-    # droneid_module.print_raw()
-    # droneid_module.print_data()
+        if sys.argv[1] == run_modes[0]:
+            print 'Entering', run_modes[0],' mode'
 
-    # time.sleep(2)
-    # simulator_module.send_log_entry (LOG_TEST_DATA[0])
-    # simulator_module.send_log_entry (LOG_TEST_DATA[1])
-    # droneid_module.update_data()
-    # droneid_module.print_raw()
-    # droneid_module.print_data()
-    #
-    # time.sleep(2)
-    # simulator_module.send_log_entry (LOG_TEST_DATA[0])
-    # simulator_module.send_log_entry (LOG_TEST_DATA[1])
-    # droneid_module.update_data()
-    # droneid_module.print_raw()
-    # droneid_module.print_data()
+            # Declare simulator module
+            simulator_module = droneid_simulator(False)
+            simulator_module.send_log_entry(LOG_TEST_DATA[2])
 
-    ctr = 0
-    while True:
-        time.sleep(1)
-        ctr = ctr + 1
-        if ctr == 9:
-            LOG_TEST_DATA[2]['lat'] = LOG_TEST_DATA[2]['lat'] + 0.0001
-            LOG_TEST_DATA[2]['lng'] = LOG_TEST_DATA[2]['lng'] + 0.0001
-            LOG_TEST_DATA[2]['alt'] = LOG_TEST_DATA[2]['alt'] + 0.1
-            simulator_module.send_log_entry (LOG_TEST_DATA[2])
+            # Declare DroneID module
+            droneid_module = droneid_data()
+            droneid_module.download_data()
 
-            LOG_TEST_DATA[3]['lat'] = LOG_TEST_DATA[3]['lat'] - 0.0001
-            LOG_TEST_DATA[3]['lng'] = LOG_TEST_DATA[3]['lng'] - 0.0001
-            LOG_TEST_DATA[3]['alt'] = LOG_TEST_DATA[3]['alt'] + 0.1
-            simulator_module.send_log_entry (LOG_TEST_DATA[3])
             ctr = 0
-        droneid_module.update_data(3)
-        #droneid_module.print_raw()
-        #droneid_module.print_data()
-        print droneid_module.get_drones_sim()
+            try:
+                while True:
+                    time.sleep(1)
+                    ctr = ctr + 1
+                    if ctr == 9:
+                        LOG_TEST_DATA[2]['lat'] = LOG_TEST_DATA[2]['lat'] + 0.0001
+                        LOG_TEST_DATA[2]['lng'] = LOG_TEST_DATA[2]['lng'] + 0.0001
+                        LOG_TEST_DATA[2]['alt'] = LOG_TEST_DATA[2]['alt'] + 0.1
+                        simulator_module.send_log_entry (LOG_TEST_DATA[2])
 
-    #print droneid_module.get_drone_data(0)
-    #print droneid_module.get_drone_data_from_name('000901')
-    #print droneid_module.get_drone_index_from_id(901)
-    #print droneid_module.get_drone_index_from_name('000901')
-    #print droneid_module.get_time_since_epoch_formatted_local(0)
-    #droneid_module.print_description()
-    #droneid_module.print_raw()
-    #droneid_module.print_CSV()
+                        LOG_TEST_DATA[3]['lat'] = LOG_TEST_DATA[3]['lat'] - 0.0001
+                        LOG_TEST_DATA[3]['lng'] = LOG_TEST_DATA[3]['lng'] - 0.0001
+                        LOG_TEST_DATA[3]['alt'] = LOG_TEST_DATA[3]['alt'] + 0.1
+                        simulator_module.send_log_entry (LOG_TEST_DATA[3])
+                        ctr = 0
+                    #droneid_module.update_data(3)
+                    #droneid_module.print_raw()
+                    #droneid_module.print_data()
+                    print droneid_module.get_drones_sim()
+            except KeyboardInterrupt:
+                pass
+
+
+    else:
+        print "Proper use of script requires argument to set mode"
+        print " Modes:", run_modes
+        print " Example: python", sys.argv[0], run_modes[0]
+
+# unused code - for fast copying
+#droneid_module.print_data()
+#droneid_module.print_drone_pretty(0)
+# droneid_module.print_raw()
+# droneid_module.print_data()
+
+# time.sleep(2)
+# simulator_module.send_log_entry (LOG_TEST_DATA[0])
+# simulator_module.send_log_entry (LOG_TEST_DATA[1])
+# droneid_module.update_data()
+# droneid_module.print_raw()
+# droneid_module.print_data()
+#
+# time.sleep(2)
+# simulator_module.send_log_entry (LOG_TEST_DATA[0])
+# simulator_module.send_log_entry (LOG_TEST_DATA[1])
+# droneid_module.update_data()
+# droneid_module.print_raw()
+# droneid_module.print_data()
+
+#print droneid_module.get_drone_data(0)
+#print droneid_module.get_drone_data_from_name('000901')
+#print droneid_module.get_drone_index_from_id(901)
+#print droneid_module.get_drone_index_from_name('000901')
+#print droneid_module.get_time_since_epoch_formatted_local(0)
+#droneid_module.print_description()
+#droneid_module.print_raw()
+#droneid_module.print_CSV()
