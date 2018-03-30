@@ -25,28 +25,31 @@ class droneid_simulator():
 		self.debug = debug
 	def send_log_entry(self, log):
 		if log['aid'] < self.aid_limit_low or log['aid'] > self.aid_limit_high:
-			print colored("ERROR:", 'red'), colored("Aircraft ID outside allowed range. Requested aircraft ID: %i, allowed %i-%i" % (log['aid'], self.aid_limit_low, self.aid_limit_high), 'yellow')
+			print colored('ERROR:', 'red'), colored('Aircraft ID outside allowed range. Requested aircraft ID: %i, allowed %i-%i' % (log['aid'], self.aid_limit_low, self.aid_limit_high), 'yellow')
 		else:
 			try:
 				r = requests.post("https://droneid.dk/tobias/droneid_log.php", data={'aid': log['aid'], 'lat': log['lat'], 'lon': log['lng'], 'alt': log['alt']}, timeout=2)
 			except requests.exceptions.Timeout:
 			    # Maybe set up for a retry, or continue in a retry loop
-				print colored("Request has timed out", 'red')
+				print colored('Request has timed out', 'red')
 			except requests.exceptions.TooManyRedirects:
 			    # Tell the user their URL was bad and try a different one
-				print colored("Request has too many redirects", 'red')
+				print colored('Request has too many redirects', 'red')
 			except requests.exceptions.RequestException as e:
 				# catastrophic error. bail.
-				print colored("Request error", 'red')
+				print colored('Request error', 'red')
 				print colored(e, 'yellow')
 				# sys.exit(1)
 			else:
 				#print(r.status_code, r.reason)
 				#print(r.text)
-				#print "Everything good"
-				if self.debug:
-					if r.status_code == 200 and r.reason == 'OK':
-						print colored( ("Added simulated drone with id", log['aid'], '- lat:', log['lat'], '- lng:', log['lng'], '- altitude', log['alt']) , 'green')
+				if r.status_code == 200 and r.reason == 'OK':
+					if self.debug:
+							print colored( 'Added simulated drone with id %i - lat: %.3f - lng: %.3f - altitude: %.2f' % (log['aid'], log['lat'], log['lng'], log['alt']) , 'green')
+				else:
+					print colored('Simulated drone with id %i not added' % (log['aid']), 'red')
+
+
 
 if __name__ == '__main__':
 	LOG_TEST_DATA = [
