@@ -56,7 +56,22 @@ def generate_path(plot, geo_points_in):
         for i in range(len(geo_points_in)-1):
             generate_line(plot, geo_points_in[i], geo_points_in[i+1])
         for i in range(len(geo_points_in)):
-            generate_circle(plot, geo_points_in[i])
+            if i == 0: # first point make other colored
+                generate_circle(plot, geo_points_in[i], 'firebrick')
+            else:
+                generate_circle(plot, geo_points_in[i], 'red')
+
+def generate_geofence(plot, geofence_in):
+    if len(geofence_in) > 2:
+        if len(geofence_in[0]) == 2: # convert points to mercator system if not already converted
+            print "Converting points"
+            geofence_in = geo_points(geofence_in)
+        patch_merc_points_x = []
+        patch_merc_points_y = []
+        for i in range(len(geofence_in)):
+            patch_merc_points_x.append(geofence_in[i][2])
+            patch_merc_points_y.append(geofence_in[i][3])
+        plot.patch(patch_merc_points_x, patch_merc_points_y, alpha=0.5, line_width=2)
 
 output_file("tile.html")
 
@@ -92,9 +107,12 @@ p.add_tile(CARTODBPOSITRON)
 
 #generate_line(p, tmp_val2, tmp_geo_point)
 
-points = [[55.400, 10.366],[55.500, 10.396],[55.450, 10.376]]
-converted_points = geo_points(points)
+#points = [[55.400, 10.366],[55.500, 10.396],[55.450, 10.376]]
+points = [[55.397, 10.319949],[55.41, 10.349689],[55.391653, 10.352]]
+points_geofence = [[55.395774, 10.319949],[55.406105, 10.349689],[55.391653, 10.349174], [55.392968, 10.341793], [55.386873, 10.329691]]
+#converted_points = geo_points(points)
 
-generate_path(p, converted_points)
+generate_path(p, points)
+generate_geofence(p, points_geofence)
 
 show(p)
