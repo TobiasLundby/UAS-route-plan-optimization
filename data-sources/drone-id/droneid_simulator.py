@@ -5,6 +5,7 @@ Descriptors: KJ = Kjeld Jensen (kjen@mmmi.sdu.dk), TL = Tobias Lundby (tobiaslun
 2018-03-?? KJ Example code
 2018-03-09 TL Fork of KJ example code
 2018-03-12 TL Made into class for use in other programs
+2018-03-30 TL Modified error handling and output formatting
 """
 
 """
