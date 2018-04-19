@@ -23,7 +23,7 @@ from termcolor import colored
 class droneid_simulator():
 	aid_limit_low = 900
 	aid_limit_high = 909
-	def __init__(self,debug = False):
+	def __init__(self, debug = False):
 		self.debug = debug
 	def send_log_entry(self, log):
 		if log['aid'] < self.aid_limit_low or log['aid'] > self.aid_limit_high:
@@ -47,7 +47,7 @@ class droneid_simulator():
 				#print(r.text)
 				if r.status_code == 200 and r.reason == 'OK':
 					if self.debug:
-							print colored( 'Added simulated drone with id %i - lat: %.3f - lng: %.3f - altitude: %.2f' % (log['aid'], log['lat'], log['lng'], log['alt']) , 'green')
+							print colored('Added simulated drone with id %i - lat: %.3f - lng: %.3f - altitude: %.2f' % (log['aid'], log['lat'], log['lng'], log['alt']) , 'green')
 				else:
 					print colored('Simulated drone with id %i not added' % (log['aid']), 'red')
 

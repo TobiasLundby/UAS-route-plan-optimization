@@ -35,7 +35,6 @@ class path_visualizer():
                 # code
                 arr = []
             # send the path to http://uas.heltner.net/routes
-            #payload = [{'aid': 900, 'lat': 55.399, 'lon': 10.385, 'alt': 50, 'time': 1524162422}]
             try:
                 r = requests.post("http://uas.heltner.net/routes", json=path_JSON, timeout=2)
             except requests.exceptions.Timeout:
@@ -54,7 +53,7 @@ class path_visualizer():
                 #print(r.text)
                 if r.status_code == 200 and r.reason == 'OK':
                     if self.debug:
-                        print colored('Path uploaded', 'green')
+                        print colored('Path uploaded, route ID %s: %s, %s' % (r.text.strip(), 'http://uas.heltner.net/routes/'+r.text.strip()+'/2d', 'http://uas.heltner.net/routes/'+r.text.strip()+'/3d'), 'green')
                 else:
                     print colored('Path NOT uploaded', 'red')
 
