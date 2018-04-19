@@ -12,6 +12,7 @@ Descriptors: KJ = Kjeld Jensen (kjen@mmmi.sdu.dk), TL = Tobias Lundby (tobiaslun
 Description:
 Simulator class for the DroneID project where drones manually can be added to the system.
 License: BSD 3-Clause
+Data readme: https://droneid.dk/tobias/vejledning.txt
 """
 
 #print 'Importing libraries'
