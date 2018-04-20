@@ -3,6 +3,7 @@
 """
 Descriptors: TL = Tobias Lundby (tobiaslundby@gmail.com)
 2018-04-19 TL Started class
+2018-04-20 TL Class completed
 """
 
 """
