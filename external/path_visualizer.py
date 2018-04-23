@@ -26,6 +26,10 @@ class path_visualizer():
     def __init__(self, debug = False):
         self.debug = debug
     def generate_JSON_path_from_raw_4val_arr(self, path, aid):
+        """
+        Input: 4 value array of lat, lng, alt, time, and AID; if AID is not provided it will be defaulted
+        Output: Path in JSON format required by visualizer framework
+        """
         if aid == None:
             aid = DEFAULT_AID
             if self.debug:
@@ -40,19 +44,34 @@ class path_visualizer():
         else:
             print colored('JSON path generated', 'green')
         return path_JSON
-    def generate_JSON_path_from_raw_3val_dict(self, path):
+    def generate_JSON_path_from_raw_4val_dict(self, path):
+        """
+        Input: 4 value DICT (array lat, lng, alt, time) and AID; if AID is not provided it will be defaulted
+        Output: Path in JSON format required by visualizer framework
+        """
         if self.debug:
             print colored('No AID specified so defaulted to %d' % DEFAULT_AID, 'yellow')
         path_JSON = []
         for element in path:
             path_JSON.append({'aid': DEFAULT_AID,'lat': element['lat'],'lon': element['lng'],'alt': element['alt'],'time': element['time']})
         return path_JSON
-    def generate_JSON_path_from_raw_4val_dict(self, path):
+    def generate_JSON_path_from_raw_5val_dict(self, path):
+        """
+        Input: 5 value DICT (array of AID, lat, lng, alt, time)
+        Output: Path in JSON format required by visualizer framework
+        """
         path_JSON = []
         for element in path:
             path_JSON.append({'aid': element['aid'],'lat': element['lat'],'lon': element['lng'],'alt': element['alt'],'time': element['time']})
         return path_JSON
     def visualize_path(self, path, aid=False):
+        """
+        Input:
+            1. 5 value DICT (array of AID, lat, lng, alt, time)
+            2. 4 value DICT (array of lat, lng, alt, time) and AID; if AID is not provided it will be defaulted
+            3. 4 value array of lat, lng, alt, time, and AID; if AID is not provided it will be defaulted
+        Output: route id (int) of path on http://uas.heltner.net/routes
+        """
         # If aid is not specified the data must be given as DICT with aid embedded. If aid is specified the path needs to be a simple 4 element array og lat, lon, alt, time
         # Check if there is any data
         if isinstance(path, list) and len(path) > 0:
@@ -68,9 +87,9 @@ class path_visualizer():
                     try:
                         tmp_var = path[0]['aid']
                     except KeyError:
-                        path_JSON = self.generate_JSON_path_from_raw_3val_dict(path)
-                    else:
                         path_JSON = self.generate_JSON_path_from_raw_4val_dict(path)
+                    else:
+                        path_JSON = self.generate_JSON_path_from_raw_5val_dict(path)
             else:
                 path_JSON = self.generate_JSON_path_from_raw_4val_arr(path, aid)
 
@@ -104,6 +123,10 @@ class path_visualizer():
                     print colored('Path NOT uploaded', 'red')
         return None
     def delete_route(self, routeid):
+        """
+        Input: route id to be deleted on http://uas.heltner.net/routes
+        Output: deleted route id (the route id returned by the delete request)
+        """
         if isinstance(routeid, (int, long)):
             try:
                 r = requests.delete("http://uas.heltner.net/routes", json={'routeid': routeid}, timeout=2)
@@ -168,7 +191,8 @@ if __name__ == '__main__':
     ]
 
     path_visualizer_module = path_visualizer(True)
-    #print path_visualizer_module.visualize_path(LOG_TEST_DATA_wAID)
-    #print path_visualizer_module.visualize_path(LOG_TEST_DATA_woAID)
+    route_id = path_visualizer_module.visualize_path(LOG_TEST_DATA_wAID)
+    route_id = path_visualizer_module.visualize_path(LOG_TEST_DATA_woAID)
+    route_id = path_visualizer_module.visualize_path(TEST_DATA)
     route_id = path_visualizer_module.visualize_path(TEST_DATA,900)
     print path_visualizer_module.delete_route(route_id)
