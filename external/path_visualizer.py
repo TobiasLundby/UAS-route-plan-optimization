@@ -25,39 +25,60 @@ DEFAULT_AID = 900
 class path_visualizer():
     def __init__(self, debug = False):
         self.debug = debug
+    def generate_JSON_path_from_raw_4val_arr(self, path, aid):
+        if aid == None:
+            aid = DEFAULT_AID
+            if self.debug:
+                print colored('Trying to generate JSON path with default AID (%d)' % DEFAULT_AID, 'yellow')
+        path_JSON = []
+        if len(path[0]) == 4:
+            for element in path:
+                path_JSON.append({'aid': aid,'lat': element[0],'lon': element[1],'alt': element[2],'time': element[3]})
+        if path_JSON == []:
+            print colored('Could not generate JSON path', 'red')
+            sys.exit(1)
+        else:
+            print colored('JSON path generated', 'green')
+        return path_JSON
+    def generate_JSON_path_from_raw_3val_dict(self, path):
+        if self.debug:
+            print colored('No AID specified so defaulted to %d' % DEFAULT_AID, 'yellow')
+        path_JSON = []
+        for element in path:
+            path_JSON.append({'aid': DEFAULT_AID,'lat': element['lat'],'lon': element['lng'],'alt': element['alt'],'time': element['time']})
+        return path_JSON
+    def generate_JSON_path_from_raw_4val_dict(self, path):
+        path_JSON = []
+        for element in path:
+            path_JSON.append({'aid': element['aid'],'lat': element['lat'],'lon': element['lng'],'alt': element['alt'],'time': element['time']})
+        return path_JSON
     def visualize_path(self, path, aid=False):
         # If aid is not specified the data must be given as DICT with aid embedded. If aid is specified the path needs to be a simple 4 element array og lat, lon, alt, time
         # Check if there is any data
         if isinstance(path, list) and len(path) > 0:
             path_JSON = []
-            # some code for generating the right format
+            # Checking format and generate JSON path
             if aid == False:
-                # code
                 try:
                     tmp_var = path[0]['lat']
                 except TypeError:
-                    print colored("Input not as expected; it seems as the path provided is a 4 value array containing lat, lon, alt, time but missing aid", 'red')
-                    sys.exit(1)
+                    print colored('Input not as expected; it seems as the path provided is a 4 value array containing lat, lon, alt, time but missing aid', 'red')
+                    path_JSON = self.generate_JSON_path_from_raw_4val_arr(path, None)
                 else:
                     try:
                         tmp_var = path[0]['aid']
                     except KeyError:
-                        if self.debug:
-                            print colored('No AID specified so it is defaulted to %d' % DEFAULT_AID, 'yellow')
-                        for element in path:
-                            path_JSON.append({'aid': DEFAULT_AID,'lat': element['lat'],'lon': element['lng'],'alt': element['alt'],'time': element['time']})
+                        path_JSON = self.generate_JSON_path_from_raw_3val_dict(path)
                     else:
-                        for element in path:
-                            path_JSON.append({'aid': element['aid'],'lat': element['lat'],'lon': element['lng'],'alt': element['alt'],'time': element['time']})
+                        path_JSON = self.generate_JSON_path_from_raw_4val_dict(path)
             else:
-                if len(path[0]) == 4:
-                    for element in path:
-                        path_JSON.append({'aid': aid,'lat': element[0],'lon': element[1],'alt': element[2],'time': element[3]})
+                path_JSON = self.generate_JSON_path_from_raw_4val_arr(path, aid)
 
+            # Print path
             if self.debug:
                 print path_JSON
 
-            # send the path to http://uas.heltner.net/routes
+            # Send the path to http://uas.heltner.net/routes
             try:
                 r = requests.post("http://uas.heltner.net/routes", json=path_JSON, timeout=2)
             except requests.exceptions.Timeout:
@@ -75,10 +96,13 @@ class path_visualizer():
                 #print(r.status_code, r.reason)
                 #print(r.text)
                 if r.status_code == 200 and r.reason == 'OK':
+                    route_id = int(r.text.strip())
                     if self.debug:
-                        print colored('Path uploaded, route ID %s: %s, %s' % (r.text.strip(), 'http://uas.heltner.net/routes/'+r.text.strip()+'/2d', 'http://uas.heltner.net/routes/'+r.text.strip()+'/3d'), 'green')
+                        print colored('Path uploaded, route ID %s: %s, %s' % (route_id, 'http://uas.heltner.net/routes/'+str(route_id)+'/2d', 'http://uas.heltner.net/routes/'+str(route_id)+'/3d'), 'green')
+                    return route_id
                 else:
                     print colored('Path NOT uploaded', 'red')
+        return None
     def delete_route(self, routeid):
         if isinstance(routeid, (int, long)):
             try:
@@ -98,10 +122,13 @@ class path_visualizer():
                 #print(r.status_code, r.reason)
                 #print(r.text)
                 if r.status_code == 200 and r.reason == 'OK':
+                    route_id_response = int(r.text.strip())
                     if self.debug:
-                        print colored('Path/route deleted, route ID %d' % routeid, 'green')
+                        print colored('Path/route deleted, route ID %d (response ID %d)' % (routeid, route_id_response), 'green')
+                    return route_id_response
                 else:
                     print colored('Path/route NOT deleted', 'red')
+        return None
 
 
 if __name__ == '__main__':
@@ -141,12 +168,7 @@ if __name__ == '__main__':
     ]
 
     path_visualizer_module = path_visualizer(True)
-    #path_visualizer_module.visualize_path(LOG_TEST_DATA_wAID)
-    #path_visualizer_module.visualize_path(LOG_TEST_DATA_woAID)
-    #path_visualizer_module.visualize_path(TEST_DATA)
-    path_visualizer_module.delete_route(100)
-
-    arr = []
-    arr.append({'aid': 900,'lat': 55.400,'lon': 10.385,'alt': 50})
-    print LOG_TEST_DATA_wAID[1]['aid']
-    print arr
+    #print path_visualizer_module.visualize_path(LOG_TEST_DATA_wAID)
+    #print path_visualizer_module.visualize_path(LOG_TEST_DATA_woAID)
+    route_id = path_visualizer_module.visualize_path(TEST_DATA,900)
+    print path_visualizer_module.delete_route(route_id)
