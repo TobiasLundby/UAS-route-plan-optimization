@@ -15,6 +15,7 @@ from bokeh.plotting import figure, show, output_file
 from bokeh.tile_providers import CARTODBPOSITRON
 from bokeh.models import ColumnDataSource, MercatorTicker, MercatorTickFormatter
 import math
+from termcolor import colored
 
 """ Program defines """
 PATH_PLANNER_ASTAR = 0
@@ -30,10 +31,14 @@ waypoints_factor = 1
 avg_waypoint_dist_factor = 1
 
 def merc(lat, lon):
+    print colored('lat: %f, lng: %f' % (lat, lon), 'red')
     r_major = 6378137.000
     x = r_major * math.radians(lon)
     scale = x/lon
-    y = 180.0/math.pi * math.log(math.tan(math.pi/4.0 + lat * (math.pi/180.0)/2.0)) * scale
+    y  = 180.0/math.pi * math.log( math.tan( math.pi/4.0 + lat * (math.pi/180.0)/2.0 ) ) * scale
+    print colored('x: %f, y: %f, scale: %f' % (x,y,scale), 'yellow')
+    y2 = 180.0/math.pi * math.log( math.tan( math.pi/4.0 + lat * (math.pi/180.0)/2.0 ) )
+    print colored('y alt: %f' % (y2), 'red')
     return (x, y)
 
 def geo_point(lat, lon = None):
@@ -194,4 +199,4 @@ if __name__ == '__main__':
     print plan_path(points[0], points[len(points)-1])
     print evaluate_path(points)
 
-    #show(p)
+    show(p)
