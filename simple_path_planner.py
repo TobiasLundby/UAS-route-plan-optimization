@@ -17,6 +17,7 @@ from bokeh.models import ColumnDataSource, MercatorTicker, MercatorTickFormatter
 import math
 from termcolor import colored
 from pyproj import Proj, transform, Geod
+import datetime
 
 """ Program defines """
 PATH_PLANNER_ASTAR = 0
@@ -35,9 +36,10 @@ class UAV_path_planner():
     default_term_color_info = 'cyan'
     default_term_color_error = 'red'
     default_term_color_tmp_res = 'yellow'
+    tmp_res_indent = ' -> '
     # Path evaluation (path fitness) factors
     horz_distance_factor = 1
-    vert_distance_factor = 1
+    vert_distance_factor = 2
     travel_time_factor = 1
     waypoints_factor = 1
     avg_waypoint_dist_factor = 1
@@ -176,7 +178,7 @@ class UAV_path_planner():
         Input: 4 value 1 element array of lat, lon, alt, time
         Output: 4 value 1 element DICT of lat, lon, alt, time
         """
-        return {'lat':pos4d[0],'lon':pos4d[1],'alt':pos4d[2],'time':pos4d[2]}
+        return {'lat':pos4d[0],'lon':pos4d[1],'alt':pos4d[2],'time':pos4d[3]}
     def pos4dDICT2pos4d_geodetic(self, pos4dDICT):
         """
         Input: 4 value 1 element DICT of lat, lon, alt, time
@@ -204,8 +206,10 @@ class UAV_path_planner():
         else:
             point_end_converted = point_end
 
-        print colored('Path planning started', self.default_term_color_info)
+        # NOTE: convert to UTM for path planning
 
+        print colored('Path planning started', self.default_term_color_info)
+        # Go to selected path planner
         if PATH_PLANNER == PATH_PLANNER_ASTAR:
             print colored('Planning using A start', self.default_term_color_info)
             path = self.plan_planner_Astar(point_start_converted, point_end_converted)
@@ -216,8 +220,8 @@ class UAV_path_planner():
 
     def plan_planner_Astar(self, point_start, point_end):
         print colored('Entered A star path planner', self.default_term_color_info)
-        print colored('Start point: lat: %f, lon: %f' % (point_start['lat'], point_start['lon']), self.default_term_color_tmp_res)
-        print colored('End point: lat: %f, lon: %f' % (point_end['lat'], point_end['lon']), self.default_term_color_tmp_res)
+        print colored('Start point: lat: %.03f, lon: %.03f' % (point_start['lat'], point_start['lon']), self.default_term_color_tmp_res)
+        print colored('End point: lat: %.03f, lon: %.03f' % (point_end['lat'], point_end['lon']), self.default_term_color_tmp_res)
         return_arr = []
         return_arr.append(point_start)
         return_arr.append(point_end)
@@ -226,68 +230,106 @@ class UAV_path_planner():
     """ Path planner evaluator functions """
     def evaluate_path(self, path):
         print colored('Evaluating path', self.default_term_color_info)
-        horz_distance = self.calc_horz_dist_geodetic_total(path)
-        vert_distance = self.calc_vert_dist(path)
-        travel_time = self.calc_travel_time(path)
-        waypoints = len(path)
+        # Convert to / ensure pos4dDICT object
+        path_converted = []
+        try:
+            tmp_var = path[0]['lat']
+        except TypeError:
+            for i in range(len(path)):
+                path_converted.append( self.pos4d2pos4dDICT_geodetic( path[i] ) )
+        else:
+            path_converted = path
+
+        horz_distance, horz_distances = self.calc_horz_dist_geodetic_total(path_converted)
+        vert_distance, vert_distance_ascend, vert_distance_descend, vert_distances = self.calc_vert_dist(path_converted)
+        travel_time = self.calc_travel_time(path_converted)
         if self.debug:
-            print colored('Total waypoints %d' % waypoints, self.default_term_color_tmp_res)
-        avg_waypoint_dist = self.calc_avg_waypoint_dist(path)
+            print colored('Calculating number of waypoints', self.default_term_color_info)
+        waypoints = len(path_converted)
+        if self.debug:
+            print colored(self.tmp_res_indent+'Total waypoints %d' % waypoints, self.default_term_color_tmp_res)
+        avg_waypoint_dist = self.calc_avg_waypoint_dist(path_converted, horz_distances, vert_distances)
 
         fitness = self.horz_distance_factor*horz_distance
         fitness = fitness + self.vert_distance_factor*vert_distance
         fitness = fitness + self.travel_time_factor*travel_time
         fitness = fitness + self.waypoints_factor*waypoints
         fitness = fitness + self.avg_waypoint_dist_factor*avg_waypoint_dist
-        if self.debug:
-            print colored('Path fitness %f [m]' % fitness, self.default_term_color_tmp_res)
+        print colored('Path evaluation done', self.default_term_color_info)
+        print colored(self.tmp_res_indent+'Path fitness %.02f [unitless]' % fitness, self.default_term_color_tmp_res)
         return fitness
 
     def calc_horz_dist_geodetic_total(self, path):
-        print colored('Calculating horizontal path distance (2D)', self.default_term_color_info)
+        if self.debug:
+            print colored('Calculating horizontal path distance (2D)', self.default_term_color_info)
+        horz_distances = []
         total_horz_distance = 0 # unit: m
         for i in range(len(path)-1):
-            total_horz_distance = total_horz_distance + self.calc_horz_dist_geodetic(path[i][0], path[i][1], path[i+1][0], path[i+1][1])
+            tmp_horz_distance = self.calc_horz_dist_geodetic(path[i]['lat'], path[i]['lon'], path[i+1]['lat'], path[i+1]['lon'])
+            total_horz_distance = total_horz_distance + tmp_horz_distance
+            horz_distances.append(tmp_horz_distance)
         if self.debug:
-            print colored('Total horizontal distance %f [m]' % total_horz_distance, self.default_term_color_tmp_res)
-        return total_horz_distance
+            print colored(self.tmp_res_indent+'Total horizontal distance %.01f [m]' % total_horz_distance, self.default_term_color_tmp_res)
+        return total_horz_distance, horz_distances
     def calc_horz_dist_geodetic(self, lat1, lon1, lat2, lon2):
         # https://jswhit.github.io/pyproj/pyproj.Geod-class.html
         az12, az21, dist = geoid_distance.inv(lon1,lat1,lon2,lat2)
         return dist
 
     def calc_vert_dist(self, path):
-        print colored('Calculating vertical path distance (1D)', self.default_term_color_info)
-        vert_distance = 0 # unit: m
-        # code
         if self.debug:
-            print colored('Vertical distance %f [m]' % vert_distance, self.default_term_color_tmp_res)
-        return vert_distance
+            print colored('Calculating vertical path distance (1D)', self.default_term_color_info)
+        vert_distances = []
+        total_vert_distance = 0 # unit: m
+        total_vert_distance_ascend = 0 # unit: m
+        total_vert_distance_descend = 0 # unit: m
+        for i in range(len(path)-1):
+            tmp_vert_distance = path[i+1]['alt']-path[i]['alt']
+            if tmp_vert_distance < 0:
+                total_vert_distance_descend = total_vert_distance_descend + abs(tmp_vert_distance)
+            else:
+                total_vert_distance_ascend = total_vert_distance_ascend + tmp_vert_distance
+            total_vert_distance = total_vert_distance + abs(tmp_vert_distance)
+            vert_distances.append(tmp_vert_distance)
+        if self.debug:
+            print colored(self.tmp_res_indent+'Total vertical distance %.01f [m], ascend distance %.01f [m], descend distance %.01f [m]' % (total_vert_distance, total_vert_distance_ascend, total_vert_distance_descend), self.default_term_color_tmp_res)
+        return total_vert_distance, total_vert_distance_ascend, total_vert_distance_descend, vert_distances
 
     def calc_travel_time(self, path):
-        print colored('Calculating travel time', self.default_term_color_info)
-        travel_time = 0 # unit: s
-        # code
         if self.debug:
-            print colored('Travel time %f [s]' % travel_time, self.default_term_color_tmp_res)
+            print colored('Calculating travel time', self.default_term_color_info)
+        travel_time = 0 # unit: s
+        for i in range(len(path)-1):
+            travel_time = travel_time + (path[i+1]['time'] - path[i]['time'])
+        if self.debug:
+            print colored(self.tmp_res_indent+'Travel time %.0f [s] (%s)' % (travel_time, str(datetime.timedelta(seconds=travel_time))), self.default_term_color_tmp_res)
         return travel_time
 
-    def calc_avg_waypoint_dist(self, path, total_path_length=False):
-        print colored('Calculating average waypoint distance', self.default_term_color_info)
-        # if total_path_length == False:
-        #     total_path_length = self.calc_horz_dist_geodetic_total
-        avg_waypoint_dist = 0 # unit: m
-        # code
-        # choose which distance metric is used or use function which reacts based on defines.
+    def calc_avg_waypoint_dist(self, path, horz_distances=False, vert_distances=False):
         if self.debug:
-            print colored('Average waypoint distance %f [m]' % avg_waypoint_dist, self.default_term_color_tmp_res)
+            print colored('Calculating average waypoint distance', self.default_term_color_info)
+        # Check if the required distances have already been calculated, otherwise calculate
+        if ((horz_distances != False and isinstance(horz_distances, list)) and (vert_distances != False and isinstance(vert_distances, list))) == False:
+            horz_distances = self.calc_horz_dist_geodetic_total(path)[1]
+            vert_distances = self.calc_vert_dist(path)[3]
+        avg_waypoint_dist = 0 # unit: m
+        total3d_waypoint_dist = 0 # unit: m
+        if len(horz_distances) == len(vert_distances):
+            for i in range(len(horz_distances)):
+                # Calculate combined distance from horizontal and vertical using pythagoras
+                total3d_waypoint_dist = total3d_waypoint_dist + math.sqrt( math.pow(horz_distances[i], 2) + math.pow(vert_distances[i], 2) )
+            avg_waypoint_dist = total3d_waypoint_dist / len(horz_distances)
+        else:
+            print colored('Input does not match in size, average waypoint distance set to 0 [m]', self.default_term_color_error)
+        if self.debug:
+            print colored(self.tmp_res_indent+'Average waypoint distance %f [m]' % avg_waypoint_dist, self.default_term_color_tmp_res)
         return avg_waypoint_dist
 
 if __name__ == '__main__':
     # Set output file for Bokeh
     output_file("path_planning.html")
 
-    UAV_path_planner_module = UAV_path_planner(True)
+    UAV_path_planner_module = UAV_path_planner(False)
 
     # Set bounds for map plot
     use_bounds = False
@@ -317,7 +359,7 @@ if __name__ == '__main__':
     points = [[55.397, 10.319949, 0],[55.41, 10.349689,20],[55.391653, 10.352,0]]
     points_geofence = [[55.395774, 10.319949],[55.406105, 10.349689],[55.391653, 10.349174], [55.392968, 10.341793], [55.386873, 10.329691]]
 
-    points_DICT = [
+    points2d_DICT = [
         {
             'lat': 55.395774,
             'lon': 10.319949
@@ -335,16 +377,68 @@ if __name__ == '__main__':
             'lon': 10.341793
         }
     ]
+    points4d_DICT = [
+        {
+            'lat': 55.395774,
+            'lon': 10.319949,
+            'alt': 0,
+            'time': 1524663524
+        },
+        {
+            'lat': 55.406105,
+            'lon': 10.349689,
+            'alt': 20,
+            'time': 1524663584
+        },
+        {
+            'lat': 55.391653,
+            'lon': 10.349174,
+            'alt': 20,
+            'time': 1524663624
+        },
+        {
+            'lat': 55.392968,
+            'lon': 10.341793,
+            'alt': 0,
+            'time': 1524663684
+        }
+    ]
+    points4d = [
+        [
+            55.395774,
+            10.319949,
+            0,
+            1524663524
+        ],
+        [
+            55.406105,
+            10.349689,
+            20,
+            1524663584
+        ],
+        [
+            55.391653,
+            10.349174,
+            20,
+            1524663624
+        ],
+        [
+            55.392968,
+            10.341793,
+            0,
+            1524663684
+        ]
+    ]
 
 
-    UAV_path_planner_module.draw_path(p, points_DICT)
+    UAV_path_planner_module.draw_path(p, points2d_DICT)
     UAV_path_planner_module.generate_geofence(p, points_geofence)
 
     path_planned = UAV_path_planner_module.plan_path(points[0], points[len(points)-1])
-    path_planned_fitness = UAV_path_planner_module.evaluate_path(points)
+    path_planned_fitness = UAV_path_planner_module.evaluate_path(points4d)
 
     #print UAV_path_planner_module.calc_horz_dist_geodetic(points[0][0],points[0][1],points[1][0],points[1][1]), "m"
 
     #UAV_path_planner_module.calc_horz_dist_geodetic_total(points_geofence)
 
-    show(p)
+    #show(p)
