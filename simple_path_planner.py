@@ -45,6 +45,7 @@ class UAV_path_planner():
     geofence_height = 100 # unit: m
     def __init__(self, debug = False):
         self.debug = debug
+
     def Geodetic2PseudoMercator(self, lat, lon = False):
         """
         Input: latitude, longitude (EPSG:4326) or array of lat and lon as the lat input
@@ -55,7 +56,6 @@ class UAV_path_planner():
         else:
             x,y = transform(geodetic_proj, OSM_proj, lon, lat)
         return (x,y)
-
     def PseudoMercator2Geodetic(self, x,y):
         """
         Input: x, y(EPSG:3857)
@@ -64,73 +64,120 @@ class UAV_path_planner():
         lon, lat = transform(OSM_proj, geodetic_proj, x, y)
         return (lat, lon)
 
-    def geo_point(self, lat, lon = None):
-        if isinstance(lat, list) and lon == None:
-            lon = lat[1]
-            lat = lat[0]
-        x,y = self.Geodetic2PseudoMercator(lat, lon)
-        return (lat,lon,x,y)
-
-    def geo_points(self, arr_in):
-        return_arr = []
-        for element in arr_in:
-            # print element
-            tmp_geo_point = self.geo_point(element)
-            return_arr.append([tmp_geo_point[0], tmp_geo_point[1], tmp_geo_point[2], tmp_geo_point[3]])
-        return return_arr
-
     """ Plot functions """
-    def generate_circle(self, plot, geo_point, circle_color_in = default_plot_color, circle_size_in = 10, circle_alpha_in = default_plot_alpha):
-        plot.circle(x=geo_point[2], y=geo_point[3], size = circle_size_in, fill_color=circle_color_in, fill_alpha=circle_alpha_in)
+    def draw_circle(self, plot, point, circle_color_in = default_plot_color, circle_size_in = 10, circle_alpha_in = default_plot_alpha):
+        """
+        Input: plot and a 2d DICT point along with optional graphic parameters
+        Output: none but drawing on the provided plot
+        """
+        plot.circle(x=point['x'], y=point['y'], size = circle_size_in, fill_color=circle_color_in, fill_alpha=circle_alpha_in)
 
-    def generate_line(self, plot, geo_point_start, geo_point_end, line_color_in = default_plot_color, line_width_in = 2, line_alpha_in = default_plot_alpha):
-        plot.line([geo_point_start[2], geo_point_end[2]], [geo_point_start[3], geo_point_end[3]], line_color = line_color_in, line_width = line_width_in, line_alpha = line_alpha_in)
+    def draw_line(self, plot, point_start, point_end, line_color_in = default_plot_color, line_width_in = 2, line_alpha_in = default_plot_alpha):
+        """
+        Input: plot and a 2d DICT point along with optional graphic parameters
+        Output: none but drawing on the provided plot
+        """
+        plot.line([point_start['x'], point_end['x']], [point_start['y'], point_end['y']], line_color = line_color_in, line_width = line_width_in, line_alpha = line_alpha_in)
 
-    def generate_path(self, plot, geo_points_in):
-        if len(geo_points_in) > 0:
-            if len(geo_points_in[0]) == 3: # convert points to mercator system if not already converted
-                #print "Converting points"
-                geo_points_in = self.geo_points(geo_points_in)
-            for i in range(len(geo_points_in)-1):
-                self.generate_line(plot, geo_points_in[i], geo_points_in[i+1])
-            for i in range(len(geo_points_in)):
-                if i == 0 or i == (len(geo_points_in)-1): # first point make other colored
-                    self.generate_circle(plot, geo_points_in[i], 'firebrick')
+    def draw_path(self, plot, points_in):
+        """
+        Input: plot and a set of 2d points (either array or DICT)
+        Output: none but drawing on the provided plot
+        """
+        if len(points_in) > 0:
+            # Check and convert points
+            points_in_converted = self.check_pos2dALL_geodetic2pos2dDICT_OSM(points_in)
+
+            for i in range(len(points_in_converted)-1):
+                self.draw_line(plot, points_in_converted[i], points_in_converted[i+1])
+            for i in range(len(points_in_converted)):
+                if i == 0 or i == (len(points_in_converted)-1): # first point make other colored
+                    self.draw_circle(plot, points_in_converted[i], 'firebrick')
                 else:
-                    self.generate_circle(plot, geo_points_in[i], 'red',7)
+                    self.draw_circle(plot, points_in_converted[i], 'red',7)
 
     def generate_geofence(self, plot, geofence_in):
+        """
+        Input: plot and a set of 2d points (either array or DICT) representing a polygon
+        Output: none but drawing on the provided plot
+        """
         if len(geofence_in) > 2:
-            if len(geofence_in[0]) == 2: # convert points to mercator system if not already converted
-                print "Converting points"
-                geofence_in = self.geo_points(geofence_in)
-            patch_merc_points_x = []
-            patch_merc_points_y = []
-            for i in range(len(geofence_in)):
-                patch_merc_points_x.append(geofence_in[i][2])
-                patch_merc_points_y.append(geofence_in[i][3])
-            plot.patch(patch_merc_points_x, patch_merc_points_y, alpha=0.5, line_width=2)
+            # Check and convert points
+            geofence_in_converted = self.check_pos2dALL_geodetic2pos2dDICT_OSM(geofence_in)
 
-    def pos3d2pos3dDICT(self, pos3d):
+            points_OSM_x = []
+            points_OSM_y = []
+            for i in range(len(geofence_in)):
+                points_OSM_x.append(geofence_in_converted[i]['x'])
+                points_OSM_y.append(geofence_in_converted[i]['y'])
+            plot.patch(points_OSM_x, points_OSM_y, alpha=0.5, line_width=2)
+
+    def check_pos2dALL_geodetic2pos2dDICT_OSM(self, pos2dALL_geodetic):
+        pos2dDICT_OSM = []
+        try:
+            tmp_var = pos2dALL_geodetic[0]['lat']
+        except TypeError:
+            # convert the points
+            for i in range(len(pos2dALL_geodetic)):
+                pos2dDICT_OSM.append( self.pos2dDICT_geodetic2pos2dDICT_OSM( self.pos2d2pos2dDICT_geodetic(pos2dALL_geodetic[i]) ) )
+        else:
+            for i in range(len(pos2dALL_geodetic)):
+                pos2dDICT_OSM.append( self.pos2dDICT_geodetic2pos2dDICT_OSM(pos2dALL_geodetic[i]) )
+        return pos2dDICT_OSM
+
+    def pos2dDICT_geodetic2pos2dDICT_OSM(self, pos2dDICT_geodetic):
+        x,y = self.Geodetic2PseudoMercator(pos2dDICT_geodetic['lat'], pos2dDICT_geodetic['lon'])
+        return {'x':x,'y':y}
+    def pos2dDICT_OSM2pos2dDICT_geodetic(self, pos2dDICT_OSM):
+        lat,lon = self.PseudoMercator2Geodetic(pos2dDICT_OSM['x'], pos2dDICT_OSM['y'])
+        return {'lat':lat,'lon':lon}
+
+    def pos2d2pos2dDICT_OSM(self, pos2d):
+        """
+        Input: 2 value 1 element array of x, y
+        Output: 2 value 1 element DICT of x, y
+        """
+        return {'x':pos3d[0],'y':pos3d[1]}
+    def pos2dDICT2pos2d_OSM(self, pos2dDICT):
+        """
+        Input: 2 value 1 element array of x, y
+        Output: 2 value 1 element DICT of x, y
+        """
+        return [pos2dDICT['x'],pos2dDICT['y']]
+
+    def pos2d2pos2dDICT_geodetic(self, pos2d):
+        """
+        Input: 2 value 1 element array of lat, lon
+        Output: 2 value 1 element DICT of lat, lon
+        """
+        return {'lat':pos2d[0],'lon':pos2d[1]}
+    def pos2dDICT2pos2d_geodetic(self, pos3dDICT):
+        """
+        Input: 2 value 1 element DICT of lat, lon
+        Output: 2 value 1 element array of lat, lon
+        """
+        return [pos2dDICT['lat'],pos2dDICT['lon']]
+
+    def pos3d2pos3dDICT_geodetic(self, pos3d):
         """
         Input: 3 value 1 element array of lat, lon, alt
         Output: 3 value 1 element DICT of lat, lon, alt
         """
         return {'lat':pos3d[0],'lon':pos3d[1],'alt':pos3d[2]}
-
-    def pos3dDICT2pos3d(self, pos3dDICT):
+    def pos3dDICT2pos3d_geodetic(self, pos3dDICT):
         """
         Input: 3 value 1 element DICT of lat, lon, alt
         Output: 3 value 1 element array of lat, lon, alt
         """
-        return [pos3pos3dDICT['lat'],pos3pos3dDICT['lon'],pos3pos3dDICT['alt']]
-    def pos4d2pos4dDICT(self, pos4d):
+        return [pos3dDICT['lat'],pos3dDICT['lon'],pos3dDICT['alt']]
+
+    def pos4d2pos4dDICT_geodetic(self, pos4d):
         """
         Input: 4 value 1 element array of lat, lon, alt, time
         Output: 4 value 1 element DICT of lat, lon, alt, time
         """
         return {'lat':pos4d[0],'lon':pos4d[1],'alt':pos4d[2],'time':pos4d[2]}
-    def pos4dDICT2pos4d(self, pos4dDICT):
+    def pos4dDICT2pos4d_geodetic(self, pos4dDICT):
         """
         Input: 4 value 1 element DICT of lat, lon, alt, time
         Output: 4 value 1 element array of lat, lon, alt, time
@@ -138,39 +185,42 @@ class UAV_path_planner():
         return [pos4dDICT['lat'],pos4dDICT['lon'],pos4dDICT['alt'],pos4dDICT['time']]
 
     """ Path planning functions """
-    def plan_path(self, geo_point_start, geo_point_end):
+    def plan_path(self, point_start, point_end):
         """
         Input: start and goal/end point (latitude, longitude in EPSG:4326, and altitude) as 3 value array or DICT (lat, lon, alt)
         Output: planned path of points (latitude, longitude in EPSG:4326, altitude, and time)
         """
         # Convert to pos3dDICT
         try:
-            tmp_var = geo_point_start['lat']
+            tmp_var = point_start['lat']
         except TypeError:
-            geo_point_start = self.pos3d2pos3dDICT(geo_point_start)
+            point_start_converted = self.pos3d2pos3dDICT_geodetic(point_start)
+        else:
+            point_start_converted = point_start
         try:
-            tmp_var = geo_point_end['lat']
+            tmp_var = point_end['lat']
         except TypeError:
-            geo_point_end = self.pos3d2pos3dDICT(geo_point_end)
-
+            point_end_converted = self.pos3d2pos3dDICT_geodetic(point_end)
+        else:
+            point_end_converted = point_end
 
         print colored('Path planning started', self.default_term_color_info)
-        # Convert points to proper representation
+
         if PATH_PLANNER == PATH_PLANNER_ASTAR:
             print colored('Planning using A start', self.default_term_color_info)
-            path = self.plan_planner_Astar(geo_point_start, geo_point_end)
+            path = self.plan_planner_Astar(point_start_converted, point_end_converted)
         else:
             print colored('Path planner type not defined', self.default_term_color_error)
             return []
         return path
 
-    def plan_planner_Astar(self, geo_point_start, geo_point_end):
+    def plan_planner_Astar(self, point_start, point_end):
         print colored('Entered A star path planner', self.default_term_color_info)
-        print colored('Start point: lat: %f, lon: %f' % (geo_point_start['lat'], geo_point_start['lon']), self.default_term_color_tmp_res)
-        print colored('End point: lat: %f, lon: %f' % (geo_point_end['lat'], geo_point_end['lon']), self.default_term_color_tmp_res)
+        print colored('Start point: lat: %f, lon: %f' % (point_start['lat'], point_start['lon']), self.default_term_color_tmp_res)
+        print colored('End point: lat: %f, lon: %f' % (point_end['lat'], point_end['lon']), self.default_term_color_tmp_res)
         return_arr = []
-        return_arr.append(geo_point_start)
-        return_arr.append(geo_point_end)
+        return_arr.append(point_start)
+        return_arr.append(point_end)
         return return_arr
 
     """ Path planner evaluator functions """
@@ -287,7 +337,7 @@ if __name__ == '__main__':
     ]
 
 
-    UAV_path_planner_module.generate_path(p, points)
+    UAV_path_planner_module.draw_path(p, points_DICT)
     UAV_path_planner_module.generate_geofence(p, points_geofence)
 
     path_planned = UAV_path_planner_module.plan_path(points[0], points[len(points)-1])
@@ -297,4 +347,4 @@ if __name__ == '__main__':
 
     #UAV_path_planner_module.calc_horz_dist_geodetic_total(points_geofence)
 
-    #show(p)
+    show(p)
