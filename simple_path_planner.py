@@ -14,10 +14,11 @@ License: BSD 3-Clause
 from bokeh.plotting import figure, show, output_file
 from bokeh.tile_providers import CARTODBPOSITRON
 from bokeh.models import ColumnDataSource, MercatorTicker, MercatorTickFormatter
-import math
+from math import pow, sqrt, pi, cos
 from termcolor import colored
 from pyproj import Proj, transform, Geod
 import datetime
+from libs.transverse_mercator_py.utm import utmconv
 
 """ Program defines """
 PATH_PLANNER_ASTAR = 0
@@ -34,9 +35,13 @@ PATH_PLANNER = PATH_PLANNER_ASTAR
 class UAV_path_planner():
     # Terminal output colors
     default_term_color_info = 'cyan'
+    default_term_color_info_alt = 'magenta'
+    info_alt_indent = ' -- '
     default_term_color_error = 'red'
     default_term_color_tmp_res = 'yellow'
     tmp_res_indent = ' -> '
+    default_term_color_res = 'green'
+    res_indent = ' ++ '
     # Path evaluation (path fitness) factors
     horz_distance_factor = 1
     vert_distance_factor = 2
@@ -47,6 +52,9 @@ class UAV_path_planner():
     geofence_height = 100 # unit: m
     def __init__(self, debug = False):
         self.debug = debug
+
+        # Instantiate utmconv class
+        self.uc = utmconv()
 
     def Geodetic2PseudoMercator(self, lat, lon = False):
         """
@@ -192,6 +200,8 @@ class UAV_path_planner():
         Input: start and goal/end point (latitude, longitude in EPSG:4326, and altitude) as 3 value array or DICT (lat, lon, alt)
         Output: planned path of points (latitude, longitude in EPSG:4326, altitude, and time)
         """
+        print colored('\nPath planning started', self.default_term_color_info)
+
         # Convert to pos3dDICT
         try:
             tmp_var = point_start['lat']
@@ -208,7 +218,6 @@ class UAV_path_planner():
 
         # NOTE: convert to UTM for path planning
 
-        print colored('Path planning started', self.default_term_color_info)
         # Go to selected path planner
         if PATH_PLANNER == PATH_PLANNER_ASTAR:
             print colored('Planning using A start', self.default_term_color_info)
@@ -220,8 +229,8 @@ class UAV_path_planner():
 
     def plan_planner_Astar(self, point_start, point_end):
         print colored('Entered A star path planner', self.default_term_color_info)
-        print colored('Start point: lat: %.03f, lon: %.03f' % (point_start['lat'], point_start['lon']), self.default_term_color_tmp_res)
-        print colored('End point: lat: %.03f, lon: %.03f' % (point_end['lat'], point_end['lon']), self.default_term_color_tmp_res)
+        print colored(self.info_alt_indent+'Start point: lat: %.03f, lon: %.03f' % (point_start['lat'], point_start['lon']), self.default_term_color_info_alt)
+        print colored(self.info_alt_indent+'End point: lat: %.03f, lon: %.03f' % (point_end['lat'], point_end['lon']), self.default_term_color_info_alt)
         return_arr = []
         return_arr.append(point_start)
         return_arr.append(point_end)
@@ -229,7 +238,7 @@ class UAV_path_planner():
 
     """ Path planner evaluator functions """
     def evaluate_path(self, path):
-        print colored('Evaluating path', self.default_term_color_info)
+        print colored('\nEvaluating path', self.default_term_color_info)
         # Convert to / ensure pos4dDICT object
         path_converted = []
         try:
@@ -248,7 +257,7 @@ class UAV_path_planner():
         waypoints = len(path_converted)
         if self.debug:
             print colored(self.tmp_res_indent+'Total waypoints %d' % waypoints, self.default_term_color_tmp_res)
-        avg_waypoint_dist = self.calc_avg_waypoint_dist(path_converted, horz_distances, vert_distances)
+        avg_waypoint_dist, total3d_waypoint_dist = self.calc_avg_waypoint_dist(path_converted, horz_distances, vert_distances)
 
         fitness = self.horz_distance_factor*horz_distance
         fitness = fitness + self.vert_distance_factor*vert_distance
@@ -256,7 +265,7 @@ class UAV_path_planner():
         fitness = fitness + self.waypoints_factor*waypoints
         fitness = fitness + self.avg_waypoint_dist_factor*avg_waypoint_dist
         print colored('Path evaluation done', self.default_term_color_info)
-        print colored(self.tmp_res_indent+'Path fitness %.02f [unitless]' % fitness, self.default_term_color_tmp_res)
+        print colored(self.res_indent+'Path fitness %.02f [unitless]' % fitness, self.default_term_color_res)
         return fitness
 
     def calc_horz_dist_geodetic_total(self, path):
@@ -317,18 +326,48 @@ class UAV_path_planner():
         if len(horz_distances) == len(vert_distances):
             for i in range(len(horz_distances)):
                 # Calculate combined distance from horizontal and vertical using pythagoras
-                total3d_waypoint_dist = total3d_waypoint_dist + math.sqrt( math.pow(horz_distances[i], 2) + math.pow(vert_distances[i], 2) )
+                total3d_waypoint_dist = total3d_waypoint_dist + sqrt( pow(horz_distances[i], 2) + pow(vert_distances[i], 2) )
             avg_waypoint_dist = total3d_waypoint_dist / len(horz_distances)
         else:
             print colored('Input does not match in size, average waypoint distance set to 0 [m]', self.default_term_color_error)
         if self.debug:
             print colored(self.tmp_res_indent+'Average waypoint distance %f [m]' % avg_waypoint_dist, self.default_term_color_tmp_res)
-        return avg_waypoint_dist
+        return avg_waypoint_dist, total3d_waypoint_dist
+
+    """ UTM """
+    def utm_test(self, test_lat, test_lon):
+        # Heavily inspired by https://github.com/FroboLab/frobomind/blob/master/fmLib/math/geographics/transverse_mercator/src/transverse_mercator_py/utm_test.py
+        # Convert from geodetic to UTM
+        print colored('\nTest position [deg]:', self.default_term_color_info)
+        print colored(self.tmp_res_indent+' latitude:  %.10f'  % (test_lat), self.default_term_color_tmp_res)
+        print colored(self.tmp_res_indent+'longitude:  %.10f'  % (test_lon), self.default_term_color_tmp_res)
+
+        (hemisphere, zone, letter, easting, northing) = self.uc.geodetic_to_utm (test_lat,test_lon)
+        print colored('Converted from geodetic to UTM [m]:', self.default_term_color_info)
+        print colored(self.res_indent+'%d %c %.5fe %.5fn' % (zone, letter, easting, northing), self.default_term_color_res)
+
+        # Convert back from UTM to geodetic
+        (back_conv_lat, back_conv_lon) = self.uc.utm_to_geodetic (hemisphere, zone, easting, northing)
+        print colored('Converted back from UTM to geodetic [deg]:', self.default_term_color_info)
+        print colored(self.res_indent+' latitude:  %.10f'  % (back_conv_lat), self.default_term_color_res)
+        print colored(self.res_indent+'longitude:  %.10f'  % (back_conv_lon), self.default_term_color_res)
+
+        # Determine conversion position error [m]
+        lat_err = abs(back_conv_lat-test_lat)
+        lon_err = abs(back_conv_lon-test_lon)
+        earth_radius = 6378137.0 # [m]
+        lat_pos_err = lat_err/360.0 * 2*pi*earth_radius
+        lon_pos_err = lon_err/360.0 * 2*pi*(cos(back_conv_lat)*earth_radius)
+        print colored('Positional error from the two conversions [m]:', self.default_term_color_info)
+        print colored(self.tmp_res_indent+' latitude:  %.09f'  % (lat_pos_err), self.default_term_color_tmp_res)
+        print colored(self.tmp_res_indent+'longitude:  %.09f'  % (lon_pos_err), self.default_term_color_tmp_res)
+
 
 if __name__ == '__main__':
     # Set output file for Bokeh
     output_file("path_planning.html")
 
+    # Instantiate UAV_path_planner class
     UAV_path_planner_module = UAV_path_planner(False)
 
     # Set bounds for map plot
@@ -436,6 +475,8 @@ if __name__ == '__main__':
 
     path_planned = UAV_path_planner_module.plan_path(points[0], points[len(points)-1])
     path_planned_fitness = UAV_path_planner_module.evaluate_path(points4d)
+
+    UAV_path_planner_module.utm_test(points4d_DICT[0]['lat'], points4d_DICT[0]['lon'])
 
     #print UAV_path_planner_module.calc_horz_dist_geodetic(points[0][0],points[0][1],points[1][0],points[1][1]), "m"
 
