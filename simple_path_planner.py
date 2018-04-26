@@ -19,6 +19,10 @@ from termcolor import colored
 from pyproj import Proj, transform, Geod
 import datetime
 from libs.transverse_mercator_py.utm import utmconv
+import time
+import datetime # datetime.now
+import pytz # timezones in the datetime format
+from copy import copy, deepcopy
 
 """ Program defines """
 PATH_PLANNER_ASTAR = 0
@@ -50,11 +54,41 @@ class UAV_path_planner():
     avg_waypoint_dist_factor = 1
     # Other
     geofence_height = 100 # unit: m
+    forever = 60*60*24*365*100  # 100 years excl. leap year
+    inf = 4294967295 # 32bit from 0
+
     def __init__(self, debug = False):
         self.debug = debug
 
         # Instantiate utmconv class
         self.uc = utmconv()
+
+        # Set output file for Bokeh
+        output_file("path_planning.html")
+
+        # Set bounds for map plot
+        use_bounds = False
+
+        # range bounds supplied in web mercator coordinates
+        if use_bounds:
+            bounds_bottom_left_Geodetic = [54.5, 8]
+            bounds_top_right_Geodetic = [58, 13]
+            bounds_bottom_left_PseudoMercator = UAV_path_planner_module.Geodetic2PseudoMercator(bounds_bottom_left_Geodetic)
+            bounds_top_right_PseudoMercator   = UAV_path_planner_module.Geodetic2PseudoMercator(bounds_top_right_Geodetic)
+            print colored('Bottom left: lat: %d, lng: %d, x: %d, y: %d' % (bounds_bottom_left_Geodetic[0], bounds_bottom_left_Geodetic[1], bounds_bottom_left_PseudoMercator[0], bounds_bottom_left_PseudoMercator[1]), 'yellow')
+            print colored('  Top right: lat: %d, lng: %d, x: %d, y: %d' % (bounds_top_right_Geodetic[0], bounds_top_right_Geodetic[1], bounds_top_right_PseudoMercator[0], bounds_top_right_PseudoMercator[1]), 'yellow')
+            self.p = figure(x_range=(bounds_bottom_left_PseudoMercator[0], bounds_top_right_PseudoMercator[0]), y_range=(bounds_bottom_left_PseudoMercator[1], bounds_top_right_PseudoMercator[1]))#, x_axis_type="mercator", y_axis_type="mercator")
+        else:
+            self.p = figure()
+        # alternative way to add lat lng axis due to above commented method does not work, https://github.com/bokeh/bokeh/issues/6986
+        self.p.xaxis[0].ticker = MercatorTicker(dimension='lon')
+        self.p.yaxis[0].ticker = MercatorTicker(dimension='lat')
+        self.p.xaxis[0].formatter = MercatorTickFormatter(dimension='lon')
+        self.p.yaxis[0].formatter = MercatorTickFormatter(dimension='lat')
+        self.p.add_tile(CARTODBPOSITRON)
+        # Add axis labels to plot
+        self.p.xaxis.axis_label = "Longitude [deg]"
+        self.p.yaxis.axis_label = "Latitude [deg]"
 
     def Geodetic2PseudoMercator(self, lat, lon = False):
         """
@@ -75,23 +109,50 @@ class UAV_path_planner():
         return (lat, lon)
 
     """ Plot functions """
-    def draw_circle(self, plot, point, circle_color_in = default_plot_color, circle_size_in = 10, circle_alpha_in = default_plot_alpha):
+    def draw_circle_OSM(self, point, circle_color_in = default_plot_color, circle_size_in = 10, circle_alpha_in = default_plot_alpha):
         """
-        Input: plot and a 2d DICT point along with optional graphic parameters
+        Input: 2d DICT point along with optional graphic parameters
         Output: none but drawing on the provided plot
         """
-        plot.circle(x=point['x'], y=point['y'], size = circle_size_in, fill_color=circle_color_in, fill_alpha=circle_alpha_in)
-
-    def draw_line(self, plot, point_start, point_end, line_color_in = default_plot_color, line_width_in = 2, line_alpha_in = default_plot_alpha):
+        self.p.circle(x=point['x'], y=point['y'], size = circle_size_in, fill_color=circle_color_in, fill_alpha=circle_alpha_in)
+    def draw_circle_geodetic(self, point, circle_color_in = default_plot_color, circle_size_in = 10, circle_alpha_in = default_plot_alpha):
+        points_in_converted = self.check_pos2dALL_geodetic2pos2dDICT_OSM(point)
+        self.p.circle(x=points_in_converted['x'], y=points_in_converted['y'], size = circle_size_in, fill_color=circle_color_in, fill_alpha=circle_alpha_in)
+    def draw_circle_UTM(self, point, circle_color_in = default_plot_color, circle_size_in = 10, circle_alpha_in = default_plot_alpha):
         """
-        Input: plot and a 2d DICT point along with optional graphic parameters
+        Input: 4d DICT UTM point along with optional graphic parameters
         Output: none but drawing on the provided plot
         """
-        plot.line([point_start['x'], point_end['x']], [point_start['y'], point_end['y']], line_color = line_color_in, line_width = line_width_in, line_alpha = line_alpha_in)
+        (back_conv_lat, back_conv_lon) = self.uc.utm_to_geodetic(point['hemisphere'], point['zone'], point['y'], point['x'])
+        point2dDICT = {'lat':back_conv_lat,'lon':back_conv_lon}
+        points_in_converted = self.check_pos2dALL_geodetic2pos2dDICT_OSM(point2dDICT)
+        self.p.circle(x=points_in_converted['x'], y=points_in_converted['y'], size = circle_size_in, fill_color=circle_color_in, fill_alpha=circle_alpha_in)
 
-    def draw_path(self, plot, points_in):
+    def draw_line_OSM(self, point_start, point_end, line_color_in = default_plot_color, line_width_in = 2, line_alpha_in = default_plot_alpha):
         """
-        Input: plot and a set of 2d points (either array or DICT)
+        Input: 2d DICT point along with optional graphic parameters
+        Output: none but drawing on the provided plot
+        """
+        self.p.line([point_start['x'], point_end['x']], [point_start['y'], point_end['y']], line_color = line_color_in, line_width = line_width_in, line_alpha = line_alpha_in)
+    def draw_line_UTM(self, point_start, point_end, line_color_in = default_plot_color, line_width_in = 2, line_alpha_in = default_plot_alpha):
+        """
+        Input: 2d (also accepts 4d) DICT point along with optional graphic parameters
+        Output: none but drawing on the provided plot
+        """
+        # Convert start point from UTM to geodetic to OSM
+        (back_conv_lat_start, back_conv_lon_start) = self.uc.utm_to_geodetic(point_start['hemisphere'], point_start['zone'], point_start['y'], point_start['x'])
+        point2dDICT_start = {'lat':back_conv_lat_start,'lon':back_conv_lon_start}
+        points_in_converted_start = self.check_pos2dALL_geodetic2pos2dDICT_OSM(point2dDICT_start)
+        # Convert end point from UTM to geodetic to OSM
+        (back_conv_lat_end, back_conv_lon_end) = self.uc.utm_to_geodetic(point_end['hemisphere'], point_end['zone'], point_end['y'], point_end['x'])
+        point2dDICT_end = {'lat':back_conv_lat_end,'lon':back_conv_lon_end}
+        points_in_converted_end = self.check_pos2dALL_geodetic2pos2dDICT_OSM(point2dDICT_end)
+        # Draw line from OSM points
+        self.p.line([points_in_converted_start['x'], points_in_converted_end['x']], [points_in_converted_start['y'], points_in_converted_end['y']], line_color = line_color_in, line_width = line_width_in, line_alpha = line_alpha_in)
+
+    def draw_path_geodetic(self, points_in):
+        """
+        Input: set of 2d points (either array or DICT)
         Output: none but drawing on the provided plot
         """
         if len(points_in) > 0:
@@ -99,14 +160,14 @@ class UAV_path_planner():
             points_in_converted = self.check_pos2dALL_geodetic2pos2dDICT_OSM(points_in)
 
             for i in range(len(points_in_converted)-1):
-                self.draw_line(plot, points_in_converted[i], points_in_converted[i+1])
+                self.draw_line_OSM(points_in_converted[i], points_in_converted[i+1])
             for i in range(len(points_in_converted)):
                 if i == 0 or i == (len(points_in_converted)-1): # first point make other colored
-                    self.draw_circle(plot, points_in_converted[i], 'firebrick')
+                    self.draw_circle_OSM(points_in_converted[i], 'firebrick')
                 else:
-                    self.draw_circle(plot, points_in_converted[i], 'red',7)
+                    self.draw_circle_OSM(points_in_converted[i], 'red',7)
 
-    def generate_geofence(self, plot, geofence_in):
+    def draw_geofence_geodetic(self, geofence_in):
         """
         Input: plot and a set of 2d points (either array or DICT) representing a polygon
         Output: none but drawing on the provided plot
@@ -120,19 +181,26 @@ class UAV_path_planner():
             for i in range(len(geofence_in)):
                 points_OSM_x.append(geofence_in_converted[i]['x'])
                 points_OSM_y.append(geofence_in_converted[i]['y'])
-            plot.patch(points_OSM_x, points_OSM_y, alpha=0.5, line_width=2)
+            self.p.patch(points_OSM_x, points_OSM_y, alpha=0.5, line_width=2)
 
+    def show_plot(self):
+        show(self.p)
+
+    """ Geographical location formats """
     def check_pos2dALL_geodetic2pos2dDICT_OSM(self, pos2dALL_geodetic):
-        pos2dDICT_OSM = []
-        try:
-            tmp_var = pos2dALL_geodetic[0]['lat']
-        except TypeError:
-            # convert the points
-            for i in range(len(pos2dALL_geodetic)):
-                pos2dDICT_OSM.append( self.pos2dDICT_geodetic2pos2dDICT_OSM( self.pos2d2pos2dDICT_geodetic(pos2dALL_geodetic[i]) ) )
-        else:
-            for i in range(len(pos2dALL_geodetic)):
-                pos2dDICT_OSM.append( self.pos2dDICT_geodetic2pos2dDICT_OSM(pos2dALL_geodetic[i]) )
+        if isinstance(pos2dALL_geodetic, list):
+            pos2dDICT_OSM = []
+            try:
+                tmp_var = pos2dALL_geodetic[0]['lat']
+            except TypeError:
+                # convert the points
+                for i in range(len(pos2dALL_geodetic)):
+                    pos2dDICT_OSM.append( self.pos2dDICT_geodetic2pos2dDICT_OSM( self.pos2d2pos2dDICT_geodetic(pos2dALL_geodetic[i]) ) )
+            else:
+                for i in range(len(pos2dALL_geodetic)):
+                    pos2dDICT_OSM.append( self.pos2dDICT_geodetic2pos2dDICT_OSM(pos2dALL_geodetic[i]) )
+        elif isinstance(pos2dALL_geodetic, dict):
+            pos2dDICT_OSM = self.pos2dDICT_geodetic2pos2dDICT_OSM(pos2dALL_geodetic)
         return pos2dDICT_OSM
 
     def pos2dDICT_geodetic2pos2dDICT_OSM(self, pos2dDICT_geodetic):
@@ -168,37 +236,69 @@ class UAV_path_planner():
         """
         return [pos2dDICT['lat'],pos2dDICT['lon']]
 
+    def pos3dDICT2pos2dDICT_geodetic(self, pos3dDICT):
+        """
+        Input: 3 value 1 element DICT of lat, lon, alt_rel
+        Output: 2 value 1 element DICT of lat, lon; discards alt_rel
+        """
+        return {'lat':pos3dDICT['lat'],'lon':pos3dDICT['lon']}
+    def pos2dDICT2pos3dDICT_geodetic(self, pos2dDICT):
+        """
+        Input: 2 value 1 element DICT of lat, lon
+        Output: 3 value 1 element DICT of lat, lon, alt_rel (defaulted to 0)
+        """
+        return {'lat':pos2dDICT['lat'],'lon':pos2dDICT['lon'],'alt_rel':0}
+
     def pos3d2pos3dDICT_geodetic(self, pos3d):
         """
-        Input: 3 value 1 element array of lat, lon, alt
-        Output: 3 value 1 element DICT of lat, lon, alt
+        Input: 3 value 1 element array of lat, lon, alt_rel
+        Output: 3 value 1 element DICT of lat, lon, alt_rel
         """
-        return {'lat':pos3d[0],'lon':pos3d[1],'alt':pos3d[2]}
+        return {'lat':pos3d[0],'lon':pos3d[1],'alt_rel':pos3d[2]}
     def pos3dDICT2pos3d_geodetic(self, pos3dDICT):
         """
-        Input: 3 value 1 element DICT of lat, lon, alt
-        Output: 3 value 1 element array of lat, lon, alt
+        Input: 3 value 1 element DICT of lat, lon, alt_rel
+        Output: 3 value 1 element array of lat, lon, alt_rel
         """
-        return [pos3dDICT['lat'],pos3dDICT['lon'],pos3dDICT['alt']]
+        return [pos3dDICT['lat'],pos3dDICT['lon'],pos3dDICT['alt_rel']]
+
+    def pos3dDICT_geodetic2pos4dDICT_UTM(self, pos3dDICT):
+        """
+        Input: 3 value 1 element DICT of lat, lon, alt_rel
+        Output: 4 value 1 element DICT of x, y, z_rel (relative to start height), time_rel (defaulted to None and relative to start time)
+        See https://developer.dji.com/mobile-sdk/documentation/introduction/flightController_concepts.html for coordinate system reference
+        and https://www.basicairdata.eu/knowledge-center/background-topics/coordinate-system/
+            x = norting = up: flying direction
+            y = easting = right: tangent to flying direction
+        """
+        (hemisphere, zone, letter, easting, northing) = self.uc.geodetic_to_utm(pos3dDICT['lat'],pos3dDICT['lon'])
+        return {'hemisphere':hemisphere,'zone':zone,'letter':letter,'y':easting,'x':northing,'z_rel':pos3dDICT['alt_rel'],'time_rel':None}
+    def pos4dDICT_UTM2pos4dDICT_geodetic(self, pos4dDICT_UTM):
+        """
+        Input: 7 value 1 element DICT of hemisphere, zone, letter, y, x, z_rel, time_rel
+        Output: 4 value 1 element DICT of lat, lon, z_rel (relative to start height), time_rel
+        """
+        (back_conv_lat, back_conv_lon) = self.uc.utm_to_geodetic (pos4dDICT_UTM['hemisphere'], pos4dDICT_UTM['zone'], pos4dDICT_UTM['y'], pos4dDICT_UTM['x'])
+        return {'lat':back_conv_lat,'lon':back_conv_lon,'alt_rel':pos4dDICT_UTM['z_rel'],'time_rel':pos4dDICT_UTM['time_rel']}
 
     def pos4d2pos4dDICT_geodetic(self, pos4d):
         """
-        Input: 4 value 1 element array of lat, lon, alt, time
-        Output: 4 value 1 element DICT of lat, lon, alt, time
+        Input: 4 value 1 element array of lat, lon, alt_rel, time_rel
+        Output: 4 value 1 element DICT of lat, lon, alt_rel, time_rel
         """
-        return {'lat':pos4d[0],'lon':pos4d[1],'alt':pos4d[2],'time':pos4d[3]}
+        return {'lat':pos4d[0],'lon':pos4d[1],'alt_rel':pos4d[2],'time_rel':pos4d[3]}
     def pos4dDICT2pos4d_geodetic(self, pos4dDICT):
         """
-        Input: 4 value 1 element DICT of lat, lon, alt, time
-        Output: 4 value 1 element array of lat, lon, alt, time
+        Input: 4 value 1 element DICT of lat, lon, alt_rel, time_rel
+        Output: 4 value 1 element array of lat, lon, alt_rel, time_rel
         """
-        return [pos4dDICT['lat'],pos4dDICT['lon'],pos4dDICT['alt'],pos4dDICT['time']]
+        return [pos4dDICT['lat'],pos4dDICT['lon'],pos4dDICT['alt_rel'],pos4dDICT['time_rel']]
 
     """ Path planning functions """
     def plan_path(self, point_start, point_end):
         """
-        Input: start and goal/end point (latitude, longitude in EPSG:4326, and altitude) as 3 value array or DICT (lat, lon, alt)
-        Output: planned path of points (latitude, longitude in EPSG:4326, altitude, and time)
+        Input: start and goal/end point (latitude, longitude in EPSG:4326, and relative altitude) as 3 value array or DICT (lat, lon, alt_rel)
+        Output: planned path of points (latitude, longitude in EPSG:4326, relative altitude, and relative time)
         """
         print colored('\nPath planning started', self.default_term_color_info)
 
@@ -206,35 +306,58 @@ class UAV_path_planner():
         try:
             tmp_var = point_start['lat']
         except TypeError:
-            point_start_converted = self.pos3d2pos3dDICT_geodetic(point_start)
+            point_start_converted_geodetic = self.pos3d2pos3dDICT_geodetic(point_start)
         else:
-            point_start_converted = point_start
+            point_start_converted_geodetic = point_start
         try:
             tmp_var = point_end['lat']
         except TypeError:
-            point_end_converted = self.pos3d2pos3dDICT_geodetic(point_end)
+            point_end_converted_geodetic = self.pos3d2pos3dDICT_geodetic(point_end)
         else:
-            point_end_converted = point_end
+            point_end_converted_geodetic = point_end
+        print colored(self.info_alt_indent+'Start point: lat: %.03f, lon: %.03f' % (point_start_converted_geodetic['lat'], point_start_converted_geodetic['lon']), self.default_term_color_info_alt)
+        print colored(self.info_alt_indent+'  End point: lat: %.03f, lon: %.03f' % (point_end_converted_geodetic['lat'], point_end_converted_geodetic['lon']), self.default_term_color_info_alt)
 
-        # NOTE: convert to UTM for path planning
+        # Convert to UTM for path planning
+        if self.debug:
+            print colored('Converting points from geodetic to UTM', self.default_term_color_info)
+        point_start_converted_UTM = self.pos3dDICT_geodetic2pos4dDICT_UTM(point_start_converted_geodetic)
+        point_end_converted_UTM = self.pos3dDICT_geodetic2pos4dDICT_UTM(point_end_converted_geodetic)
+        if self.debug:
+            print colored(self.res_indent+'Start point: %d %c %.5fe %.5fn' % (point_start_converted_UTM['zone'], point_start_converted_UTM['letter'], point_start_converted_UTM['y'], point_start_converted_UTM['x']), self.default_term_color_res)
+            print colored(self.res_indent+'  End point: %d %c %.5fe %.5fn' % (point_end_converted_UTM['zone'], point_end_converted_UTM['letter'], point_end_converted_UTM['y'], point_end_converted_UTM['x']), self.default_term_color_res)
 
         # Go to selected path planner
         if PATH_PLANNER == PATH_PLANNER_ASTAR:
             print colored('Planning using A start', self.default_term_color_info)
-            path = self.plan_planner_Astar(point_start_converted, point_end_converted)
+            path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_end_converted_UTM)
         else:
             print colored('Path planner type not defined', self.default_term_color_error)
             return []
-        return path
+
+        # Convert path from UTM to geodetic
+        path_geodetic = []
+        for i in range(len(path_UTM)):
+            path_geodetic.append( self.pos4dDICT_UTM2pos4dDICT_geodetic( path_UTM[i] ) )
+        return path_geodetic
 
     def plan_planner_Astar(self, point_start, point_end):
         print colored('Entered A star path planner', self.default_term_color_info)
-        print colored(self.info_alt_indent+'Start point: lat: %.03f, lon: %.03f' % (point_start['lat'], point_start['lon']), self.default_term_color_info_alt)
-        print colored(self.info_alt_indent+'End point: lat: %.03f, lon: %.03f' % (point_end['lat'], point_end['lon']), self.default_term_color_info_alt)
-        return_arr = []
-        return_arr.append(point_start)
-        return_arr.append(point_end)
-        return return_arr
+        # NOTE the printing below uses geodetic which should be converted to UTM
+
+        path = []
+        # NOTE: the 2 lines below are purely for testing
+        point_start['time_rel'] = 0
+        point_end['time_rel'] = 20
+        path.append(point_start)
+        path.append(point_end)
+
+        open_list = []
+        closed_list = []
+
+        open_list.append(point_start)
+
+        return path
 
     """ Path planner evaluator functions """
     def evaluate_path(self, path):
@@ -244,6 +367,7 @@ class UAV_path_planner():
         try:
             tmp_var = path[0]['lat']
         except TypeError:
+            print 'converting'
             for i in range(len(path)):
                 path_converted.append( self.pos4d2pos4dDICT_geodetic( path[i] ) )
         else:
@@ -293,7 +417,7 @@ class UAV_path_planner():
         total_vert_distance_ascend = 0 # unit: m
         total_vert_distance_descend = 0 # unit: m
         for i in range(len(path)-1):
-            tmp_vert_distance = path[i+1]['alt']-path[i]['alt']
+            tmp_vert_distance = path[i+1]['alt_rel']-path[i]['alt_rel']
             if tmp_vert_distance < 0:
                 total_vert_distance_descend = total_vert_distance_descend + abs(tmp_vert_distance)
             else:
@@ -308,8 +432,15 @@ class UAV_path_planner():
         if self.debug:
             print colored('Calculating travel time', self.default_term_color_info)
         travel_time = 0 # unit: s
-        for i in range(len(path)-1):
-            travel_time = travel_time + (path[i+1]['time'] - path[i]['time'])
+        try:
+            tmp_var = path[0]['time_rel']
+        except KeyError:
+            for i in range(len(path)-1):
+                travel_time = travel_time + (path[i+1]['time'] - path[i]['time'])
+        else:
+            for i in range(len(path)-1):
+                travel_time = travel_time + (path[i+1]['time_rel'] - path[i]['time_rel'])
+
         if self.debug:
             print colored(self.tmp_res_indent+'Travel time %.0f [s] (%s)' % (travel_time, str(datetime.timedelta(seconds=travel_time))), self.default_term_color_tmp_res)
         return travel_time
@@ -362,38 +493,43 @@ class UAV_path_planner():
         print colored(self.tmp_res_indent+' latitude:  %.09f'  % (lat_pos_err), self.default_term_color_tmp_res)
         print colored(self.tmp_res_indent+'longitude:  %.09f'  % (lon_pos_err), self.default_term_color_tmp_res)
 
+    """ Other helper functions """
+    def get_cur_time_epoch(self):
+        return time.time()
+    def get_cur_time_human_UTC(self):
+        return datetime.datetime.fromtimestamp( self.get_cur_time_epoch(), pytz.UTC ).strftime('%Y-%m-%d %H:%M:%S')
+    def get_cur_time_human_local(self):
+        return datetime.datetime.fromtimestamp( self.get_cur_time_epoch() ).strftime('%Y-%m-%d %H:%M:%S')
 
+    def print_path_raw(self, path):
+        print colored('Planned path:', self.default_term_color_res)
+        print colored(self.tmp_res_indent+str(path), self.default_term_color_tmp_res)
+    def print_path_nice(self, path):
+        print colored('Planned path:', self.default_term_color_res)
+        try:
+            tmp_var = path[0]['time']
+        except KeyError:
+            try:
+                tmp_var = path[0]['alt']
+            except KeyError:
+                for i in range(len(path)):
+                    print colored(self.tmp_res_indent+'Waypoint %d: lat: %.03f [deg], lon: %.03f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt_rel'], path[i]['time_rel']), self.default_term_color_tmp_res)
+            else:
+                for i in range(len(path)):
+                    print colored(self.tmp_res_indent+'Waypoint %d: lat: %.03f [deg], lon: %.03f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt'], path[i]['time_rel']), self.default_term_color_tmp_res)
+        else:
+            try:
+                tmp_var = path[0]['alt']
+            except KeyError:
+                for i in range(len(path)):
+                    print colored(self.tmp_res_indent+'Waypoint %d: lat: %.03f [deg], lon: %.03f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt_rel'], path[i]['time']), self.default_term_color_tmp_res)
+            else:
+                for i in range(len(path)):
+                    print colored(self.tmp_res_indent+'Waypoint %d: lat: %.03f [deg], lon: %.03f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt'], path[i]['time']), self.default_term_color_tmp_res)
 if __name__ == '__main__':
-    # Set output file for Bokeh
-    output_file("path_planning.html")
 
     # Instantiate UAV_path_planner class
-    UAV_path_planner_module = UAV_path_planner(False)
-
-    # Set bounds for map plot
-    use_bounds = False
-
-    # range bounds supplied in web mercator coordinates
-    if use_bounds:
-        bounds_bottom_left_Geodetic = [54.5, 8]
-        bounds_top_right_Geodetic = [58, 13]
-        bounds_bottom_left_PseudoMercator = UAV_path_planner_module.Geodetic2PseudoMercator(bounds_bottom_left_Geodetic)
-        bounds_top_right_PseudoMercator   = UAV_path_planner_module.Geodetic2PseudoMercator(bounds_top_right_Geodetic)
-        print colored('Bottom left: lat: %d, lng: %d, x: %d, y: %d' % (bounds_bottom_left_Geodetic[0], bounds_bottom_left_Geodetic[1], bounds_bottom_left_PseudoMercator[0], bounds_bottom_left_PseudoMercator[1]), 'yellow')
-        print colored('  Top right: lat: %d, lng: %d, x: %d, y: %d' % (bounds_top_right_Geodetic[0], bounds_top_right_Geodetic[1], bounds_top_right_PseudoMercator[0], bounds_top_right_PseudoMercator[1]), 'yellow')
-        p = figure(x_range=(bounds_bottom_left_PseudoMercator[0], bounds_top_right_PseudoMercator[0]), y_range=(bounds_bottom_left_PseudoMercator[1], bounds_top_right_PseudoMercator[1]))#, x_axis_type="mercator", y_axis_type="mercator")
-    else:
-        p = figure()
-    # alternative way to add lat lng axis due to above commented method does not work, https://github.com/bokeh/bokeh/issues/6986
-    p.xaxis[0].ticker = MercatorTicker(dimension='lon')
-    p.yaxis[0].ticker = MercatorTicker(dimension='lat')
-    p.xaxis[0].formatter = MercatorTickFormatter(dimension='lon')
-    p.yaxis[0].formatter = MercatorTickFormatter(dimension='lat')
-    p.add_tile(CARTODBPOSITRON)
-    # Add axis labels to plot
-    p.xaxis.axis_label = "Longitude [deg]"
-    p.yaxis.axis_label = "Latitude [deg]"
-
+    UAV_path_planner_module = UAV_path_planner(True)
 
     points = [[55.397, 10.319949, 0],[55.41, 10.349689,20],[55.391653, 10.352,0]]
     points_geofence = [[55.395774, 10.319949],[55.406105, 10.349689],[55.391653, 10.349174], [55.392968, 10.341793], [55.386873, 10.329691]]
@@ -420,26 +556,26 @@ if __name__ == '__main__':
         {
             'lat': 55.395774,
             'lon': 10.319949,
-            'alt': 0,
-            'time': 1524663524
+            'alt_rel': 0,
+            'time_rel': 1524663524
         },
         {
             'lat': 55.406105,
             'lon': 10.349689,
-            'alt': 20,
-            'time': 1524663584
+            'alt_rel': 20,
+            'time_rel': 1524663584
         },
         {
             'lat': 55.391653,
             'lon': 10.349174,
-            'alt': 20,
-            'time': 1524663624
+            'alt_rel': 20,
+            'time_rel': 1524663624
         },
         {
             'lat': 55.392968,
             'lon': 10.341793,
-            'alt': 0,
-            'time': 1524663684
+            'alt_rel': 0,
+            'time_rel': 1524663684
         }
     ]
     points4d = [
@@ -470,16 +606,18 @@ if __name__ == '__main__':
     ]
 
 
-    UAV_path_planner_module.draw_path(p, points2d_DICT)
-    UAV_path_planner_module.generate_geofence(p, points_geofence)
+    #UAV_path_planner_module.draw_path_geodetic(points2d_DICT)
+    #UAV_path_planner_module.draw_geofence_geodetic(points_geofence)
 
-    path_planned = UAV_path_planner_module.plan_path(points[0], points[len(points)-1])
-    path_planned_fitness = UAV_path_planner_module.evaluate_path(points4d)
+    path_planned = UAV_path_planner_module.plan_path(points4d[0], points4d[len(points4d)-1])
+    UAV_path_planner_module.print_path_nice(path_planned)
+    UAV_path_planner_module.print_path_raw(path_planned)
+    path_planned_fitness = UAV_path_planner_module.evaluate_path(path_planned)
 
-    UAV_path_planner_module.utm_test(points4d_DICT[0]['lat'], points4d_DICT[0]['lon'])
+    #UAV_path_planner_module.utm_test(points4d_DICT[0]['lat'], points4d_DICT[0]['lon'])
 
     #print UAV_path_planner_module.calc_horz_dist_geodetic(points[0][0],points[0][1],points[1][0],points[1][1]), "m"
 
     #UAV_path_planner_module.calc_horz_dist_geodetic_total(points_geofence)
 
-    #show(p)
+    #UAV_path_planner_module.show_plot()
