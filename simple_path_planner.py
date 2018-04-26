@@ -23,6 +23,7 @@ import time
 import datetime # datetime.now
 import pytz # timezones in the datetime format
 from copy import copy, deepcopy
+from guppy import hpy
 
 """ Program defines """
 PATH_PLANNER_ASTAR = 0
@@ -35,8 +36,12 @@ default_term_color_res = 'green'
 default_plot_color = 'red'
 default_plot_alpha = 0.8
 PATH_PLANNER = PATH_PLANNER_ASTAR
+PATH_PLANNER_NAMES = ['A star algorithm']
 
 class UAV_path_planner():
+    # UAV constants
+    uav_nominal_airspeed_horz_mps = 15 # unit: m/s
+    uav_nominal_airspeed_vert_mps = 5 # unit: m/s
     # Terminal output colors
     default_term_color_info = 'cyan'
     default_term_color_info_alt = 'magenta'
@@ -346,7 +351,7 @@ class UAV_path_planner():
         # NOTE the printing below uses geodetic which should be converted to UTM
 
         path = []
-        # NOTE: the 2 lines below are purely for testing
+        # NOTE: the 4 lines below are purely for testing
         point_start['time_rel'] = 0
         point_end['time_rel'] = 20
         path.append(point_start)
@@ -354,10 +359,32 @@ class UAV_path_planner():
 
         open_list = []
         closed_list = []
+        print point_start
+        dist, horz_dist, vert_dist = self.calc_euclidian_dist_UTM(point_start, point_end)
+        print dist
+        print "Travel time from points:", self.calc_travel_time_from_UTMpoints(point_start, point_end)
+        print "Travel time from dist:", self.calc_travel_time_from_dist(horz_dist, vert_dist)
 
         open_list.append(point_start)
 
+        # TODO code for Astar
+
         return path
+
+    def calc_euclidian_dist_UTM(self, point4dUTM1, point4dUTM2):
+        total3d = sqrt( pow(point4dUTM1['x']-point4dUTM2['x'],2) + pow(point4dUTM1['y']-point4dUTM2['y'],2) + pow(point4dUTM1['z_rel']-point4dUTM2['z_rel'],2) )
+        horz_distance = self.calc_euclidian_horz_dist_UTM(point4dUTM1, point4dUTM2)
+        vert_distance = abs(point4dUTM1['z_rel']-point4dUTM2['z_rel'])
+        return total3d, horz_distance, vert_distance
+
+    def calc_euclidian_horz_dist_UTM(self, point4dUTM1, point4dUTM2):
+        return sqrt( pow(point4dUTM1['x']-point4dUTM2['x'],2) + pow(point4dUTM1['y']-point4dUTM2['y'],2) )
+
+    def calc_travel_time_from_UTMpoints(self, point4dUTM1, point4dUTM2):
+        dist, horz_dist, vert_dist = self.calc_euclidian_dist_UTM(point4dUTM1, point4dUTM2)
+        return ( (horz_dist / self.uav_nominal_airspeed_horz_mps) + ( vert_dist / self.uav_nominal_airspeed_vert_mps) )
+    def calc_travel_time_from_dist(self, horz_dist, vert_dist):
+        return ( (horz_dist / self.uav_nominal_airspeed_horz_mps) + ( vert_dist / self.uav_nominal_airspeed_vert_mps) )
 
     """ Path planner evaluator functions """
     def evaluate_path(self, path):
@@ -390,7 +417,7 @@ class UAV_path_planner():
         fitness = fitness + self.avg_waypoint_dist_factor*avg_waypoint_dist
         print colored('Path evaluation done', self.default_term_color_info)
         print colored(self.res_indent+'Path fitness %.02f [unitless]' % fitness, self.default_term_color_res)
-        return fitness
+        return fitness, total3d_waypoint_dist, horz_distance, vert_distance
 
     def calc_horz_dist_geodetic_total(self, path):
         if self.debug:
@@ -496,13 +523,14 @@ class UAV_path_planner():
     """ Other helper functions """
     def get_cur_time_epoch(self):
         return time.time()
+    def get_cur_time_epoch_wo_us(self):
+        return round(time.time(),3)
     def get_cur_time_human_UTC(self):
         return datetime.datetime.fromtimestamp( self.get_cur_time_epoch(), pytz.UTC ).strftime('%Y-%m-%d %H:%M:%S')
     def get_cur_time_human_local(self):
         return datetime.datetime.fromtimestamp( self.get_cur_time_epoch() ).strftime('%Y-%m-%d %H:%M:%S')
 
     def print_path_raw(self, path):
-        print colored('Planned path:', self.default_term_color_res)
         print colored(self.tmp_res_indent+str(path), self.default_term_color_tmp_res)
     def print_path_nice(self, path):
         print colored('Planned path:', self.default_term_color_res)
@@ -526,7 +554,31 @@ class UAV_path_planner():
             else:
                 for i in range(len(path)):
                     print colored(self.tmp_res_indent+'Waypoint %d: lat: %.03f [deg], lon: %.03f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt'], path[i]['time']), self.default_term_color_tmp_res)
+    def convert_rel2abs_time(self, path, start_time_epoch = False):
+        """
+        Converts the relative time to absoulte time by adding the current time or provided time of the start point to each point in the path
+        Input: path and optional start time (all relative times are relative to the time at the starting point)
+        Output: none but changes the input path and changes the key from 'time_rel' to 'time'
+        """
+        if len(path) > 0:
+            if start_time_epoch == False:
+                start_time_epoch = self.get_cur_time_epoch_wo_us()
+            for i in range(len(path)):
+                path[i]['time'] =path[i].pop('time_rel')
+                path[i]['time'] = path[i]['time'] + start_time_epoch
+    def convert_rel2abs_alt(self, path, abs_heigh_start_point):
+        """
+        Converts the relative heights to absoulte heights by adding the absoulute height of the start point to each point in the path
+        Input: path and absoulute height of start point (all relative heights are relative to the height at the starting point)
+        Output: none but changes the input path and changes the key from 'alt_rel' to 'alt'
+        """
+        if len(path) > 0:
+            for i in range(len(path)):
+                path[i]['alt'] =path[i].pop('alt_rel')
+
 if __name__ == '__main__':
+    # Save the start time before anything else
+    time_task_start_s = time.time()
 
     # Instantiate UAV_path_planner class
     UAV_path_planner_module = UAV_path_planner(True)
@@ -612,7 +664,12 @@ if __name__ == '__main__':
     path_planned = UAV_path_planner_module.plan_path(points4d[0], points4d[len(points4d)-1])
     UAV_path_planner_module.print_path_nice(path_planned)
     UAV_path_planner_module.print_path_raw(path_planned)
-    path_planned_fitness = UAV_path_planner_module.evaluate_path(path_planned)
+
+    # Convert the time from relative to absolute
+    UAV_path_planner_module.convert_rel2abs_time(path_planned)
+    #print path_planned
+
+    path_planned_fitness, total_dist, horz_dist, vert_dist = UAV_path_planner_module.evaluate_path(path_planned)
 
     #UAV_path_planner_module.utm_test(points4d_DICT[0]['lat'], points4d_DICT[0]['lon'])
 
@@ -621,3 +678,38 @@ if __name__ == '__main__':
     #UAV_path_planner_module.calc_horz_dist_geodetic_total(points_geofence)
 
     #UAV_path_planner_module.show_plot()
+
+    # Save the end time
+    time_task_end_s = time.time()
+    # Save the heap size before calculating and outputting statistics
+    h = hpy()
+    heap = h.heap()
+    heap_str = str(heap)
+    # Calculate runtime
+    runtime_s = time_task_end_s - time_task_start_s
+
+    # Calculate statistics
+    used_path_planner = PATH_PLANNER_NAMES[PATH_PLANNER]
+    estimated_flight_time = path_planned[len(path_planned)-1]['time'] - path_planned[0]['time']
+
+    index_end_objects = heap_str.find(' objects')
+    object_amount = int(heap_str[22:index_end_objects])
+
+    index_start_bytes = heap_str.find('Total size = ')
+    index_end_bytes = heap_str.find(' bytes.')
+    byte_amount = int(heap_str[index_start_bytes+13:index_end_bytes])
+
+    no_waypoints = len(path_planned)
+
+    # Print statistics
+    print colored('\n         Path planner: %s' % used_path_planner, 'yellow')
+    print colored('         Path fitness: %f' % path_planned_fitness, 'yellow')
+    print colored('       Total distance: %.02f [m]' % total_dist, 'yellow')
+    print colored('  Horizontal distance: %.02f [m]' % horz_dist, 'yellow')
+    print colored('    Vertical distance: %.02f [m]' % vert_dist, 'yellow')
+    print colored('              Runtime: %f [s] (%s)' % (runtime_s, str(datetime.timedelta(seconds=runtime_s))), 'yellow')
+    print colored('      Number of bytes: %i' % byte_amount, 'yellow')
+    print colored('    Number of objects: %i' % object_amount, 'yellow')
+    print colored('Estimated flight time: %.02f [s] (%s)' % (estimated_flight_time, str(datetime.timedelta(seconds=estimated_flight_time))), 'yellow') # TODO
+    print colored('  Number of waypoints: %i' % (no_waypoints), 'yellow')
+    print colored('                 Path: %s' % (str(path_planned)), 'yellow')
