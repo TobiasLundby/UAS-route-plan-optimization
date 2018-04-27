@@ -671,12 +671,6 @@ if __name__ == '__main__':
 
     path_planned_fitness, total_dist, horz_dist, vert_dist = UAV_path_planner_module.evaluate_path(path_planned)
 
-    #UAV_path_planner_module.utm_test(points4d_DICT[0]['lat'], points4d_DICT[0]['lon'])
-
-    #print UAV_path_planner_module.calc_horz_dist_geodetic(points[0][0],points[0][1],points[1][0],points[1][1]), "m"
-
-    #UAV_path_planner_module.calc_horz_dist_geodetic_total(points_geofence)
-
     #UAV_path_planner_module.show_plot()
 
     # Save the end time
