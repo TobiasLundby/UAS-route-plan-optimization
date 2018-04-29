@@ -31,7 +31,7 @@ import csv # for saving statistics and path
 PATH_PLANNER_ASTAR = 0
 geodetic_proj = Proj('+init=EPSG:4326')  # EPSG:3857 - WGS 84 / Pseudo-Mercator - https://epsg.io/3857 - OSM projection
 OSM_proj = Proj('+init=EPSG:3857')  # EPSG:4326 - WGS 84 / World Geodetic System 1984, used in GPS - https://epsg.io/4326
-geoid_distance = Geod(ellps='WGS84')
+geoid_distance = Geod(ellps='WGS84') # used for calculating Great Circle Distance
 
 """ User defines """
 default_term_color_res = 'green'
@@ -210,7 +210,45 @@ class UAV_path_planner():
     def show_plot(self):
         show(self.p)
 
-    """ Geographical location formats """
+    """
+    Geographical location formats:
+        pos2d
+            Geodetic: 2 value 1 element array of lat, lon
+            OSM: 2 value 1 element array of x, y
+
+        pos2dDICT:
+            Geodetic: 2 value 1 element DICT of lat, lon; geodetic
+            OSM: 2 value 1 element OSM DICT of x, y
+
+        pos3d:
+            Geodetic: 3 value 1 element array of lat, lon, alt_rel
+
+        pos3dDICT:
+            Geodetic: 3 value 1 element DICT of lat, lon, alt_rel
+
+        pos4d:
+            Geodetic: 4 value 1 element array of lat, lon, alt_rel, time_rel
+
+        pos4dDICT:
+            UTM: 7 value 1 element DICT of hemisphere, zone, letter, y, x, z_rel, time_rel
+            Geodetic:
+                4 value 1 element DICT of lat, lon, alt_rel, time_rel
+                4 value 1 element DICT of lat, lon, alt, time_rel
+
+        Fields:
+            lat: latitude [dd]
+            lon: longitude [dd]
+            alt_rel: relative altitude to start point height [m]
+            alt: (absolute) GPS altitude [m]
+            time_rel: relative time to start point time (default 0) [s]
+            time: (absolute) timestamps in EPOCH format [s]
+            x:
+                OSM: positive right on map
+                UTM: norting, positive up on map
+            y:
+                OSM: positive up on map
+                UTM: easting, positive right on map
+    """
     def check_pos2dALL_geodetic2pos2dDICT_OSM(self, pos2dALL_geodetic):
         """ Cheks and converts all formats of pos2D (geodetic) to pos2dDICT_OSM
         Input: 2 value 1 element DICT of lat, lon or array of lat, lon
@@ -247,61 +285,61 @@ class UAV_path_planner():
         return {'lat':lat,'lon':lon}
 
     def pos2d2pos2dDICT_OSM(self, pos2d):
-        """ Converts pos2d to pos2dDICT_OSM
+        """ Converts pos2d to pos2dDICT, OSM
         Input: 2 value 1 element array of x, y
         Output: 2 value 1 element DICT of x, y
         """
-        return {'x':pos3d[0],'y':pos3d[1]}
+        return {'x':pos2d[0],'y':pos2d[1]}
     def pos2dDICT2pos2d_OSM(self, pos2dDICT):
-        """ Converts pos2d to pos2d_OSM
+        """ Converts pos2d to pos2d, OSM
         Input: 2 value 1 element array of x, y
         Output: 2 value 1 element DICT of x, y
         """
         return [pos2dDICT['x'],pos2dDICT['y']]
 
     def pos2d2pos2dDICT_geodetic(self, pos2d):
-        """ Converts pos2d to pos2dDICT_geodetic
+        """ Converts pos2d to pos2dDICT, geodetic
         Input: 2 value 1 element array of lat, lon
         Output: 2 value 1 element DICT of lat, lon
         """
         return {'lat':pos2d[0],'lon':pos2d[1]}
     def pos2dDICT2pos2d_geodetic(self, pos2dDICT):
-        """ Converts pos2dDICT to pos2d_geodetic
+        """ Converts pos2dDICT to pos2d, geodetic
         Input: 2 value 1 element DICT of lat, lon
         Output: 2 value 1 element array of lat, lon
         """
         return [pos2dDICT['lat'],pos2dDICT['lon']]
 
     def pos3dDICT2pos2dDICT_geodetic(self, pos3dDICT):
-        """ Converts pos3dDICT to pos2dDICT_geodetic
+        """ Converts pos3dDICT to pos2dDICT, geodetic
         Input: 3 value 1 element DICT of lat, lon, alt_rel
         Output: 2 value 1 element DICT of lat, lon; discards alt_rel
         """
         return {'lat':pos3dDICT['lat'],'lon':pos3dDICT['lon']}
     def pos2dDICT2pos3dDICT_geodetic(self, pos2dDICT):
-        """ Converts pos2dDICT to pos3dDICT_geodetic
+        """ Converts pos2dDICT to pos3dDICT, geodetic
         Input: 2 value 1 element DICT of lat, lon
         Output: 3 value 1 element DICT of lat, lon, alt_rel (defaulted to 0)
         """
         return {'lat':pos2dDICT['lat'],'lon':pos2dDICT['lon'],'alt_rel':0}
 
     def pos3d2pos3dDICT_geodetic(self, pos3d):
-        """ Converts pos3d to pos3dDICT_geodetic
+        """ Converts pos3d to pos3dDICT, geodetic
         Input: 3 value 1 element array of lat, lon, alt_rel
         Output: 3 value 1 element DICT of lat, lon, alt_rel
         """
         return {'lat':pos3d[0],'lon':pos3d[1],'alt_rel':pos3d[2]}
     def pos3dDICT2pos3d_geodetic(self, pos3dDICT):
-        """ Converts pos3dDICT to pos3d_geodetic
+        """ Converts pos3dDICT to pos3d, geodetic
         Input: 3 value 1 element DICT of lat, lon, alt_rel
         Output: 3 value 1 element array of lat, lon, alt_rel
         """
         return [pos3dDICT['lat'],pos3dDICT['lon'],pos3dDICT['alt_rel']]
 
     def pos3dDICT_geodetic2pos4dDICT_UTM(self, pos3dDICT):
-        """ Converts pos3dDICT_geodetic to pos4dDICT_UTM
+        """ Converts pos3dDICT (geodetic) to pos4dDICT (UTM)
         Input: 3 value 1 element DICT of lat, lon, alt_rel
-        Output: 4 value 1 element DICT of x, y, z_rel (relative to start height), time_rel (defaulted to None and relative to start time)
+        Output: 4 value 1 element DICT of x, y, z_rel (relative to start height), time_rel (defaulted to None and relative to start time) along with UTM parameters (hemisphere, zone, and letter)
         See https://developer.dji.com/mobile-sdk/documentation/introduction/flightController_concepts.html for coordinate system reference
         and https://www.basicairdata.eu/knowledge-center/background-topics/coordinate-system/
             x = norting = up: flying direction
@@ -310,21 +348,21 @@ class UAV_path_planner():
         (hemisphere, zone, letter, easting, northing) = self.uc.geodetic_to_utm(pos3dDICT['lat'],pos3dDICT['lon'])
         return {'hemisphere':hemisphere,'zone':zone,'letter':letter,'y':easting,'x':northing,'z_rel':pos3dDICT['alt_rel'],'time_rel':None}
     def pos4dDICT_UTM2pos4dDICT_geodetic(self, pos4dDICT_UTM):
-        """ Converts pos4dDICT_UTM to pos4dDICT_geodetic
+        """ Converts pos4dDICT (UTM) to pos4dDICT (geodetic)
         Input: 7 value 1 element DICT of hemisphere, zone, letter, y, x, z_rel, time_rel
-        Output: 4 value 1 element DICT of lat, lon, z_rel (relative to start height), time_rel
+        Output: 4 value 1 element DICT of lat, lon, alt_rel (relative to start height), time_rel
         """
         (back_conv_lat, back_conv_lon) = self.uc.utm_to_geodetic (pos4dDICT_UTM['hemisphere'], pos4dDICT_UTM['zone'], pos4dDICT_UTM['y'], pos4dDICT_UTM['x'])
         return {'lat':back_conv_lat,'lon':back_conv_lon,'alt_rel':pos4dDICT_UTM['z_rel'],'time_rel':pos4dDICT_UTM['time_rel']}
 
     def pos4d2pos4dDICT_geodetic(self, pos4d):
-        """ Converts pos4d to pos4dDICT_geodetic
+        """ Converts pos4d to pos4dDICT, geodetic
         Input: 4 value 1 element array of lat, lon, alt_rel, time_rel
         Output: 4 value 1 element DICT of lat, lon, alt_rel, time_rel
         """
         return {'lat':pos4d[0],'lon':pos4d[1],'alt_rel':pos4d[2],'time_rel':pos4d[3]}
     def pos4dDICT2pos4d_geodetic(self, pos4dDICT):
-        """ Converts pos4dDICT to pos4d_geodetic
+        """ Converts pos4dDICT to pos4d, geodetic
         Input: 4 value 1 element DICT of lat, lon, alt_rel, time_rel
         Output: 4 value 1 element array of lat, lon, alt_rel, time_rel
         """
