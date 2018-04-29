@@ -351,7 +351,7 @@ class UAV_path_planner():
         except TypeError:
             point_goal_converted_geodetic = self.pos3d2pos3dDICT_geodetic(point_goal)
         else:
-            point_goal_converted_geodetic = point_end
+            point_goal_converted_geodetic = point_goal
         print colored(self.info_alt_indent+'Start point: lat: %.03f, lon: %.03f' % (point_start_converted_geodetic['lat'], point_start_converted_geodetic['lon']), self.default_term_color_info_alt)
         print colored(self.info_alt_indent+' Goal point: lat: %.03f, lon: %.03f' % (point_goal_converted_geodetic['lat'], point_goal_converted_geodetic['lon']), self.default_term_color_info_alt)
 
@@ -698,6 +698,7 @@ if __name__ == '__main__':
     # Instantiate UAV_path_planner class
     UAV_path_planner_module = UAV_path_planner(True)
 
+    """ Define some points for testing """
     points = [[55.397, 10.319949, 0],[55.41, 10.349689,20],[55.391653, 10.352,0]]
     points_geofence = [[55.395774, 10.319949],[55.406105, 10.349689],[55.391653, 10.349174], [55.392968, 10.341793], [55.386873, 10.329691]]
 
@@ -776,18 +777,24 @@ if __name__ == '__main__':
     #UAV_path_planner_module.draw_path_geodetic(points2d_DICT)
     #UAV_path_planner_module.draw_geofence_geodetic(points_geofence)
 
-    path_planned = UAV_path_planner_module.plan_path(points4d[0], points4d[len(points4d)-1])
+    """ Path planning start """
+    # Define start and goal points
+    start_point_3dDICT = {'lat': 55.395774, 'lon': 10.319949, 'alt_rel': 0}
+    goal_point_3dDICT  = {'lat': 55.392968, 'lon': 10.341793, 'alt_rel': 0}
+    # Plan path
+    path_planned = UAV_path_planner_module.plan_path(start_point_3dDICT, goal_point_3dDICT)
+    # Print planned path
     UAV_path_planner_module.print_path_nice(path_planned)
     UAV_path_planner_module.print_path_raw(path_planned)
-
     # Convert the time from relative to absolute
     UAV_path_planner_module.convert_rel2abs_time(path_planned)
-    #print path_planned
-
+    # Evaluate path and also note the total distance, horizontal distance, and vertical distance for the statistics
     path_planned_fitness, total_dist, horz_dist, vert_dist = UAV_path_planner_module.evaluate_path(path_planned)
 
+    # Show a plot of the planned path
     #UAV_path_planner_module.show_plot()
 
+    """ Path planning done, finalize with statistics """
     # Save the end time
     time_task_end_s = time.time()
     # Save the heap size before calculating and outputting statistics
@@ -826,11 +833,12 @@ if __name__ == '__main__':
     # Save statistics to file
     now = datetime.datetime.now()
     file_name = ('PP_%d-%02d-%02d-%02d-%02d.csv' % (now.year, now.month, now.day, now.hour, now.minute))
-    file_name = 'results'+file_name
+    sub_folder = 'results'
+    file_name = sub_folder+'/'+file_name
     output_file_CSV = open(file_name, 'w')
     output_writer_CSV = csv.writer(output_file_CSV,quoting=csv.QUOTE_MINIMAL)
-    fields = ['path planner', 'path fitness [unitless]', 'total distance [m]', 'horizontal distance [m]', 'vertical distance [m]', 'runtime [s]', 'bytes used', 'objects used', 'flight time [s]', 'waypoints', 'path ']
+    fields = ['path planner', 'path fitness [unitless]', 'total distance [m]', 'horizontal distance [m]', 'vertical distance [m]', 'runtime [s]', 'bytes used', 'objects used', 'flight time [s]', 'waypoints', 'start point', 'goal point', 'path']
     output_writer_CSV.writerow(fields)
-    data = [used_path_planner, path_planned_fitness, total_dist, horz_dist, vert_dist, runtime_s, byte_amount, object_amount, estimated_flight_time, no_waypoints, path_planned]
+    data = [used_path_planner, path_planned_fitness, total_dist, horz_dist, vert_dist, runtime_s, byte_amount, object_amount, estimated_flight_time, no_waypoints, start_point_3dDICT, goal_point_3dDICT, path_planned]
     output_writer_CSV.writerow(data)
     output_file_CSV.close()
