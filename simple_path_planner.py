@@ -24,7 +24,8 @@ import time
 import datetime # datetime.now
 import pytz # timezones in the datetime format
 from copy import copy, deepcopy
-from guppy import hpy
+from guppy import hpy # for getting heap info
+import csv # for saving statistics and path
 
 """ Program defines """
 PATH_PLANNER_ASTAR = 0
@@ -791,8 +792,8 @@ if __name__ == '__main__':
     time_task_end_s = time.time()
     # Save the heap size before calculating and outputting statistics
     h = hpy()
-    heap = h.heap()
-    heap_str = str(heap)
+    heap = h.heap() # Extract heap
+    heap_str = str(heap) # Convert to string to make a deepcopy so it is not just pointing to an object which changes
     # Calculate runtime
     runtime_s = time_task_end_s - time_task_start_s
 
@@ -810,14 +811,26 @@ if __name__ == '__main__':
     no_waypoints = len(path_planned)
 
     # Print statistics
-    print colored('\n         Path planner: %s' % used_path_planner, 'yellow')
-    print colored('         Path fitness: %f' % path_planned_fitness, 'yellow')
-    print colored('       Total distance: %.02f [m]' % total_dist, 'yellow')
-    print colored('  Horizontal distance: %.02f [m]' % horz_dist, 'yellow')
-    print colored('    Vertical distance: %.02f [m]' % vert_dist, 'yellow')
-    print colored('              Runtime: %f [s] (%s)' % (runtime_s, str(datetime.timedelta(seconds=runtime_s))), 'yellow')
-    print colored('      Number of bytes: %i' % byte_amount, 'yellow')
-    print colored('    Number of objects: %i' % object_amount, 'yellow')
-    print colored('Estimated flight time: %.02f [s] (%s)' % (estimated_flight_time, str(datetime.timedelta(seconds=estimated_flight_time))), 'yellow') # TODO
-    print colored('  Number of waypoints: %i' % (no_waypoints), 'yellow')
-    print colored('                 Path: %s' % (str(path_planned)), 'yellow')
+    print colored('\n          Path planner: %s' % used_path_planner, 'yellow')
+    print colored('          Path fitness: %f' % path_planned_fitness, 'yellow')
+    print colored('        Total distance: %.02f [m]' % total_dist, 'yellow')
+    print colored('   Horizontal distance: %.02f [m]' % horz_dist, 'yellow')
+    print colored('     Vertical distance: %.02f [m]' % vert_dist, 'yellow')
+    print colored('               Runtime: %f [s] (%s)' % (runtime_s, str(datetime.timedelta(seconds=runtime_s))), 'yellow')
+    print colored('  Number of bytes used: %i' % byte_amount, 'yellow')
+    print colored('Number of objects used: %i' % object_amount, 'yellow')
+    print colored(' Estimated flight time: %.02f [s] (%s)' % (estimated_flight_time, str(datetime.timedelta(seconds=estimated_flight_time))), 'yellow') # TODO
+    print colored('   Number of waypoints: %i' % (no_waypoints), 'yellow')
+    print colored('                  Path: %s' % (str(path_planned)), 'yellow')
+
+    # Save statistics to file
+    now = datetime.datetime.now()
+    file_name = ('PP_%d-%02d-%02d-%02d-%02d.csv' % (now.year, now.month, now.day, now.hour, now.minute))
+    file_name = 'results'+file_name
+    output_file_CSV = open(file_name, 'w')
+    output_writer_CSV = csv.writer(output_file_CSV,quoting=csv.QUOTE_MINIMAL)
+    fields = ['path planner', 'path fitness [unitless]', 'total distance [m]', 'horizontal distance [m]', 'vertical distance [m]', 'runtime [s]', 'bytes used', 'objects used', 'flight time [s]', 'waypoints', 'path ']
+    output_writer_CSV.writerow(fields)
+    data = [used_path_planner, path_planned_fitness, total_dist, horz_dist, vert_dist, runtime_s, byte_amount, object_amount, estimated_flight_time, no_waypoints, path_planned]
+    output_writer_CSV.writerow(data)
+    output_file_CSV.close()
