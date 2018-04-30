@@ -49,7 +49,7 @@ class UAV_path_planner():
     uav_nominal_airspeed_vert_mps = 5 # unit: m/s
     """ Path planning constants """
     goal_acceptance_radius = 1 # unit: m
-    map_step_size = 1 # unit: m
+    map_horz_step_size = 1 # unit: m
     # neighbors in 8 connect 2d planning; values can be scaled if needed
     neighbors = [ [0,1,0], [0,-1,0], [1,0,0], [-1,0,0], [1,1,0], [1,-1,0], [-1,1,0], [-1,-1,0] ]
     # neighbors in 4 connect 2d planning; values can be scaled if needed
@@ -150,7 +150,7 @@ class UAV_path_planner():
     def draw_circle_UTM(self, point, circle_color_in = default_plot_color, circle_size_in = 10, circle_alpha_in = default_plot_alpha):
         """
         Draws a circle on the map plot from UTM coordinates
-        Input: 4d UTM DICT point along with optional graphic parameters
+        Input: 4d UTM DICT or tuple point along with optional graphic parameters
         Output: none but drawing on the provided plot
         """
         if isinstance(point, dict):
@@ -171,7 +171,7 @@ class UAV_path_planner():
     def draw_line_UTM(self, point_start, point_end, line_color_in = default_plot_color, line_width_in = 2, line_alpha_in = default_plot_alpha):
         """
         Draws a line on the map plot from UTM coordinates
-        Input: 2d (also accepts 4d) UTM DICT point along with optional graphic parameters
+        Input: 2d (also accepts 4d) UTM DICT or tuple point along with optional graphic parameters
         Output: none but drawing on the provided plot
         """
         # Convert start point from UTM to geodetic to OSM
@@ -209,6 +209,11 @@ class UAV_path_planner():
                 else:
                     self.draw_circle_OSM(points_in_converted[i], 'red',7)
     def draw_path_UTM(self, points_in):
+        """
+        Draws a path on the map plot from UTM coordinates
+        Input: set of 4d UTM point tuples
+        Output: none but drawing on the provided plot
+        """
         if len(points_in) > 0:
             for i in range(len(points_in)-1):
                 self.draw_line_UTM(points_in[i], points_in[i+1])
@@ -493,7 +498,7 @@ class UAV_path_planner():
             self.neighbors_scaled = deepcopy(self.neighbors)
             for element in range(len(self.neighbors_scaled)):
                 for sub_element in range(len(self.neighbors_scaled[element])):
-                    self.neighbors_scaled[element][sub_element] = self.neighbors_scaled[element][sub_element]*self.map_step_size
+                    self.neighbors_scaled[element][sub_element] = self.neighbors_scaled[element][sub_element]*self.map_horz_step_size
         print self.neighbors_scaled
         #exit(1)
         # closed list: The set of nodes already evaluated
@@ -566,7 +571,7 @@ class UAV_path_planner():
             for y, x, z in self.neighbors_scaled: # Explore the neighbors
                 #time.sleep(1)
 
-                neighbor = self.pos4dTUPLE_UTM_copy_and_move_point(current, y, x, z) # Construct the neighbor node
+                neighbor = self.pos4dTUPLE_UTM_copy_and_move_point(current, y, x, z) # Construct the neighbor node; the function calculates the 4 dimension by the time required to travel between the nodes
                 #self.draw_circle_UTM(neighbor, 'blue')
                 # Calculate tentative g score by using the current gscore and the distance between the current and neighbor node
                 tentative_g_score = gscore[current] + self.node_cost(current, neighbor)
@@ -612,21 +617,34 @@ class UAV_path_planner():
         return [] # No path found
 
     def heuristic_a_star(self, point4dUTM1, point4dUTM2):
+        """
+        Calculates the heuristic used by the A star algorithm to know how close the current node is to the goal node
+        Input: 2 4d UTM points; presumably current node and goal node
+        Output: scalar heuristic; current unit [m]
+        """
         return self.calc_euclidian_dist_UTM(point4dUTM1, point4dUTM2)[0]
 
     def node_cost(self, parent_point4dUTM, child_point4dUTM):
+        """
+        Calculates the child node cost based on the parent node
+        Input: 2 4d UTM points; 1 parent and 1 child node
+        Output: scalar node cost [unitless]
+        """
         # get the travel time which already is present in the points objects from the copy_and_move command
         travel_time = child_point4dUTM[3]-parent_point4dUTM[3]
         total_dist, horz_distance, vert_distance = self.calc_euclidian_dist_UTM(parent_point4dUTM, child_point4dUTM)
         # NOTE currently the thing below contains a linear dependency (linær afhængig)
         return 0.5*total_dist + travel_time
 
-    def pos4dTUPLE_UTM_copy_and_move_point(self, point, y_offset, x_offset, z_offset):
-        # make tmp arr because it is a mutable container
-        tmp_point_arr   = [point[0]+y_offset, point[1]+x_offset, point[2]+z_offset, point[3], point[4], point[5], point[6]]
-        # make tmp tuple for calculating the travel time
-        tmp_point_tuple = (tmp_point_arr[0], tmp_point_arr[1], tmp_point_arr[2], tmp_point_arr[3], tmp_point_arr[4], tmp_point_arr[5], tmp_point_arr[6])
-        travel_time_delta = self.calc_travel_time_from_UTMpoints(point, tmp_point_tuple)
+    def pos4dTUPLE_UTM_copy_and_move_point(self, point4dUTM, y_offset, x_offset, z_offset):
+        """
+        Takes a pos4d tuple and modifies it to a new pos4d tuple using the provided offsets
+        Input: 1 4d UTM point along with 3 dimensional offset given as individual arguments
+        Output: pos4dTUPLE
+        """
+        tmp_point_arr   = [point4dUTM[0]+y_offset, point4dUTM[1]+x_offset, point4dUTM[2]+z_offset, point4dUTM[3], point4dUTM[4], point4dUTM[5], point4dUTM[6]] # make tmp arr because it is a mutable container
+        tmp_point_tuple = (tmp_point_arr[0], tmp_point_arr[1], tmp_point_arr[2], tmp_point_arr[3], tmp_point_arr[4], tmp_point_arr[5], tmp_point_arr[6]) # make tmp tuple for calculating the travel time
+        travel_time_delta = self.calc_travel_time_from_UTMpoints(point4dUTM, tmp_point_tuple)
         tmp_point_arr[3] = tmp_point_arr[3] + travel_time_delta
         return (tmp_point_arr[0], tmp_point_arr[1], tmp_point_arr[2], tmp_point_arr[3], tmp_point_arr[4], tmp_point_arr[5], tmp_point_arr[6])
 
@@ -900,19 +918,19 @@ class UAV_path_planner():
                     tmp_var = path[0]['alt']
                 except KeyError:
                     for i in range(len(path)):
-                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.03f [deg], lon: %.03f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt_rel'], path[i]['time_rel']), self.default_term_color_tmp_res)
+                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt_rel'], path[i]['time_rel']), self.default_term_color_tmp_res)
                 else:
                     for i in range(len(path)):
-                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.03f [deg], lon: %.03f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt'], path[i]['time_rel']), self.default_term_color_tmp_res)
+                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt'], path[i]['time_rel']), self.default_term_color_tmp_res)
             else:
                 try:
                     tmp_var = path[0]['alt']
                 except KeyError:
                     for i in range(len(path)):
-                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.03f [deg], lon: %.03f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt_rel'], path[i]['time']), self.default_term_color_tmp_res)
+                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt_rel'], path[i]['time']), self.default_term_color_tmp_res)
                 else:
                     for i in range(len(path)):
-                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.03f [deg], lon: %.03f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt'], path[i]['time']), self.default_term_color_tmp_res)
+                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt'], path[i]['time']), self.default_term_color_tmp_res)
         else:
             print colored('\nCannot print path because it is empty', self.default_term_color_error)
     def convert_rel2abs_time(self, path, start_time_epoch = False):
