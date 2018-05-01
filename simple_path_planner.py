@@ -45,37 +45,41 @@ SAVE_STATISTICS_TO_FILE = False
 
 class UAV_path_planner():
     """ UAV constants """
-    uav_nominal_airspeed_horz_mps = 15 # unit: m/s
-    uav_nominal_airspeed_vert_mps = 5 # unit: m/s
+    uav_nominal_airspeed_horz_mps   = 15 # unit: m/s
+    uav_nominal_airspeed_vert_mps   = 5 # unit: m/s
     """ Path planning constants """
-    goal_acceptance_radius = 1 # unit: m
-    map_horz_step_size = 1 # unit: m
+    goal_acceptance_radius          = 5 # unit: m
+    map_horz_step_size              = 5 # unit: m
     # neighbors in 8 connect 2d planning; values can be scaled if needed
-    neighbors = [ [0,1,0], [0,-1,0], [1,0,0], [-1,0,0], [1,1,0], [1,-1,0], [-1,1,0], [-1,-1,0] ]
+    neighbors                       = [ [0,1,0], [0,-1,0], [1,0,0], [-1,0,0], [1,1,0], [1,-1,0], [-1,1,0], [-1,-1,0] ]
     # neighbors in 4 connect 2d planning; values can be scaled if needed
     #neighbors = [ [0,1,0], [0,-1,0], [1,0,0], [-1,0,0] ]
-    neighbors_scaled = []
-    PP_max_node_exploration = 7500
+    neighbors_scaled                = []
+    PP_max_node_exploration         = 7500
+    print_popped_node               = True
+    print_explore_node              = True
+    draw_open_list                  = True
+    draw_closed_list                = True
     """ Terminal output colors """
-    default_term_color_info = 'cyan'
-    default_term_color_info_alt = 'magenta'
-    info_alt_indent = ' -- '
-    default_term_color_error = 'red'
-    error_indent = ' ÷÷ '
-    default_term_color_tmp_res = 'yellow'
-    tmp_res_indent = ' -> '
-    default_term_color_res = 'green'
-    res_indent = ' ++ '
+    default_term_color_info         = 'cyan'
+    default_term_color_info_alt     = 'magenta'
+    info_alt_indent                 = ' -- '
+    default_term_color_error        = 'red'
+    error_indent                    = ' ÷÷ '
+    default_term_color_tmp_res      = 'yellow'
+    tmp_res_indent                  = ' -> '
+    default_term_color_res          = 'green'
+    res_indent                      = ' ++ '
     """ Path evaluation (path fitness) factors """
-    horz_distance_factor = 1 # unit: unitless
-    vert_distance_factor = 2 # unit: unitless
-    travel_time_factor = 1 # unit: unitless
-    waypoints_factor = 1 # unit: unitless
-    avg_waypoint_dist_factor = 1 # unit: unitless
+    horz_distance_factor            = 1 # unit: unitless
+    vert_distance_factor            = 2 # unit: unitless
+    travel_time_factor              = 1 # unit: unitless
+    waypoints_factor                = 1 # unit: unitless
+    avg_waypoint_dist_factor        = 1 # unit: unitless
     """ Other """
-    geofence_height = 100 # unit: m
-    forever = 60*60*24*365*100  # unit: s; 100 years excl. leap year
-    inf = 4294967295 # 32bit from 0
+    geofence_height                 = 100 # unit: m
+    forever                         = 60*60*24*365*100  # unit: s; 100 years excl. leap year
+    inf                             = 4294967295 # 32bit from 0
 
     def __init__(self, debug = False):
         """ Constructor """
@@ -160,6 +164,21 @@ class UAV_path_planner():
         point2dDICT = {'lat':back_conv_lat,'lon':back_conv_lon}
         points_in_converted = self.check_pos2dALL_geodetic2pos2dDICT_OSM(point2dDICT)
         self.p.circle(x=points_in_converted['x'], y=points_in_converted['y'], size = circle_size_in, fill_color=circle_color_in, fill_alpha=circle_alpha_in)
+
+    def draw_points_UTM(self, points_in, list_type, point_color = default_plot_color, point_size = 7):
+        """
+        Draws points in the closed or open list
+        Input: list and list type (0: open list, 1: closed list)
+        Output: none but drawing on the provided plot
+        """
+        if list_type == 0:
+            print colored(self.info_alt_indent+'Drawing points from open list; elements % i' % ( len(points_in) ), self.default_term_color_info_alt)
+            for element in points_in:
+                self.draw_circle_UTM(element[1], point_color, point_size)
+        elif list_type == 1:
+            print colored(self.info_alt_indent+'Drawing points from closed list; elements % i' % ( len(points_in) ), self.default_term_color_info_alt)
+            for element in points_in:
+                self.draw_circle_UTM(element, point_color, point_size)
 
     def draw_line_OSM(self, point_start, point_end, line_color_in = default_plot_color, line_width_in = 2, line_alpha_in = default_plot_alpha):
         """
@@ -485,6 +504,10 @@ class UAV_path_planner():
         A star algorithm path planner
         Input: start and goal point in UTM format
         Output: planned path of UTM points
+        Inspiration:
+            Wikipedia: https://en.wikipedia.org/wiki/A*_search_algorithm
+            Christian Careaga: http://code.activestate.com/recipes/578919-python-a-pathfinding-with-binary-heap/
+            Python docs: https://docs.python.org/2/library/heapq.html
         """
         print colored('Entered A star path planner', self.default_term_color_info)
         # Set start time of start point to 0 (relative)
@@ -499,8 +522,7 @@ class UAV_path_planner():
             for element in range(len(self.neighbors_scaled)):
                 for sub_element in range(len(self.neighbors_scaled[element])):
                     self.neighbors_scaled[element][sub_element] = self.neighbors_scaled[element][sub_element]*self.map_horz_step_size
-        print self.neighbors_scaled
-        #exit(1)
+
         # closed list: The set of nodes already evaluated
         closed_list = set()
 
@@ -510,108 +532,95 @@ class UAV_path_planner():
         came_from = {}
 
         # For each node, the cost of getting from the start node to that node.
-        gscore = {}
+        g_score = {}
         # The cost of going from start to start is zero.
-        gscore[point_start_tuple] = 0
+        g_score[point_start_tuple] = 0
 
         # For each node, the total cost of getting from the start node to the goal
         # by passing by that node. That value is partly known, partly heuristic.
-        fscore = {}
+        f_score = {}
         # For the first node, that value is completely heuristic.
-        fscore[point_start_tuple] = self.heuristic_a_star(point_start_tuple, point_goal_tuple)
+        f_score[point_start_tuple] = self.heuristic_a_star(point_start_tuple, point_goal_tuple)
         if self.debug:
-            print colored(self.info_alt_indent+'Start point heuristic: %f' % fscore[point_start_tuple], self.default_term_color_info_alt)
+            print colored(self.info_alt_indent+'Start point heuristic: %f' % f_score[point_start_tuple], self.default_term_color_info_alt)
 
         # open list: The set of currently discovered nodes that are not evaluated yet.
         open_list = []
 
         # Initially, only the start node is known.
-        heappush(open_list, (fscore[point_start_tuple], point_start_tuple))
+        heappush(open_list, (f_score[point_start_tuple], point_start_tuple))
 
-        PP_ctr = 0
+        # Var for seeing the progress of the search
+        open_list_popped_ctr = 0
         smallest_heuristic = self.inf
+        time_start = self.get_cur_time_epoch()
+        time_last = time_start
+
+        if self.debug:
+            print colored('A star initialization done, starting search', self.default_term_color_info)
         # Start searching
-        while open_list and PP_ctr < self.PP_max_node_exploration: # Continue searching until the open_list is empty = all nodes discovered and evaluated; or max tries exceeded
-            #print '\n\nOpen list:', open_list
-            if PP_ctr % 100 == 0:
-                print colored(self.info_alt_indent+'PP_ctr: %i' % PP_ctr, self.default_term_color_info_alt)
-            PP_ctr = PP_ctr + 1
+        while open_list and open_list_popped_ctr < self.PP_max_node_exploration: # Continue searching until the open_list is empty = all nodes discovered and evaluated; or max tries exceeded
+            time.sleep(10)
+            if open_list_popped_ctr % 1000 == 0 and not open_list_popped_ctr == 0:
+                time_cur = self.get_cur_time_epoch()
+                print colored(self.info_alt_indent+'Visited %i nodes from the open list in %.02f [s]' % (open_list_popped_ctr, time_cur-time_last), self.default_term_color_info_alt)
+                time_last = time_cur
 
             current = heappop(open_list)[1] # Pop (remove and get) element with lowest f score
+            open_list_popped_ctr += 1 # Increment open list pop counter
+            if self.print_popped_node:
+                tmp_f_score = f_score[current]
+                tmp_g_score = g_score.get(current)
+                print colored('\n'+self.info_alt_indent+'Working on node (%.02f [m], %.02f [m], %.02f [m], %.02f [s]) with F score %.02f, G score %.02f, and heuristic %.02f' % (current[0], current[1], current[2], current[3], tmp_f_score, tmp_g_score, tmp_f_score-tmp_g_score), self.default_term_color_info)
 
             if self.is_goal_UTM(current, point_goal_tuple):
-                print colored('PATH FOUND', self.default_term_color_res)
-                # Reconstruct path / backtracking; TODO make this a seperate function as the wiki specifies
-                data = [] # make empty array to hold the path
-                while current in came_from:
-                    data.append(self.pos4dTUPLE2pos4dDICT_UTM(current)) # add the current node to the path
-                    current = came_from[current] # get the parent node
-                data.append(self.pos4dTUPLE2pos4dDICT_UTM(point_start_tuple))
-                data.reverse()
-                # DRAW
-                self.draw_path_UTM(data)
-                #self.draw_circle_UTM(point_start_tuple, 'green')
-                self.draw_circle_UTM(point_goal_tuple, 'green')
-                print 'Drawing points from open list; elements', len(open_list)
-                for element in open_list:
-                    #print element[1]
-                    self.draw_circle_UTM(element[1], 'blue', 5)
-                print 'Drawing points from closed list; elements', len(closed_list)
-                for element in closed_list:
-                    self.draw_circle_UTM(element, 'magenta', 7)
+                time_cur = self.get_cur_time_epoch()
+                print colored('Path found in %.02f [s]' % (time_cur-time_start), self.default_term_color_res)
+                planned_path = self.backtrace_path(came_from, current, point_start_tuple)
 
-                return data # return the path
+                # DRAW
+                self.draw_circle_UTM(point_goal_tuple, 'green', 12)
+                self.draw_path_UTM(planned_path)
+                if self.draw_open_list:
+                    self.draw_points_UTM(open_list, 0, 'yellow', 2)
+                if self.draw_closed_list:
+                    self.draw_points_UTM(closed_list, 1, 'grey', 5)
+
+                return planned_path # return the path
 
             # Add current node to the evaluated nodes / closed list
             closed_list.add(current)
-            #print colored('Working on node (%f, %f)' % (current[0], current[1]), 'yellow')
-            #print 'Open list:', open_list
-            #print 'Closed list:', closed_list
+
 
             for y, x, z in self.neighbors_scaled: # Explore the neighbors
-                #time.sleep(1)
-
                 neighbor = self.pos4dTUPLE_UTM_copy_and_move_point(current, y, x, z) # Construct the neighbor node; the function calculates the 4 dimension by the time required to travel between the nodes
-                #self.draw_circle_UTM(neighbor, 'blue')
-                # Calculate tentative g score by using the current gscore and the distance between the current and neighbor node
-                tentative_g_score = gscore[current] + self.node_cost(current, neighbor)
 
-                #print colored('\nNeighbor node (%f, %f), current node (%f, %f)' % (neighbor[0], neighbor[1], current[0], current[1]), 'cyan')
-                #print map
-                #print colored('Tentative g score: %f' % tentative_g_score, 'magenta')
-                #print colored('G score list: %f' % gscore.get(neighbor, 0), 'magenta')
-                #print gscore
+                # Calculate tentative g score by using the current g_score and the distance between the current and neighbor node
+                tentative_g_score = g_score[current] + self.node_cost(current, neighbor)
+
+                if self.print_explore_node:
+                    print colored(self.info_alt_indent+'Exploring node (%.02f [m], %.02f [m], %.02f [m], %.02f [s]) with tentative G score %.02f, prevoius G score %.02f (0 = node not visited)' % (neighbor[0], neighbor[1], neighbor[2], neighbor[3], tentative_g_score, g_score.get(neighbor, 0)), self.default_term_color_info_alt)
 
                 # Maybe test here if inside no-fly zones or violate aircrafts and skip if needed NOTE TODO see a-star-test.py
 
-                # Ignore the neighbor which is already evaluated and test if a better path is found to the neighbor node (tentative_g_score is smaller than the gscore stored in the gscore dict (the 0 is the default value if the element does not exist) = better path)
-                #print colored(('Neighbor in closed list:', neighbor in closed_list), 'magenta')
-                #print colored(('Gscore list', tentative_g_score >= gscore.get(neighbor, 0)), 'magenta')
-                if neighbor in closed_list and tentative_g_score >= gscore.get(neighbor, 0):
+                # Ignore the neighbor which is already evaluated and test if a better path is found to the neighbor node (tentative_g_score is smaller than the g_score stored in the g_score dict (the 0 is the default value if the element does not exist) = better path)
+                if neighbor in closed_list and tentative_g_score >= g_score.get(neighbor, 0):
                     #print colored('Node already visited', 'yellow')
                     continue
-                #print colored('Passed test', 'green')
 
-                # Test if the tentative_g_score is smaller than the one stored in gscore or if the neighbor is not part of the open list ([i[1]for i in open_list] simply returns the point values)
-                if  tentative_g_score < gscore.get(neighbor, 0) or neighbor not in [i[1]for i in open_list]:
+                # Test if the tentative_g_score is smaller than the one stored in g_score (if the node is new it is not stored in the g_score list) or if the neighbor is not part of the open list ([i[1]for i in open_list] simply returns the point values)
+                if  tentative_g_score < g_score.get(neighbor, 0) or neighbor not in [ i[1] for i in open_list ]:
                     #print colored('Choosing node and adding to list', 'green')
                     came_from[neighbor] = current # Add the parent to the came from list
-                    gscore[neighbor] = tentative_g_score # Add the tentative g score to the gscore list
+                    g_score[neighbor] = tentative_g_score # Add the tentative g score to the g_score list
                     #print colored('Heuristic: '+str(self.heuristic_a_star(neighbor, point_goal_tuple)),'yellow')
                     neighbor_heiristic = self.heuristic_a_star(neighbor, point_goal_tuple)
                     if neighbor_heiristic < smallest_heuristic:
-                        print colored(self.tmp_res_indent+'Smallest heuristic: %f' % neighbor_heiristic, self.default_term_color_tmp_res)
+                        #print colored(self.tmp_res_indent+'Smallest heuristic: %f' % neighbor_heiristic, self.default_term_color_tmp_res)
                         smallest_heuristic = neighbor_heiristic
-                    fscore[neighbor] = tentative_g_score + neighbor_heiristic#self.heuristic_a_star(neighbor, point_goal_tuple) # Calculate and add the f score (combination of g score and heuristic)
-                    heappush(open_list, (fscore[neighbor], neighbor)) # Add the node to the open list
-                    #print colored('F score: '+str(fscore[neighbor]),'yellow')
-        # print 'Drawing points from open list; elements', len(open_list)
-        # for element in open_list:
-        #     #print element[1]
-        #     self.draw_circle_UTM(element[1], 'blue', 5)
-        # print 'Drawing points from closed list; elements', len(closed_list)
-        # for element in closed_list:
-        #     self.draw_circle_UTM(element)
+                    f_score[neighbor] = tentative_g_score + neighbor_heiristic#self.heuristic_a_star(neighbor, point_goal_tuple) # Calculate and add the f score (combination of g score and heuristic)
+                    heappush(open_list, (f_score[neighbor], neighbor)) # Add the node to the open list
+
         self.draw_circle_UTM(point_start_tuple, 'green')
         self.draw_circle_UTM(point_goal_tuple, 'green')
         return [] # No path found
@@ -630,11 +639,32 @@ class UAV_path_planner():
         Input: 2 4d UTM points; 1 parent and 1 child node
         Output: scalar node cost [unitless]
         """
+        # rally points
         # get the travel time which already is present in the points objects from the copy_and_move command
         travel_time = child_point4dUTM[3]-parent_point4dUTM[3]
         total_dist, horz_distance, vert_distance = self.calc_euclidian_dist_UTM(parent_point4dUTM, child_point4dUTM)
         # NOTE currently the thing below contains a linear dependency (linær afhængig)
         return 0.5*total_dist + travel_time
+
+    def print_a_star_open_list_nice(self, list_in):
+        print colored('\nPrinting the open list; contains %i elements' % len(list_in), self.default_term_color_info)
+        for i in range(len(list_in)):
+            print colored(self.info_alt_indent+'Element %i: heuristic %f, y %.02f [m], x %.02f [m], z_rel %.02f [m], time_rel %.02f ' % (i, list_in[i][0], list_in[i][1][0], list_in[i][1][1], list_in[i][1][2], list_in[i][1][3]), self.default_term_color_info_alt)
+    def print_a_star_closed_list_nice(self, list_in):
+        print colored('\nPrinting the closed list (set); contains %i elements' % len(list_in), self.default_term_color_info)
+        itr = 0
+        for element in list_in:
+            print colored(self.info_alt_indent+'Element %i: y %.02f [m], x %.02f [m], z_rel %.02f [m], time_rel %.02f ' % (itr, element[0], element[1], element[2], element[3]), self.default_term_color_info_alt)
+            itr += 1
+
+    def backtrace_path(self, came_from, current_node, start_node):
+        path = [] # make empty array to hold the path
+        while current_node in came_from:
+            path.append(self.pos4dTUPLE2pos4dDICT_UTM(current_node)) # add the current node to the path
+            current_node = came_from[current_node] # get the parent node
+        path.append(self.pos4dTUPLE2pos4dDICT_UTM(start_node))
+        path.reverse()
+        return path
 
     def pos4dTUPLE_UTM_copy_and_move_point(self, point4dUTM, y_offset, x_offset, z_offset):
         """
@@ -709,7 +739,7 @@ class UAV_path_planner():
             return False
         else:
             if self.debug:
-                print colored(self.res_indent+'Points are within goal acceptance radius; distance between points: %.02f [m], acceptance radius: %.02f [m]' % (dist, self.goal_acceptance_radius), self.default_term_color_res)
+                print colored(self.res_indent+'Node is within goal acceptance radius; distance between node and goal: %.02f [m], acceptance radius: %.02f [m]' % (dist, self.goal_acceptance_radius), self.default_term_color_res)
             return True
 
     """ Path planner evaluator functions """
@@ -1044,13 +1074,13 @@ if __name__ == '__main__':
     """ Path planning start """
     # Define start and goal points
     start_point_3dDICT = {'lat': 55.395774, 'lon': 10.319949, 'alt_rel': 0}
-    # goal_point_3dDICT  = {'lat': 55.392968, 'lon': 10.341793, 'alt_rel': 0} # further away
+    #goal_point_3dDICT  = {'lat': 55.392968, 'lon': 10.341793, 'alt_rel': 0} # further away
     goal_point_3dDICT  = {'lat': 55.394997, 'lon': 10.321601, 'alt_rel': 0}
     # Plan path
     path_planned = UAV_path_planner_module.plan_path(start_point_3dDICT, goal_point_3dDICT)
     # Print planned path
     UAV_path_planner_module.print_path_nice(path_planned)
-    UAV_path_planner_module.print_path_raw(path_planned)
+    #UAV_path_planner_module.print_path_raw(path_planned)
     # Convert the time from relative to absolute
     UAV_path_planner_module.convert_rel2abs_time(path_planned)
     # Evaluate path and also note the total distance, horizontal distance, and vertical distance for the statistics
