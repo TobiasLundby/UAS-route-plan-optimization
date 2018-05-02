@@ -5,28 +5,34 @@ from pykml import parser
 import time
 
 class KML_no_fly_zones_parser():
-    def __init__(self, file_name):
+    def __init__(self, file_name, debug = False):
         self.file_name = file_name
+        self.debug = debug
+        self.placemarks = 0
 
     def parse_file(self):
         with open(self.file_name) as f:
             file = parser.parse(f).getroot()
         self.coordinate3d_combined = []
-        itr = 0
+        itr = 0 # Incremented in the beginning so first element has itr=1
         for element in file.Document.Placemark:
-            print 'Placemark', itr
             itr += 1
+            if self.debug:
+                print '\nPlacemark', itr
             try:
                 element.Polygon
             except AttributeError:
-                print 'Something is wrong about the zone formatting; trying different method'
+                if self.debug:
+                    print 'Something is wrong about the zone formatting; trying different method'
                 try:
                     element.MultiGeometry
                 except AttributeError:
-                    print 'Something is wrong about the zone formatting; skipping zone!'
+                    if self.debug:
+                        print 'Something is wrong about the zone formatting; skipping zone!'
                     continue
                 else:
-                    print '\nMultiGeometry object, amount of subpolygons', len(element.MultiGeometry.Polygon)
+                    if self.debug:
+                        print 'MultiGeometry object, amount of subpolygons', len(element.MultiGeometry.Polygon)
 
                     # Save the values that are the same for each subpolygon
                     element_style = str(element.styleUrl)
@@ -35,7 +41,8 @@ class KML_no_fly_zones_parser():
                     try:
                         element_name = str(element.name)
                     except UnicodeEncodeError:
-                        print 'Something is wrong with the name format (contains special characters which \'lxml.objectify.StringElement\' cannot handle); defaulting name to \'NaN\''
+                        if self.debug:
+                            print 'Something is wrong with the name format (contains special characters which \'lxml.objectify.StringElement\' cannot handle); defaulting name to \'NaN\''
                         element_name = 'NaN'
                     sub_itr = 0
                     for sub_element in element.MultiGeometry.Polygon:
@@ -50,18 +57,21 @@ class KML_no_fly_zones_parser():
                             for sub_coordinate in sub_coordinates:
                                 coordinate3d.append(float(sub_coordinate))
                             coordinate3d_placemark.append(coordinate3d)
-                        print element_id+'-'+str(sub_itr)
+                        if self.debug:
+                            print element_id+'-'+str(sub_itr)
                         self.coordinate3d_combined.append({'style': element_style, 'id': element_id+'-'+str(sub_itr), 'name': element_name, 'coordinates': coordinate3d_placemark})
                         sub_itr += 1
             else:
-                print '\nSingle Polygon object'
+                if self.debug:
+                    print 'Single Polygon object'
                 element_style = str(element.styleUrl)
                 element_style = element_style[9:]
                 element_id = str(element.id)
                 try:
                     element_name = str(element.name)
                 except UnicodeEncodeError:
-                    print 'Something is wrong with the name format (contains special characters which \'lxml.objectify.StringElement\' cannot handle); defaulting name to \'NaN\''
+                    if self.debug:
+                        print 'Something is wrong with the name format (contains special characters which \'lxml.objectify.StringElement\' cannot handle); defaulting name to \'NaN\''
                     element_name = 'NaN'
 
                 coordinates_raw =  element.Polygon.outerBoundaryIs.LinearRing.coordinates
@@ -75,10 +85,15 @@ class KML_no_fly_zones_parser():
                     for sub_coordinate in sub_coordinates:
                         coordinate3d.append(float(sub_coordinate))
                     coordinate3d_placemark.append(coordinate3d)
-                print element_id
+                if self.debug:
+                    print element_id
                 self.coordinate3d_combined.append({'style': element_style, 'id': element_id, 'name': element_name, 'coordinates': coordinate3d_placemark})
+        self.placemarks = itr
         if len(self.coordinate3d_combined) == 0:
             print 'No no-fly zones were parsed'
+            return False
+        else:
+            return True
 
     def print_zones(self):
         for element in self.coordinate3d_combined:
@@ -117,6 +132,8 @@ class KML_no_fly_zones_parser():
 
     def get_number_of_zones(self):
         return len(self.coordinate3d_combined)
+    def get_number_of_placemarks(self):
+        return self.placemarks
 
 
 if __name__ == '__main__':
@@ -124,20 +141,21 @@ if __name__ == '__main__':
     test = KML_no_fly_zones_parser('KmlUasZones_2018-02-27-18-24.kml')
 
     print '\n\nParsing KML file'
-    test.parse_file()
+    if test.parse_file():
+        print 'The KML has successfully been parsed; parsed %i placemarks and %i no-fly zones (includes subzones defined in MultiGeometry objects)' % (test.get_number_of_placemarks(), test.get_number_of_zones())
 
-    print '\n\nPrinting parsed KML no-fl zones'
-    test.print_zones()
+        print '\n\nPrinting parsed KML no-fl zones in 2s'
+        time.sleep(2)
+        test.print_zones()
 
-    print '\n\nPrinting selected zone'
-    test.print_zone(0)
+        print '\n\nPrinting selected zone in 2s'
+        time.sleep(2)
+        test.print_zone(0)
 
-    print '\n\nPrinting seleced zone fields from acessor methods'
-    print test.get_zone(0)
-    print test.get_zone_style(0)
-    print test.get_zone_id(0)
-    print test.get_zone_name(0)
-    print test.get_zone_coordinates(0)
-
-    print '\n\nPrinting the amount of zones; note that this includes the subzones defined by MultiGeometry'
-    print test.get_number_of_zones()
+        print '\n\nPrinting seleced zone fields from acessor methods in 2s'
+        time.sleep(2)
+        print test.get_zone(0)
+        print test.get_zone_style(0)
+        print test.get_zone_id(0)
+        print test.get_zone_name(0)
+        print test.get_zone_coordinates(0)
