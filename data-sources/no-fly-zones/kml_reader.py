@@ -1,16 +1,32 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+"""
+Description: KML parser for the no-fly zones obtained from https://www.droneluftrum.dk/
+             The KML parser can handle Document.Placemark.Polygon and Document.Placemark.MultiGeometry.Polygon (generates sub placemarks with a modifies ID)
+    License: BSD 3-Clause
+"""
+
 from pykml import parser
 import time
 
 class KML_no_fly_zones_parser():
     def __init__(self, file_name, debug = False):
+        """
+        Init method
+        Input: filename along with optional debug parameter which toogles debug messages
+        Output: none
+        """
         self.file_name = file_name
         self.debug = debug
         self.placemarks = 0
 
     def parse_file(self):
+        """
+        Parses the input file given by the already obtained filename
+        Input: none
+        Output: bool (False: parsing failed, True: parsing successful)
+        """
         with open(self.file_name) as f:
             file = parser.parse(f).getroot()
         self.coordinate3d_combined = []
@@ -96,9 +112,19 @@ class KML_no_fly_zones_parser():
             return True
 
     def print_zones(self):
+        """
+        Prints all of the no-fly zones
+        Input: none
+        Output: none but printing in the terminal
+        """
         for element in self.coordinate3d_combined:
             self.print_zone(0, element)
     def print_zone(self, zone_no, zone=None):
+        """
+        Prints a single no-fly zone
+        Input: zone number and optional zone (if provided it uses the provided zone instead of adressing a number)
+        Output: none but printing in the terminal
+        """
         if zone == None:
             print '\nStyle: %s' % self.coordinate3d_combined[zone_no]['style']
             print 'ID: %s' % self.coordinate3d_combined[zone_no]['id']
@@ -113,28 +139,67 @@ class KML_no_fly_zones_parser():
                 print '   '+str(element)
 
     def get_zone_coordinates(self, zone_no):
+        """
+        Returns no-fly zone coordinates of the argument provided no-fly zone
+        Input: zone number
+        Output: no-fly zone coordinates
+        """
         return self.coordinate3d_combined[zone_no]['coordinates']
 
     def get_zone_style(self, zone_no):
+        """
+        Returns no-fly zone style of the argument provided no-fly zone
+        Input: zone number
+        Output: no-fly zone style
+        """
         return self.coordinate3d_combined[zone_no]['style']
 
     def get_zone_id(self, zone_no):
+        """
+        Returns no-fly zone ID of the argument provided no-fly zone
+        Input: zone number
+        Output: no-fly zone ID
+        """
         return self.coordinate3d_combined[zone_no]['id']
 
     def get_zone_name(self, zone_no):
+        """
+        Returns no-fly zone name of the argument provided no-fly zone (note that if the parsing failed with the name it returns 'NaN')
+        Input: zone number
+        Output: no-fly zone name
+        """
         return self.coordinate3d_combined[zone_no]['name']
 
     def get_zone(self, zone_no):
+        """
+        Returns a no-fly zone object of the argument provided no-fly zone
+        Input: zone number
+        Output: no-fly zone
+        """
         return self.coordinate3d_combined[zone_no]
 
     def get_zones(self):
+        """
+        Returns all the no-fly zones
+        Input: none
+        Output: no-fly zones
+        """
         return self.coordinate3d_combined
 
     def get_number_of_zones(self):
+        """
+        Returns the number of no-fly zones
+        Input: none
+        Output: number of no-fly zones (int)
+        """
         return len(self.coordinate3d_combined)
     def get_number_of_placemarks(self):
+        """
+        Returns the number of placemarks parsed
+        Input: none
+        Output: number of placemarks (int)
+        """
         return self.placemarks
-
 
 if __name__ == '__main__':
     # Run self test
