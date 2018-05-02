@@ -28,6 +28,7 @@ from guppy import hpy # for getting heap info
 import csv # for saving statistics and path
 from heapq import * # for the heap used in the A star algorithm
 from data_sources.no_fly_zones.kml_reader import kml_no_fly_zones_parser
+from shapely import geometry # used to calculate the distance to polygons
 
 """ Program defines """
 PATH_PLANNER_ASTAR      = 0
@@ -119,20 +120,50 @@ class UAV_path_planner():
         # Set initial values for loading of no-fly zones
         self.no_fly_zones_loaded = False
         self.no_fly_zone_reader_module = None
+        self.no_fly_zone_polygons = []
 
         # Set initial values for rally points
         self.rally_points_loaded = False
 
     """ No-fly zones """
-    def no_fly_zone_init_and_parse(self, file_name_in):
+    def no_fly_zone_init_and_parse(self, file_name_in = None):
         """
         Loads and parses the KML file provided by the filename using the kml_no_fly_zones_parser class
-        Input: filename of KML file to parse
+
+        Input: filename of KML file to parse (if not provided a download is initiated)
         Output: loaded status (bool: True = loaded, False = not loaded)
         """
-        self.no_fly_zone_reader_module = kml_no_fly_zones_parser(file_name_in)
-        self.no_fly_zones_loaded = self.no_fly_zone_reader_module.parse_file()
+        self.no_fly_zone_reader_module = kml_no_fly_zones_parser()
+        if file_name_in == None:
+            self.no_fly_zones_loaded = self.no_fly_zone_reader_module.download_and_parse_data()
+        else:
+            self.no_fly_zones_loaded = self.no_fly_zone_reader_module.parse_file(file_name_in)
+
+        self.load_polygons()
+
         return self.no_fly_zones_loaded
+
+    def load_polygons(self):
+        if self.no_fly_zones_loaded:
+            no_fly_zones = self.no_fly_zone_reader_module.get_zones() # extract the no-fly zones
+            for no_fly_zone in no_fly_zones:
+                no_fly_zone_coordinates = no_fly_zone['coordinates'] # extract the coordinates
+                no_fly_zone_coordinates_UTM = self.pos3d_geodetic2pos3d_UTM_multiple(no_fly_zone_coordinates) # convert coordinates to UTM
+                no_fly_zone_coordinates_UTM_y_x = [[x[0],x[1]] for x in no_fly_zone_coordinates_UTM] # extract y and x
+                #print no_fly_zone_coordinates_UTM_y_x
+                self.no_fly_zone_polygons.append(geometry.Polygon(no_fly_zone_coordinates_UTM_y_x))
+            #print self.no_fly_zone_polygons[0]
+
+            print '\nTest point 1: should be inside'
+            test_point_geodetic1 = [55.399512, 10.319328, 0]
+            test_point_UTM1 = self.pos3d_geodetic2pos3d_UTM(test_point_geodetic1)
+            print self.no_fly_zone_polygons[0].distance(geometry.Point(test_point_UTM1))
+
+            print '\nTest point 2: should NOT be inside'
+            test_point_geodetic2 = [55.397001, 10.307698, 0]
+            test_point_UTM2 = self.pos3d_geodetic2pos3d_UTM(test_point_geodetic2)
+            print self.no_fly_zone_polygons[0].distance(geometry.Point(test_point_UTM2))
+
 
     """ Drawing/plot functions """
     def draw_circle_OSM(self, point, circle_color_in = default_plot_color, circle_size_in = 10, circle_alpha_in = default_plot_alpha):
@@ -381,6 +412,39 @@ class UAV_path_planner():
         Output: 2 value 1 element array of lat, lon
         """
         return [pos2dDICT['lat'],pos2dDICT['lon']]
+
+    def pos3d_geodetic2pos3d_UTM_multiple(self, pos3d_geodetic_multiple):
+        """ Converts multiple geodetic pos3d to UTM pos3d
+        Input: multiple geodetic points as 3 value 1 array of lat, lon, alt_rel
+        Output: multiple UTM points as 6 value 1 element array of y/easting, x/norting, alt_rel, hemisphere, zone, and letter
+        """
+        converted_points = []
+        for element in pos3d_geodetic_multiple:
+            converted_points.append( self.pos3d_geodetic2pos3d_UTM(element) )
+        return converted_points
+    def pos3d_UTM2pos3d_geodetic_multiple(self, pos3d_UTM_multiple):
+        """ Converts multiple UTM pos3d to geodetic pos3d
+        Input: multiple UTM points as 6 value 1 element array of y/easting, x/norting, alt_rel, hemisphere, zone, and letter
+        Output: multiple geodetic points as 3 value 1 array of lat, lon, alt_rel
+        """
+        converted_points = []
+        for element in pos3d_UTM_multiple:
+            converted_points.append( self.pos3d_UTM2pos3d_geodetic(element) )
+        return converted_points
+    def pos3d_geodetic2pos3d_UTM(self, pos3d_geodetic):
+        """ Converts geodetic pos3d to UTM pos3d
+        Input: 3 value 1 array of lat, lon, alt_rel
+        Output: 6 value 1 element array of y/easting, x/norting, alt_rel, hemisphere, zone, and letter
+        """
+        (hemisphere, zone, letter, easting, northing) = self.uc.geodetic_to_utm(pos3d_geodetic[0],pos3d_geodetic[1])
+        return [easting, northing, pos3d_geodetic[2], hemisphere, zone, letter]
+    def pos3d_UTM2pos3d_geodetic(self, pos3d_UTM):
+        """ Converts UTM pos3d to geodetic pos3d
+        Input: 6 value 1 element array of y/easting, x/norting, alt_rel, hemisphere, zone, and letter
+        Output: 3 value 1 array of lat, lon, alt_rel
+        """
+        (back_conv_lat, back_conv_lon) = self.uc.utm_to_geodetic (pos3d_UTM[3], pos3d_UTM[4], pos3d_UTM[0], pos3d_UTM[1])
+        return [back_conv_lat, back_conv_lon, pos3d_UTM[2]]
 
     def pos3dDICT2pos2dDICT_geodetic(self, pos3dDICT):
         """ Converts pos3dDICT to pos2dDICT, geodetic
@@ -1012,6 +1076,7 @@ if __name__ == '__main__':
     UAV_path_planner_module = UAV_path_planner(True)
 
     UAV_path_planner_module.no_fly_zone_init_and_parse('data_sources/no_fly_zones/KmlUasZones_sec2.kml')
+    #UAV_path_planner_module.no_fly_zone_init_and_parse()
     exit(1)
 
     """ Define some points for testing """

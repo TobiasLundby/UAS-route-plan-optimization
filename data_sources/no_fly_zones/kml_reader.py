@@ -13,13 +13,12 @@ from get_no_fly_zones import get_no_fly_zones
 import time
 
 class kml_no_fly_zones_parser():
-    def __init__(self, file_name, debug = False):
+    def __init__(self, debug = False):
         """
         Init method
-        Input: filename along with optional debug parameter which toogles debug messages
+        Input: optional debug parameter which toogles debug messages
         Output: none
         """
-        self.file_name = file_name
         self.debug = debug
         self.placemarks = 0
 
@@ -34,13 +33,13 @@ class kml_no_fly_zones_parser():
         file = parser.fromstring(downloader_module.get_data())
         return self.parse_data(file)
 
-    def parse_file(self):
+    def parse_file(self, file_name_in):
         """
         Parses the input file given by the already obtained filename; support reload
-        Input: none
+        Input: filename along
         Output: bool from parsing
         """
-        with open(self.file_name) as f:
+        with open(file_name_in) as f:
             file = parser.parse(f).getroot()
             return self.parse_data(file)
 
@@ -93,6 +92,7 @@ class kml_no_fly_zones_parser():
                             sub_coordinates = coordinate.split(',')
                             for sub_coordinate in sub_coordinates:
                                 coordinate3d.append(float(sub_coordinate))
+                            coordinate3d = [coordinate3d[1], coordinate3d[0], coordinate3d[2]] # correct the order to lat, lon, alt_rel instead of lon, lat, alt_rel
                             coordinate3d_placemark.append(coordinate3d)
                         if self.debug:
                             print element_id+'-'+str(sub_itr)
@@ -121,6 +121,7 @@ class kml_no_fly_zones_parser():
                     sub_coordinates = coordinate.split(',')
                     for sub_coordinate in sub_coordinates:
                         coordinate3d.append(float(sub_coordinate))
+                    coordinate3d = [coordinate3d[1], coordinate3d[0], coordinate3d[2]]  # correct the order to lat, lon, alt_rel instead of lon, lat, alt_rel
                     coordinate3d_placemark.append(coordinate3d)
                 if self.debug:
                     print element_id
@@ -236,12 +237,13 @@ class kml_no_fly_zones_parser():
 
 if __name__ == '__main__':
     # Run self test
-    #test = kml_no_fly_zones_parser('KmlUasZones_2018-02-27-18-24.kml')
-    test = kml_no_fly_zones_parser('KmlUasZones_sec2.kml', True)
+    #test = kml_no_fly_zones_parser()
+    test = kml_no_fly_zones_parser(True)
 
     print '\n\nParsing KML file'
     # There are 2 options for parsing the data
-    #if test.parse_file():
+    #if test.parse_file('KmlUasZones_2018-02-27-18-24.kml'):
+    #if test.parse_file('KmlUasZones_sec2.kml'):
     if test.download_and_parse_data():
         print 'The KML has successfully been parsed; parsed %i placemarks and %i no-fly zones (includes subzones defined in MultiGeometry objects)' % (test.get_number_of_placemarks(), test.get_number_of_zones())
 
