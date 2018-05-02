@@ -130,7 +130,6 @@ class UAV_path_planner():
     def no_fly_zone_init_and_parse(self, file_name_in = None):
         """
         Loads and parses the KML file provided by the filename using the kml_no_fly_zones_parser class
-
         Input: filename of KML file to parse (if not provided a download is initiated)
         Output: loaded status (bool: True = loaded, False = not loaded)
         """
@@ -189,6 +188,11 @@ class UAV_path_planner():
             return False
 
     def is_point_in_no_fly_zones_UTM(self, point3dUTM):
+        """
+        Tests if an UTM point is within any of the no-fly zone polygons
+        Input: UTM point3d as array (y, x, alt_rel ...)
+        Ouput: bool (True: point is inside) and distance to nearest polygon [m]
+        """
         smallest_dist = self.inf
         for i in range(len(self.no_fly_zone_polygons)):
             within, dist = self.is_point_in_no_fly_zone_UTM(point3dUTM, i)
@@ -201,7 +205,7 @@ class UAV_path_planner():
         """
         Tests if an UTM point is within a specified polygon
         Input: UTM point3d as array (y, x, alt_rel ...) and polygon index
-        Ouput: bool (True: point is inside) and distance to polygon
+        Ouput: bool (True: point is inside) and distance to polygon [m]
         """
         dist = self.no_fly_zone_polygons[polygon_index].distance(geometry.Point(point3dUTM))
         if dist == 0.0  and point3dUTM[2] <= self.geofence_height:
@@ -210,6 +214,11 @@ class UAV_path_planner():
             return False, dist
 
     def is_point_in_no_fly_zones_geodetic(self, point3d_geodetic):
+        """
+        Tests if a geodetic point is within any of the no-fly zone polygons
+        Input: geodetic point3d as array (y, x, alt_rel ...)
+        Ouput: bool (True: point is inside) and distance to nearest polygon [m]
+        """
         smallest_dist = self.inf
         for i in range(len(self.no_fly_zone_polygons)):
             within, dist = self.is_point_in_no_fly_zone_geodetic(point3d_geodetic, i)
@@ -222,7 +231,7 @@ class UAV_path_planner():
         """
         Tests if a geodetic point is within a specified polygon
         Input: geodetic point3d as array (lat, lon, alt_rel) and polygon index
-        Ouput: bool (True: point is inside) and distance to polygon
+        Ouput: bool (True: point is inside) and distance to polygon [m]
         """
         test_point_UTM = self.pos3d_geodetic2pos3d_UTM(point3d_geodetic)
         dist = self.no_fly_zone_polygons[polygon_index].distance(geometry.Point(test_point_UTM))
