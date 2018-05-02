@@ -9,6 +9,7 @@ Description: KML parser for the no-fly zones obtained from https://www.droneluft
 """
 
 from pykml import parser
+from get_no_fly_zones import get_no_fly_zones
 import time
 
 class kml_no_fly_zones_parser():
@@ -22,17 +23,36 @@ class kml_no_fly_zones_parser():
         self.debug = debug
         self.placemarks = 0
 
+    def download_and_parse_data(self):
+        """
+        Downloads the data using the get_no_fly_zones class and then parses it usign the general method
+        Input: none
+        Output: bool from parsing
+        """
+        downloader_module = get_no_fly_zones(self.debug)
+        downloader_module.download_zones()
+        file = parser.fromstring(downloader_module.get_data())
+        return self.parse_data(file)
+
     def parse_file(self):
         """
         Parses the input file given by the already obtained filename; support reload
         Input: none
-        Output: bool (False: parsing failed, True: parsing successful)
+        Output: bool from parsing
         """
         with open(self.file_name) as f:
             file = parser.parse(f).getroot()
+            return self.parse_data(file)
+
+    def parse_data(self, data):
+        """
+        Parses the input data
+        Input: data
+        Output: bool (False: parsing failed, True: parsing successful)
+        """
         self.coordinate3d_combined = []
         itr = 0 # Incremented in the beginning so first element has itr=1
-        for element in file.Document.Placemark:
+        for element in data.Document.Placemark:
             itr += 1
             if self.debug:
                 print '\nPlacemark', itr
@@ -217,10 +237,12 @@ class kml_no_fly_zones_parser():
 if __name__ == '__main__':
     # Run self test
     #test = kml_no_fly_zones_parser('KmlUasZones_2018-02-27-18-24.kml')
-    test = kml_no_fly_zones_parser('KmlUasZones_sec2.kml')
+    test = kml_no_fly_zones_parser('KmlUasZones_sec2.kml', True)
 
     print '\n\nParsing KML file'
-    if test.parse_file():
+    # There are 2 options for parsing the data
+    #if test.parse_file():
+    if test.download_and_parse_data():
         print 'The KML has successfully been parsed; parsed %i placemarks and %i no-fly zones (includes subzones defined in MultiGeometry objects)' % (test.get_number_of_placemarks(), test.get_number_of_zones())
 
         print '\n\nPrinting parsed KML no-fl zones in 2s'
