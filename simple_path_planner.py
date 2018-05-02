@@ -52,8 +52,8 @@ class UAV_path_planner():
     uav_nominal_battery_time_min    = 20 # unit: min
     uav_nominal_battery_time_s      = uav_nominal_battery_time_min*60 # unit: s
     """ Path planning constants """
-    goal_acceptance_radius          = 20 # unit: m
-    map_horz_step_size              = 20 # unit: m
+    goal_acceptance_radius          = 50 # unit: m
+    map_horz_step_size              = 50 # unit: m
     # neighbors in 8 connect 2d planning; values can be scaled if needed
     neighbors                       = [ [0,1,0], [0,-1,0], [1,0,0], [-1,0,0], [1,1,0], [1,-1,0], [-1,1,0], [-1,-1,0] ]
     # neighbors in 4 connect 2d planning; values can be scaled if needed
@@ -863,8 +863,18 @@ class UAV_path_planner():
         Input: UTM planned path
         Output: optimized UTM planned path
         """
-        for i in range(len(planned_path)):
-            print i
+        # TODO not complete
+        for i in range(len(planned_path)-1):
+            y_diff = planned_path[i+1]['y']-planned_path[i]['y']
+            x_diff = planned_path[i+1]['x']-planned_path[i]['x']
+            z_rel_diff = planned_path[i+1]['z_rel']-planned_path[i]['z_rel']
+            diffs = [y_diff, x_diff, z_rel_diff]
+            for element in self.neighbors_scaled:
+                if element == diffs:
+                    print element
+            print '\n    y diff:', y_diff
+            print '    x diff:', x_diff
+            print 'z_rel diff:', z_rel_diff
         return planned_path
 
     def pos4dTUPLE_UTM_copy_and_move_point(self, point4dUTM, y_offset, x_offset, z_offset):
@@ -1209,8 +1219,8 @@ if __name__ == '__main__':
 
     ## Set 2
     start_point_3dDICT = {'lat': 55.431122, 'lon': 10.420436, 'alt_rel': 0}
-    #goal_point_3dDICT  = {'lat': 55.427750, 'lon': 10.433737, 'alt_rel': 0}
-    goal_point_3dDICT  = {'lat': 55.427203, 'lon': 10.419043, 'alt_rel': 0}
+    goal_point_3dDICT  = {'lat': 55.427750, 'lon': 10.433737, 'alt_rel': 0}
+    #goal_point_3dDICT  = {'lat': 55.427203, 'lon': 10.419043, 'alt_rel': 0}
 
     # Plan path
     path_planned = UAV_path_planner_module.plan_path(start_point_3dDICT, goal_point_3dDICT)
