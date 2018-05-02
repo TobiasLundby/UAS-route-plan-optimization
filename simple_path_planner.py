@@ -48,20 +48,22 @@ SAVE_STATISTICS_TO_FILE = False
 class UAV_path_planner():
     """ UAV constants """
     uav_nominal_airspeed_horz_mps   = 15 # unit: m/s
-    uav_nominal_airspeed_vert_mps   = 5 # unit: m/s
+    uav_nominal_airspeed_vert_mps   = 5  # unit: m/s
+    uav_nominal_battery_time_min    = 20 # unit: min
+    uav_nominal_battery_time_s      = uav_nominal_battery_time_min*60 # unit: s
     """ Path planning constants """
-    goal_acceptance_radius          = 5 # unit: m
-    map_horz_step_size              = 5 # unit: m
+    goal_acceptance_radius          = 20 # unit: m
+    map_horz_step_size              = 20 # unit: m
     # neighbors in 8 connect 2d planning; values can be scaled if needed
     neighbors                       = [ [0,1,0], [0,-1,0], [1,0,0], [-1,0,0], [1,1,0], [1,-1,0], [-1,1,0], [-1,-1,0] ]
     # neighbors in 4 connect 2d planning; values can be scaled if needed
     #neighbors = [ [0,1,0], [0,-1,0], [1,0,0], [-1,0,0] ]
     neighbors_scaled                = []
-    PP_max_node_exploration         = 7500
-    print_popped_node               = True
-    print_explore_node              = True
-    draw_open_list                  = True
-    draw_closed_list                = True
+    PP_max_node_exploration         = 4294967295
+    print_popped_node               = False
+    print_explore_node              = False
+    draw_open_list                  = False
+    draw_closed_list                = False
     """ Terminal output colors """
     default_term_color_info         = 'cyan'
     default_term_color_info_alt     = 'magenta'
@@ -171,14 +173,14 @@ class UAV_path_planner():
 
         test_point_geodetic = [55.399512, 10.319328, 0]
         test_point_UTM = self.pos3d_geodetic2pos3d_UTM(test_point_geodetic)
-        print test_point_UTM
+        #print test_point_UTM
         dist1 = self.no_fly_zone_polygons[index].distance(geometry.Point(test_point_UTM))
         if self.debug_test:
             print '\nTest point 2: should be inside: distance = %.02f' % dist1
 
         test_point_geodetic = [55.397001, 10.307698, 0]
         test_point_UTM = self.pos3d_geodetic2pos3d_UTM(test_point_geodetic)
-        print test_point_UTM
+        #print test_point_UTM
         dist2 = self.no_fly_zone_polygons[index].distance(geometry.Point(test_point_UTM))
         if self.debug_test:
             print '\nTest point 2: should NOT be inside: distance = %.02f' % dist2
@@ -207,8 +209,12 @@ class UAV_path_planner():
         Input: UTM point3d as array (y, x, alt_rel ...) and polygon index
         Ouput: bool (True: point is inside) and distance to polygon [m]
         """
-        dist = self.no_fly_zone_polygons[polygon_index].distance(geometry.Point(point3dUTM))
-        if dist == 0.0  and point3dUTM[2] <= self.geofence_height:
+        if isinstance(point3dUTM, dict):
+            test_point3dUTM = [point3dUTM['y'], point3dUTM['x'], point3dUTM['z_rel']]
+        else:
+            test_point3dUTM = point3dUTM
+        dist = self.no_fly_zone_polygons[polygon_index].distance(geometry.Point(test_point3dUTM))
+        if dist == 0.0  and test_point3dUTM[2] <= self.geofence_height:
             return True, dist
         else:
             return False, dist
@@ -233,7 +239,11 @@ class UAV_path_planner():
         Input: geodetic point3d as array (lat, lon, alt_rel) and polygon index
         Ouput: bool (True: point is inside) and distance to polygon [m]
         """
-        test_point_UTM = self.pos3d_geodetic2pos3d_UTM(point3d_geodetic)
+        if isinstance(point3d_geodetic, dict):
+            test_point3d_geodetic = [point3d_geodetic['lat'], point3d_geodetic['lon'], point3d_geodetic['z_rel']]
+        else:
+            test_point3d_geodetic = point3d_geodetic
+        test_point_UTM = self.pos3d_geodetic2pos3d_UTM(test_point3d_geodetic)
         dist = self.no_fly_zone_polygons[polygon_index].distance(geometry.Point(test_point_UTM))
         if dist == 0.0  and test_point_UTM[2] <= self.geofence_height:
             return True, dist
@@ -639,10 +649,19 @@ class UAV_path_planner():
             print colored(self.res_indent+'Start point: %d %c %.5fe %.5fn' % (point_start_converted_UTM['zone'], point_start_converted_UTM['letter'], point_start_converted_UTM['y'], point_start_converted_UTM['x']), self.default_term_color_res)
             print colored(self.res_indent+' Goal point: %d %c %.5fe %.5fn' % (point_goal_converted_UTM['zone'], point_goal_converted_UTM['letter'], point_goal_converted_UTM['y'], point_goal_converted_UTM['x']), self.default_term_color_res)
 
+        # Check if start or goal point is inside a no-fly zone
+        if self.is_point_in_no_fly_zones_UTM(point_start_converted_UTM)[0]:
+            print colored('Start point is inside geofence', self.default_term_color_error)
+            return []
+        elif self.is_point_in_no_fly_zones_UTM(point_goal_converted_UTM)[0]:
+            print colored('Goal point is inside geofence', self.default_term_color_error)
+            return []
+
         # Go to selected path planner
         if PATH_PLANNER == PATH_PLANNER_ASTAR:
             print colored('Planning using A start', self.default_term_color_info)
             path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM)
+            path_UTM = self.remove_unneeded_waypoints_from_planned_path(path_UTM)
         else:
             print colored('Path planner type not defined', self.default_term_color_error)
             return []
@@ -718,7 +737,7 @@ class UAV_path_planner():
             print colored('A star initialization done, starting search', self.default_term_color_info)
         # Start searching
         while open_list and open_list_popped_ctr < self.PP_max_node_exploration: # Continue searching until the open_list is empty = all nodes discovered and evaluated; or max tries exceeded
-            time.sleep(10)
+            #time.sleep(10)
             if open_list_popped_ctr % 1000 == 0 and not open_list_popped_ctr == 0:
                 time_cur = self.get_cur_time_epoch()
                 print colored(self.info_alt_indent+'Visited %i nodes from the open list in %.02f [s]' % (open_list_popped_ctr, time_cur-time_last), self.default_term_color_info_alt)
@@ -735,6 +754,12 @@ class UAV_path_planner():
                 time_cur = self.get_cur_time_epoch()
                 print colored('Path found in %.02f [s]' % (time_cur-time_start), self.default_term_color_res)
                 planned_path = self.backtrace_path(came_from, current, point_start_tuple)
+
+                # Since the last point is within the acceptance radius of the goal point, the x, y, and z_rel of the last point is replaced with the data from the goal point and the added travel time is calculated and added
+                planned_path[-1]['time_rel'] += self.calc_travel_time_from_UTMpoints(planned_path[-1], point_goal)
+                planned_path[-1]['y'] = point_goal['y']
+                planned_path[-1]['x'] = point_goal['x']
+                planned_path[-1]['z_rel'] = point_goal['z_rel']
 
                 # DRAW
                 self.draw_circle_UTM(point_goal_tuple, 'green', 12)
@@ -760,6 +785,9 @@ class UAV_path_planner():
                     print colored(self.info_alt_indent+'Exploring node (%.02f [m], %.02f [m], %.02f [m], %.02f [s]) with tentative G score %.02f, prevoius G score %.02f (0 = node not visited)' % (neighbor[0], neighbor[1], neighbor[2], neighbor[3], tentative_g_score, g_score.get(neighbor, 0)), self.default_term_color_info_alt)
 
                 # Maybe test here if inside no-fly zones or violate aircrafts and skip if needed NOTE TODO see a-star-test.py
+                if self.is_point_in_no_fly_zones_UTM(neighbor)[0]:
+                    #print 'INSIDE GEOFENCE'
+                    continue
 
                 # Ignore the neighbor which is already evaluated and test if a better path is found to the neighbor node (tentative_g_score is smaller than the g_score stored in the g_score dict (the 0 is the default value if the element does not exist) = better path)
                 if neighbor in closed_list and tentative_g_score >= g_score.get(neighbor, 0):
@@ -816,6 +844,11 @@ class UAV_path_planner():
             itr += 1
 
     def backtrace_path(self, came_from, current_node, start_node):
+        """
+        Backtraces from the goal node (or node near goal node) given by current node to the start node using the came_from data
+        Input: came_from list, current_node to backtrace from, and start node to trace to
+        Output: backtraced node as a array of UTM points4d
+        """
         path = [] # make empty array to hold the path
         while current_node in came_from:
             path.append(self.pos4dTUPLE2pos4dDICT_UTM(current_node)) # add the current node to the path
@@ -823,6 +856,16 @@ class UAV_path_planner():
         path.append(self.pos4dTUPLE2pos4dDICT_UTM(start_node))
         path.reverse()
         return path
+
+    def remove_unneeded_waypoints_from_planned_path(self, planned_path):
+        """
+        Removes unneeded waypoints from the planned path
+        Input: UTM planned path
+        Output: optimized UTM planned path
+        """
+        for i in range(len(planned_path)):
+            print i
+        return planned_path
 
     def pos4dTUPLE_UTM_copy_and_move_point(self, point4dUTM, y_offset, x_offset, z_offset):
         """
@@ -1150,108 +1193,25 @@ if __name__ == '__main__':
     # Instantiate UAV_path_planner class
     UAV_path_planner_module = UAV_path_planner(True)
 
+    """ Load no-fly zones """
     # if print UAV_path_planner_module.no_fly_zone_init_and_parse(): # load online
     if UAV_path_planner_module.no_fly_zone_init_and_parse('data_sources/no_fly_zones/KmlUasZones_sec2.kml'): # load offline file
         print colored('No-fly zones loaded', UAV_path_planner_module.default_term_color_res)
     else:
         print colored('No-fly zones NOT loaded', UAV_path_planner_module.default_term_color_error)
 
-    point1 = [583552.2226281754, 6140042.063257771, 0, 'N', 32, 'U']
-    point2 = [582820.9976456814, 6139748.749106731, 0, 'N', 32, 'U']
-    print UAV_path_planner_module.is_point_in_no_fly_zones_UTM(point1)
-    print UAV_path_planner_module.is_point_in_no_fly_zones_UTM(point2)
-
-    point1 = [55.399512, 10.319328, 0]
-    point2 = [55.397001, 10.307698, 0]
-    print UAV_path_planner_module.is_point_in_no_fly_zones_geodetic(point1)
-    print UAV_path_planner_module.is_point_in_no_fly_zones_geodetic(point2)
-
-    exit(1)
-
-    """ Define some points for testing """
-    points = [[55.397, 10.319949, 0],[55.41, 10.349689,20],[55.391653, 10.352,0]]
-    points_geofence = [[55.395774, 10.319949],[55.406105, 10.349689],[55.391653, 10.349174], [55.392968, 10.341793], [55.386873, 10.329691]]
-
-    points2d_DICT = [
-        {
-            'lat': 55.395774,
-            'lon': 10.319949
-        },
-        {
-            'lat': 55.406105,
-            'lon': 10.349689
-        },
-        {
-            'lat': 55.391653,
-            'lon': 10.349174
-        },
-        {
-            'lat': 55.392968,
-            'lon': 10.341793
-        }
-    ]
-    points4d_DICT = [
-        {
-            'lat': 55.395774,
-            'lon': 10.319949,
-            'alt_rel': 0,
-            'time_rel': 1524663524
-        },
-        {
-            'lat': 55.406105,
-            'lon': 10.349689,
-            'alt_rel': 20,
-            'time_rel': 1524663584
-        },
-        {
-            'lat': 55.391653,
-            'lon': 10.349174,
-            'alt_rel': 20,
-            'time_rel': 1524663624
-        },
-        {
-            'lat': 55.392968,
-            'lon': 10.341793,
-            'alt_rel': 0,
-            'time_rel': 1524663684
-        }
-    ]
-    points4d = [
-        [
-            55.395774,
-            10.319949,
-            0,
-            1524663524
-        ],
-        [
-            55.406105,
-            10.349689,
-            20,
-            1524663584
-        ],
-        [
-            55.391653,
-            10.349174,
-            20,
-            1524663624
-        ],
-        [
-            55.392968,
-            10.341793,
-            0,
-            1524663684
-        ]
-    ]
-
-
-    #UAV_path_planner_module.draw_path_geodetic(points2d_DICT)
-    #UAV_path_planner_module.draw_geofence_geodetic(points_geofence)
-
     """ Path planning start """
     # Define start and goal points
-    start_point_3dDICT = {'lat': 55.395774, 'lon': 10.319949, 'alt_rel': 0}
+    ## Set 1
+    #start_point_3dDICT = {'lat': 55.395774, 'lon': 10.319949, 'alt_rel': 0}
     #goal_point_3dDICT  = {'lat': 55.392968, 'lon': 10.341793, 'alt_rel': 0} # further away
-    goal_point_3dDICT  = {'lat': 55.394997, 'lon': 10.321601, 'alt_rel': 0}
+    #goal_point_3dDICT  = {'lat': 55.394997, 'lon': 10.321601, 'alt_rel': 0} # closer to start point
+
+    ## Set 2
+    start_point_3dDICT = {'lat': 55.431122, 'lon': 10.420436, 'alt_rel': 0}
+    #goal_point_3dDICT  = {'lat': 55.427750, 'lon': 10.433737, 'alt_rel': 0}
+    goal_point_3dDICT  = {'lat': 55.427203, 'lon': 10.419043, 'alt_rel': 0}
+
     # Plan path
     path_planned = UAV_path_planner_module.plan_path(start_point_3dDICT, goal_point_3dDICT)
     # Print planned path
