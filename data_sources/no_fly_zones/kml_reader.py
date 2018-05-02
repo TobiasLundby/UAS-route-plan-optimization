@@ -4,13 +4,14 @@
 """
 Description: KML parser for the no-fly zones obtained from https://www.droneluftrum.dk/
              The KML parser can handle Document.Placemark.Polygon and Document.Placemark.MultiGeometry.Polygon (generates sub placemarks with a modifies ID)
+             The parsing can be verfied by comparing the results to the results on https://www.techgen.dk/msc/kml-viewer.html
     License: BSD 3-Clause
 """
 
 from pykml import parser
 import time
 
-class KML_no_fly_zones_parser():
+class kml_no_fly_zones_parser():
     def __init__(self, file_name, debug = False):
         """
         Init method
@@ -23,7 +24,7 @@ class KML_no_fly_zones_parser():
 
     def parse_file(self):
         """
-        Parses the input file given by the already obtained filename
+        Parses the input file given by the already obtained filename; support reload
         Input: none
         Output: bool (False: parsing failed, True: parsing successful)
         """
@@ -144,7 +145,10 @@ class KML_no_fly_zones_parser():
         Input: zone number
         Output: no-fly zone coordinates
         """
-        return self.coordinate3d_combined[zone_no]['coordinates']
+        if 0 <= zone_no < len(self.coordinate3d_combined):
+            return self.coordinate3d_combined[zone_no]['coordinates']
+        else:
+            return []
 
     def get_zone_style(self, zone_no):
         """
@@ -152,7 +156,10 @@ class KML_no_fly_zones_parser():
         Input: zone number
         Output: no-fly zone style
         """
-        return self.coordinate3d_combined[zone_no]['style']
+        if 0 <= zone_no < len(self.coordinate3d_combined):
+            return self.coordinate3d_combined[zone_no]['style']
+        else:
+            return ''
 
     def get_zone_id(self, zone_no):
         """
@@ -160,7 +167,10 @@ class KML_no_fly_zones_parser():
         Input: zone number
         Output: no-fly zone ID
         """
-        return self.coordinate3d_combined[zone_no]['id']
+        if 0 <= zone_no < len(self.coordinate3d_combined):
+            return self.coordinate3d_combined[zone_no]['id']
+        else:
+            return ''
 
     def get_zone_name(self, zone_no):
         """
@@ -168,7 +178,10 @@ class KML_no_fly_zones_parser():
         Input: zone number
         Output: no-fly zone name
         """
-        return self.coordinate3d_combined[zone_no]['name']
+        if 0 <= zone_no < len(self.coordinate3d_combined):
+            return self.coordinate3d_combined[zone_no]['name']
+        else:
+            return []
 
     def get_zone(self, zone_no):
         """
@@ -203,7 +216,8 @@ class KML_no_fly_zones_parser():
 
 if __name__ == '__main__':
     # Run self test
-    test = KML_no_fly_zones_parser('KmlUasZones_2018-02-27-18-24.kml')
+    #test = kml_no_fly_zones_parser('KmlUasZones_2018-02-27-18-24.kml')
+    test = kml_no_fly_zones_parser('KmlUasZones_sec2.kml')
 
     print '\n\nParsing KML file'
     if test.parse_file():

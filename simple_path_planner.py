@@ -27,6 +27,7 @@ from copy import copy, deepcopy
 from guppy import hpy # for getting heap info
 import csv # for saving statistics and path
 from heapq import * # for the heap used in the A star algorithm
+from data_sources.no_fly_zones.kml_reader import kml_no_fly_zones_parser
 
 """ Program defines """
 PATH_PLANNER_ASTAR      = 0
@@ -115,27 +116,25 @@ class UAV_path_planner():
         self.p.xaxis.axis_label = "Longitude [deg]"
         self.p.yaxis.axis_label = "Latitude [deg]"
 
-    def Geodetic2PseudoMercator(self, lat, lon = False):
-        """
-        Converts geodetic latitude and longitude to pseudo mercator (OSM) x and y
-        Input: latitude, longitude (EPSG:4326) or array of lat and lon as the lat input
-        Output: x, y(EPSG:3857)
-        """
-        if lon == False and len(lat) == 2:
-            x,y = transform(geodetic_proj, OSM_proj, lat[1], lat[0])
-        else:
-            x,y = transform(geodetic_proj, OSM_proj, lon, lat)
-        return (x,y)
-    def PseudoMercator2Geodetic(self, x,y):
-        """
-        Converts x and y pseudo mercator (OSM) to geodetic latitude and longitude
-        Input: x, y(EPSG:3857)
-        Output: latitude, longitude (EPSG:4326)
-        """
-        lon, lat = transform(OSM_proj, geodetic_proj, x, y)
-        return (lat, lon)
+        # Set initial values for loading of no-fly zones
+        self.no_fly_zones_loaded = False
+        self.no_fly_zone_reader_module = None
 
-    """ Plot functions """
+        # Set initial values for rally points
+        self.rally_points_loaded = False
+
+    """ No-fly zones """
+    def no_fly_zone_init_and_parse(self, file_name_in):
+        """
+        Loads and parses the KML file provided by the filename using the kml_no_fly_zones_parser class
+        Input: filename of KML file to parse
+        Output: loaded status (bool: True = loaded, False = not loaded)
+        """
+        self.no_fly_zone_reader_module = kml_no_fly_zones_parser(file_name_in)
+        self.no_fly_zones_loaded = self.no_fly_zone_reader_module.parse_file()
+        return self.no_fly_zones_loaded
+
+    """ Drawing/plot functions """
     def draw_circle_OSM(self, point, circle_color_in = default_plot_color, circle_size_in = 10, circle_alpha_in = default_plot_alpha):
         """
         Draws a circle on the map plot from OSM coordinates
@@ -302,6 +301,26 @@ class UAV_path_planner():
                 OSM: positive up on map
                 UTM: easting, positive right on map
     """
+    def Geodetic2PseudoMercator(self, lat, lon = False):
+        """
+        Converts geodetic latitude and longitude to pseudo mercator (OSM) x and y
+        Input: latitude, longitude (EPSG:4326) or array of lat and lon as the lat input
+        Output: x, y(EPSG:3857)
+        """
+        if lon == False and len(lat) == 2:
+            x,y = transform(geodetic_proj, OSM_proj, lat[1], lat[0])
+        else:
+            x,y = transform(geodetic_proj, OSM_proj, lon, lat)
+        return (x,y)
+    def PseudoMercator2Geodetic(self, x,y):
+        """
+        Converts x and y pseudo mercator (OSM) to geodetic latitude and longitude
+        Input: x, y(EPSG:3857)
+        Output: latitude, longitude (EPSG:4326)
+        """
+        lon, lat = transform(OSM_proj, geodetic_proj, x, y)
+        return (lat, lon)
+
     def check_pos2dALL_geodetic2pos2dDICT_OSM(self, pos2dALL_geodetic):
         """ Cheks and converts all formats of pos2D (geodetic) to pos2dDICT_OSM
         Input: 2 value 1 element DICT of lat, lon or array of lat, lon
@@ -991,6 +1010,9 @@ if __name__ == '__main__':
 
     # Instantiate UAV_path_planner class
     UAV_path_planner_module = UAV_path_planner(True)
+
+    UAV_path_planner_module.no_fly_zone_init_and_parse('data_sources/no_fly_zones/KmlUasZones_sec2.kml')
+    exit(1)
 
     """ Define some points for testing """
     points = [[55.397, 10.319949, 0],[55.41, 10.349689,20],[55.391653, 10.352,0]]
