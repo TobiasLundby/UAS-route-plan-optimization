@@ -39,9 +39,13 @@ class kml_no_fly_zones_parser():
         Input: filename along
         Output: bool from parsing
         """
-        with open(file_name_in) as f:
-            file = parser.parse(f).getroot()
-            return self.parse_data(file)
+        try:
+            with open(file_name_in) as f:
+                file = parser.parse(f).getroot()
+                return self.parse_data(file)
+        except IOError:
+            print 'KML file does not exist; skipping import'
+            return False
 
     def parse_data(self, data):
         """
@@ -234,6 +238,19 @@ class kml_no_fly_zones_parser():
         Output: number of placemarks (int)
         """
         return self.placemarks
+
+    def get_polygon_index_from_id(self, id):
+        """
+        Finds the index associated with the ID
+        Input: ID of the sought element
+        Output: bool (True = ID found, False = ID not found) and index (defaulted to 0 if element not found)
+        """
+        itr = 0
+        for element in self.coordinate3d_combined:
+            if element['id'] == id:
+                return True, itr
+            itr += 1
+        return False, 0
 
 if __name__ == '__main__':
     # Run self test

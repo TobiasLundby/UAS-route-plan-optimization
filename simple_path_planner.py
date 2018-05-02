@@ -86,6 +86,7 @@ class UAV_path_planner():
     def __init__(self, debug = False):
         """ Constructor """
         self.debug = debug
+        self.debug_test = False
 
         # Instantiate utmconv class
         self.uc = utmconv()
@@ -139,11 +140,16 @@ class UAV_path_planner():
         else:
             self.no_fly_zones_loaded = self.no_fly_zone_reader_module.parse_file(file_name_in)
 
-        self.load_polygons()
+        polygons_loaded = self.load_polygons()
 
-        return self.no_fly_zones_loaded
+        return (self.no_fly_zones_loaded and polygons_loaded)
 
     def load_polygons(self):
+        """
+        Loads the polygons into the combined polygon object (no_fly_zone_polygons)
+        Input: none
+        Output: loaded status (bool: True = loaded, False = not loaded)
+        """
         if self.no_fly_zones_loaded:
             no_fly_zones = self.no_fly_zone_reader_module.get_zones() # extract the no-fly zones
             for no_fly_zone in no_fly_zones:
@@ -152,18 +158,78 @@ class UAV_path_planner():
                 no_fly_zone_coordinates_UTM_y_x = [[x[0],x[1]] for x in no_fly_zone_coordinates_UTM] # extract y and x
                 #print no_fly_zone_coordinates_UTM_y_x
                 self.no_fly_zone_polygons.append(geometry.Polygon(no_fly_zone_coordinates_UTM_y_x))
-            #print self.no_fly_zone_polygons[0]
 
-            print '\nTest point 1: should be inside'
-            test_point_geodetic1 = [55.399512, 10.319328, 0]
-            test_point_UTM1 = self.pos3d_geodetic2pos3d_UTM(test_point_geodetic1)
-            print self.no_fly_zone_polygons[0].distance(geometry.Point(test_point_UTM1))
+            return self.test_polygons()
 
-            print '\nTest point 2: should NOT be inside'
-            test_point_geodetic2 = [55.397001, 10.307698, 0]
-            test_point_UTM2 = self.pos3d_geodetic2pos3d_UTM(test_point_geodetic2)
-            print self.no_fly_zone_polygons[0].distance(geometry.Point(test_point_UTM2))
+    def test_polygons(self):
+        """
+        Tests the polygon implementation with 2 known points, one that are within the polygon and one that isn't.
+        It finds a specific polygon (ID: 01c2f279-fc2c-421d-baa7-60afd0a0b8ac) and uses predefined points for testing
+        Input: none
+        Output: bool (True = polygons work, False = polygons does not work)
+        """
+        res_bool, index = self.no_fly_zone_reader_module.get_polygon_index_from_id('01c2f279-fc2c-421d-baa7-60afd0a0b8ac')
 
+        test_point_geodetic = [55.399512, 10.319328, 0]
+        test_point_UTM = self.pos3d_geodetic2pos3d_UTM(test_point_geodetic)
+        print test_point_UTM
+        dist1 = self.no_fly_zone_polygons[index].distance(geometry.Point(test_point_UTM))
+        if self.debug_test:
+            print '\nTest point 2: should be inside: distance = %.02f' % dist1
+
+        test_point_geodetic = [55.397001, 10.307698, 0]
+        test_point_UTM = self.pos3d_geodetic2pos3d_UTM(test_point_geodetic)
+        print test_point_UTM
+        dist2 = self.no_fly_zone_polygons[index].distance(geometry.Point(test_point_UTM))
+        if self.debug_test:
+            print '\nTest point 2: should NOT be inside: distance = %.02f' % dist2
+        if dist1 == 0.0 and dist2 >= 200:
+            return True
+        else:
+            return False
+
+    def is_point_in_no_fly_zones_UTM(self, point3dUTM):
+        smallest_dist = self.inf
+        for i in range(len(self.no_fly_zone_polygons)):
+            within, dist = self.is_point_in_no_fly_zone_UTM(point3dUTM, i)
+            if dist < smallest_dist:
+                smallest_dist = dist
+            if within:
+                return True, dist
+        return False, smallest_dist
+    def is_point_in_no_fly_zone_UTM(self, point3dUTM, polygon_index):
+        """
+        Tests if an UTM point is within a specified polygon
+        Input: UTM point3d as array (y, x, alt_rel ...) and polygon index
+        Ouput: bool (True: point is inside) and distance to polygon
+        """
+        dist = self.no_fly_zone_polygons[polygon_index].distance(geometry.Point(point3dUTM))
+        if dist == 0.0  and point3dUTM[2] <= self.geofence_height:
+            return True, dist
+        else:
+            return False, dist
+
+    def is_point_in_no_fly_zones_geodetic(self, point3d_geodetic):
+        smallest_dist = self.inf
+        for i in range(len(self.no_fly_zone_polygons)):
+            within, dist = self.is_point_in_no_fly_zone_geodetic(point3d_geodetic, i)
+            if dist < smallest_dist:
+                smallest_dist = dist
+            if within:
+                return True, dist
+        return False, smallest_dist
+    def is_point_in_no_fly_zone_geodetic(self, point3d_geodetic, polygon_index):
+        """
+        Tests if a geodetic point is within a specified polygon
+        Input: geodetic point3d as array (lat, lon, alt_rel) and polygon index
+        Ouput: bool (True: point is inside) and distance to polygon
+        """
+        test_point_UTM = self.pos3d_geodetic2pos3d_UTM(point3d_geodetic)
+        dist = self.no_fly_zone_polygons[polygon_index].distance(geometry.Point(test_point_UTM))
+        if dist == 0.0  and test_point_UTM[2] <= self.geofence_height:
+            return True, dist
+        else:
+            return False, dist
 
     """ Drawing/plot functions """
     def draw_circle_OSM(self, point, circle_color_in = default_plot_color, circle_size_in = 10, circle_alpha_in = default_plot_alpha):
@@ -1075,8 +1141,22 @@ if __name__ == '__main__':
     # Instantiate UAV_path_planner class
     UAV_path_planner_module = UAV_path_planner(True)
 
-    UAV_path_planner_module.no_fly_zone_init_and_parse('data_sources/no_fly_zones/KmlUasZones_sec2.kml')
-    #UAV_path_planner_module.no_fly_zone_init_and_parse()
+    # if print UAV_path_planner_module.no_fly_zone_init_and_parse(): # load online
+    if UAV_path_planner_module.no_fly_zone_init_and_parse('data_sources/no_fly_zones/KmlUasZones_sec2.kml'): # load offline file
+        print colored('No-fly zones loaded', UAV_path_planner_module.default_term_color_res)
+    else:
+        print colored('No-fly zones NOT loaded', UAV_path_planner_module.default_term_color_error)
+
+    point1 = [583552.2226281754, 6140042.063257771, 0, 'N', 32, 'U']
+    point2 = [582820.9976456814, 6139748.749106731, 0, 'N', 32, 'U']
+    print UAV_path_planner_module.is_point_in_no_fly_zones_UTM(point1)
+    print UAV_path_planner_module.is_point_in_no_fly_zones_UTM(point2)
+
+    point1 = [55.399512, 10.319328, 0]
+    point2 = [55.397001, 10.307698, 0]
+    print UAV_path_planner_module.is_point_in_no_fly_zones_geodetic(point1)
+    print UAV_path_planner_module.is_point_in_no_fly_zones_geodetic(point2)
+
     exit(1)
 
     """ Define some points for testing """
