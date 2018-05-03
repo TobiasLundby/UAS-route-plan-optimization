@@ -52,15 +52,15 @@ class UAV_path_planner():
     uav_nominal_battery_time_min    = 20 # unit: min
     uav_nominal_battery_time_s      = uav_nominal_battery_time_min*60 # unit: s
     """ Path planning constants """
-    goal_acceptance_radius          = 50 # unit: m
-    map_horz_step_size              = 50 # unit: m
+    goal_acceptance_radius          = 0.5 # unit: m
+    map_horz_step_size              = 0.5 # unit: m
     # neighbors in 8 connect 2d planning; values can be scaled if needed
     neighbors                       = [ [0,1,0], [0,-1,0], [1,0,0], [-1,0,0], [1,1,0], [1,-1,0], [-1,1,0], [-1,-1,0] ]
     # neighbors in 4 connect 2d planning; values can be scaled if needed
     #neighbors = [ [0,1,0], [0,-1,0], [1,0,0], [-1,0,0] ]
     neighbors_scaled                = []
     PP_max_node_exploration         = 4294967295
-    print_popped_node               = False
+    print_popped_node               = True
     print_explore_node              = False
     draw_open_list                  = False
     draw_closed_list                = False
@@ -661,7 +661,6 @@ class UAV_path_planner():
         if PATH_PLANNER == PATH_PLANNER_ASTAR:
             print colored('Planning using A start', self.default_term_color_info)
             path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM)
-            path_UTM = self.remove_unneeded_waypoints_from_planned_path(path_UTM)
         else:
             print colored('Path planner type not defined', self.default_term_color_error)
             return []
@@ -754,12 +753,15 @@ class UAV_path_planner():
                 time_cur = self.get_cur_time_epoch()
                 print colored('Path found in %.02f [s]' % (time_cur-time_start), self.default_term_color_res)
                 planned_path = self.backtrace_path(came_from, current, point_start_tuple)
+                print colored('Path has %i waypoints' % (len(planned_path)), self.default_term_color_res)
 
                 # Since the last point is within the acceptance radius of the goal point, the x, y, and z_rel of the last point is replaced with the data from the goal point and the added travel time is calculated and added
                 planned_path[-1]['time_rel'] += self.calc_travel_time_from_UTMpoints(planned_path[-1], point_goal)
                 planned_path[-1]['y'] = point_goal['y']
                 planned_path[-1]['x'] = point_goal['x']
                 planned_path[-1]['z_rel'] = point_goal['z_rel']
+
+                planned_path = self.remove_unneeded_waypoints_from_planned_path(planned_path)
 
                 # DRAW
                 self.draw_circle_UTM(point_goal_tuple, 'green', 12)
@@ -830,7 +832,7 @@ class UAV_path_planner():
         travel_time = child_point4dUTM[3]-parent_point4dUTM[3]
         total_dist, horz_distance, vert_distance = self.calc_euclidian_dist_UTM(parent_point4dUTM, child_point4dUTM)
         # NOTE currently the thing below contains a linear dependency (linær afhængig)
-        return 0.5*total_dist + travel_time
+        return 0#0.1*total_dist + 0.1*travel_time
 
     def print_a_star_open_list_nice(self, list_in):
         print colored('\nPrinting the open list; contains %i elements' % len(list_in), self.default_term_color_info)
@@ -859,23 +861,46 @@ class UAV_path_planner():
 
     def remove_unneeded_waypoints_from_planned_path(self, planned_path):
         """
-        Removes unneeded waypoints from the planned path
+        Removes unneeded waypoints from straight lines in the planned path
         Input: UTM planned path
         Output: optimized UTM planned path
         """
         # TODO not complete
+        dir_last = None
+        index_low = 0
+        index_high = 0
+
+        out_arr = []
+
         for i in range(len(planned_path)-1):
-            y_diff = planned_path[i+1]['y']-planned_path[i]['y']
-            x_diff = planned_path[i+1]['x']-planned_path[i]['x']
-            z_rel_diff = planned_path[i+1]['z_rel']-planned_path[i]['z_rel']
-            diffs = [y_diff, x_diff, z_rel_diff]
+            #print '\nTesting element %i' % i
+            y_diff =
+            x_diff =
+            z_rel_diff =
+            diffs = [planned_path[i+1]['y']-planned_path[i]['y'], planned_path[i+1]['x']-planned_path[i]['x'], planned_path[i+1]['z_rel']-planned_path[i]['z_rel']]
             for element in self.neighbors_scaled:
                 if element == diffs:
-                    print element
-            print '\n    y diff:', y_diff
-            print '    x diff:', x_diff
-            print 'z_rel diff:', z_rel_diff
-        return planned_path
+                    dir_cur = element
+                    continue
+            index_high += 1
+            if dir_cur != dir_last:# new path direction
+                if i == 0:
+                    out_arr.append(planned_path[index_low])
+                else:
+                    out_arr.append(planned_path[index_high])
+
+                dir_last = dir_cur
+                index_low = index_high = i
+            # print 'Current direction', dir_cur
+            # print ' low index: %i, high index: %i' % (index_low, index_high)
+
+        out_arr.append(planned_path[index_high])
+        out_arr.append(planned_path[-1]) # append the last element since it is not in the search
+
+        if self.debug:
+            print colored('Path reduced from %i to %i waypoints' % (len(planned_path), len(out_arr)), self.default_term_color_info)
+
+        return out_arr
 
     def pos4dTUPLE_UTM_copy_and_move_point(self, point4dUTM, y_offset, x_offset, z_offset):
         """
@@ -1220,7 +1245,7 @@ if __name__ == '__main__':
     ## Set 2
     start_point_3dDICT = {'lat': 55.431122, 'lon': 10.420436, 'alt_rel': 0}
     goal_point_3dDICT  = {'lat': 55.427750, 'lon': 10.433737, 'alt_rel': 0}
-    #goal_point_3dDICT  = {'lat': 55.427203, 'lon': 10.419043, 'alt_rel': 0}
+    goal_point_3dDICT  = {'lat': 55.427203, 'lon': 10.419043, 'alt_rel': 0}
 
     # Plan path
     path_planned = UAV_path_planner_module.plan_path(start_point_3dDICT, goal_point_3dDICT)
