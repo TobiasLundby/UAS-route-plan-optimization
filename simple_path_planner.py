@@ -42,7 +42,7 @@ default_plot_color      = 'red'
 default_plot_alpha      = 0.8
 PATH_PLANNER            = PATH_PLANNER_ASTAR
 PATH_PLANNER_NAMES      = ['A star algorithm']
-PRINT_STATISTICS        = False
+PRINT_STATISTICS        = True
 SAVE_STATISTICS_TO_FILE = False
 
 class UAV_path_planner():
@@ -52,8 +52,8 @@ class UAV_path_planner():
     uav_nominal_battery_time_min    = 20 # unit: min
     uav_nominal_battery_time_s      = uav_nominal_battery_time_min*60 # unit: s
     """ Path planning constants """
-    goal_acceptance_radius          = 0.5 # unit: m
-    map_horz_step_size              = 0.5 # unit: m
+    goal_acceptance_radius          = 10 # unit: m
+    map_horz_step_size              = 10 # unit: m
     # neighbors in 8 connect 2d planning; values can be scaled if needed
     neighbors                       = [ [0,1,0], [0,-1,0], [1,0,0], [-1,0,0], [1,1,0], [1,-1,0], [-1,1,0], [-1,-1,0] ]
     # neighbors in 4 connect 2d planning; values can be scaled if needed
@@ -761,7 +761,7 @@ class UAV_path_planner():
                 planned_path[-1]['x'] = point_goal['x']
                 planned_path[-1]['z_rel'] = point_goal['z_rel']
 
-                planned_path = self.remove_unneeded_waypoints_from_planned_path(planned_path)
+                planned_path = self.remove_waypoints_on_straight_lines(planned_path)
 
                 # DRAW
                 self.draw_circle_UTM(point_goal_tuple, 'green', 12)
@@ -781,7 +781,7 @@ class UAV_path_planner():
                 neighbor = self.pos4dTUPLE_UTM_copy_and_move_point(current, y, x, z) # Construct the neighbor node; the function calculates the 4 dimension by the time required to travel between the nodes
 
                 # Calculate tentative g score by using the current g_score and the distance between the current and neighbor node
-                tentative_g_score = g_score[current] + self.node_cost(current, neighbor)
+                tentative_g_score = g_score[current] + self.node_cost(current, neighbor, point_goal_tuple)
 
                 if self.print_explore_node:
                     print colored(self.info_alt_indent+'Exploring node (%.02f [m], %.02f [m], %.02f [m], %.02f [s]) with tentative G score %.02f, prevoius G score %.02f (0 = node not visited)' % (neighbor[0], neighbor[1], neighbor[2], neighbor[3], tentative_g_score, g_score.get(neighbor, 0)), self.default_term_color_info_alt)
@@ -821,10 +821,10 @@ class UAV_path_planner():
         """
         return self.calc_euclidian_dist_UTM(point4dUTM1, point4dUTM2)[0]
 
-    def node_cost(self, parent_point4dUTM, child_point4dUTM):
+    def node_cost(self, parent_point4dUTM, child_point4dUTM, goal_point4dUTM):
         """
         Calculates the child node cost based on the parent node
-        Input: 2 4d UTM points; 1 parent and 1 child node
+        Input: 3 4d UTM points; 1 parent, 1 child node, and 1 goal node (goal is currently not used)
         Output: scalar node cost [unitless]
         """
         # rally points
@@ -832,7 +832,7 @@ class UAV_path_planner():
         travel_time = child_point4dUTM[3]-parent_point4dUTM[3]
         total_dist, horz_distance, vert_distance = self.calc_euclidian_dist_UTM(parent_point4dUTM, child_point4dUTM)
         # NOTE currently the thing below contains a linear dependency (linær afhængig)
-        return 0#0.1*total_dist + 0.1*travel_time
+        return 0.1*travel_time#0.1*total_dist + 0.1*travel_time
 
     def print_a_star_open_list_nice(self, list_in):
         print colored('\nPrinting the open list; contains %i elements' % len(list_in), self.default_term_color_info)
@@ -859,7 +859,7 @@ class UAV_path_planner():
         path.reverse()
         return path
 
-    def remove_unneeded_waypoints_from_planned_path(self, planned_path):
+    def remove_waypoints_on_straight_lines(self, planned_path):
         """
         Removes unneeded waypoints from straight lines in the planned path
         Input: UTM planned path
@@ -874,9 +874,6 @@ class UAV_path_planner():
 
         for i in range(len(planned_path)-1):
             #print '\nTesting element %i' % i
-            y_diff =
-            x_diff =
-            z_rel_diff =
             diffs = [planned_path[i+1]['y']-planned_path[i]['y'], planned_path[i+1]['x']-planned_path[i]['x'], planned_path[i+1]['z_rel']-planned_path[i]['z_rel']]
             for element in self.neighbors_scaled:
                 if element == diffs:
@@ -896,6 +893,10 @@ class UAV_path_planner():
 
         out_arr.append(planned_path[index_high])
         out_arr.append(planned_path[-1]) # append the last element since it is not in the search
+
+        if True:
+            for element in out_arr:
+                print element
 
         if self.debug:
             print colored('Path reduced from %i to %i waypoints' % (len(planned_path), len(out_arr)), self.default_term_color_info)
@@ -1184,19 +1185,19 @@ class UAV_path_planner():
                     tmp_var = path[0]['alt']
                 except KeyError:
                     for i in range(len(path)):
-                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt_rel'], path[i]['time_rel']), self.default_term_color_tmp_res)
+                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.05f [deg], lon: %.05f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt_rel'], path[i]['time_rel']), self.default_term_color_tmp_res)
                 else:
                     for i in range(len(path)):
-                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt'], path[i]['time_rel']), self.default_term_color_tmp_res)
+                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.05f [deg], lon: %.05f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt'], path[i]['time_rel']), self.default_term_color_tmp_res)
             else:
                 try:
                     tmp_var = path[0]['alt']
                 except KeyError:
                     for i in range(len(path)):
-                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt_rel'], path[i]['time']), self.default_term_color_tmp_res)
+                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.05f [deg], lon: %.54f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt_rel'], path[i]['time']), self.default_term_color_tmp_res)
                 else:
                     for i in range(len(path)):
-                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt'], path[i]['time']), self.default_term_color_tmp_res)
+                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.05f [deg], lon: %.05f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt'], path[i]['time']), self.default_term_color_tmp_res)
         else:
             print colored('\nCannot print path because it is empty', self.default_term_color_error)
     def convert_rel2abs_time(self, path, start_time_epoch = False):
@@ -1229,7 +1230,7 @@ if __name__ == '__main__':
     UAV_path_planner_module = UAV_path_planner(True)
 
     """ Load no-fly zones """
-    # if print UAV_path_planner_module.no_fly_zone_init_and_parse(): # load online
+    #if UAV_path_planner_module.no_fly_zone_init_and_parse(): # load online
     if UAV_path_planner_module.no_fly_zone_init_and_parse('data_sources/no_fly_zones/KmlUasZones_sec2.kml'): # load offline file
         print colored('No-fly zones loaded', UAV_path_planner_module.default_term_color_res)
     else:
@@ -1245,7 +1246,7 @@ if __name__ == '__main__':
     ## Set 2
     start_point_3dDICT = {'lat': 55.431122, 'lon': 10.420436, 'alt_rel': 0}
     goal_point_3dDICT  = {'lat': 55.427750, 'lon': 10.433737, 'alt_rel': 0}
-    goal_point_3dDICT  = {'lat': 55.427203, 'lon': 10.419043, 'alt_rel': 0}
+    #goal_point_3dDICT  = {'lat': 55.427203, 'lon': 10.419043, 'alt_rel': 0}
 
     # Plan path
     path_planned = UAV_path_planner_module.plan_path(start_point_3dDICT, goal_point_3dDICT)
