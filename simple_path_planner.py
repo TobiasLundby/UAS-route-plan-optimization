@@ -42,7 +42,7 @@ default_plot_color      = 'red'
 default_plot_alpha      = 0.8
 PATH_PLANNER            = PATH_PLANNER_ASTAR
 PATH_PLANNER_NAMES      = ['A star algorithm']
-PRINT_STATISTICS        = True
+PRINT_STATISTICS        = False
 SAVE_STATISTICS_TO_FILE = False
 
 class UAV_path_planner():
@@ -64,7 +64,8 @@ class UAV_path_planner():
     print_explore_node              = False
     draw_open_list                  = False
     draw_closed_list                = False
-    """ Terminal output colors """
+    no_fly_zone_buffer_zone         = 0.0 # unit: m
+    """ Terminal output color constants """
     default_term_color_info         = 'cyan'
     default_term_color_info_alt     = 'magenta'
     info_alt_indent                 = ' -- '
@@ -74,14 +75,15 @@ class UAV_path_planner():
     tmp_res_indent                  = ' -> '
     default_term_color_res          = 'green'
     res_indent                      = ' ++ '
-    """ Path evaluation (path fitness) factors """
+    """ Path evaluation (path fitness) factor constants """
     horz_distance_factor            = 1 # unit: unitless
     vert_distance_factor            = 2 # unit: unitless
     travel_time_factor              = 1 # unit: unitless
     waypoints_factor                = 1 # unit: unitless
     avg_waypoint_dist_factor        = 1 # unit: unitless
-    """ Other """
+    """ Other constants """
     geofence_height                 = 100 # unit: m
+    no_fly_reduce_flight_time_factor = 2 # unit: unitless ; reason: if the wind is 12m/s and the drone if flying with 15m/s the safe reducing is 1.8 (not safe) ≈ 2 (safe)
     forever                         = 60*60*24*365*100  # unit: s; 100 years excl. leap year
     inf                             = 4294967295 # 32bit from 0
 
@@ -124,6 +126,8 @@ class UAV_path_planner():
         self.no_fly_zones_loaded = False
         self.no_fly_zone_reader_module = None
         self.no_fly_zone_polygons = []
+        self.no_fly_zone_polygons_reduced = []
+        self.no_fly_zones_reduced = False
 
         # Set initial values for rally points
         self.rally_points_loaded = False
@@ -189,21 +193,87 @@ class UAV_path_planner():
         else:
             return False
 
-    def is_point_in_no_fly_zones_UTM(self, point3dUTM):
+    def reduce_ploygons_geodetic(self, point3d_start_geodetic, point3d_goal_geodetic):
+        """
+        Reduce the no-fly_zones / polygons based on the start point and end point
+        Input: start and goal point in geodetic format
+        Output: bool (True = reduced, False = not reduced)
+        """
+        start_point_3dDICT = {'lat': 55.431122, 'lon': 10.420436, 'alt_rel': 0}
+        # Test format and convert points
+        if isinstance(point3d_start_geodetic, dict):
+            test_point3d_start_geodetic = [point3d_start_geodetic['lat'], point3d_start_geodetic['lon'], point3d_start_geodetic['alt_rel']]
+        else:
+            test_point3d_start_geodetic = point3d_start_geodetic
+        test_point_start_UTM = self.pos3d_geodetic2pos3d_UTM(test_point3d_start_geodetic)
+        if isinstance(point3d_start_geodetic, dict):
+            test_point3d_goal_geodetic = [point3d_goal_geodetic['lat'], point3d_goal_geodetic['lon'], point3d_goal_geodetic['alt_rel']]
+        else:
+            test_point3d_goal_geodetic = point3d_goal_geodetic
+        test_point_goal_UTM = self.pos3d_geodetic2pos3d_UTM(test_point3d_goal_geodetic)
+
+        return self.reduce_ploygons_UTM(test_point_start_UTM, test_point_goal_UTM)
+
+    def reduce_ploygons_UTM(self, point3d_start_UTM, point3d_goal_UTM):
+        """
+        Reduce the no-fly_zones / polygons based on the start point and end point
+        Input: start and goal point in UTM format
+        Output: bool (True = reduced, False = not reduced)
+        """
+        if isinstance(point3d_start_UTM, dict):
+            test_point3d_start_UTM = [point3d_start_UTM['y'], point3d_start_UTM['x'], point3d_start_UTM['z_rel']]
+        else:
+            test_point3d_start_UTM = point3d_start_UTM
+        if isinstance(point3d_start_UTM, dict):
+            test_point3d_goal_UTM = [point3d_goal_UTM['y'], point3d_goal_UTM['x'], point3d_goal_UTM['z_rel']]
+        else:
+            test_point3d_goal_UTM = point3d_start_UTM
+        print test_point3d_start_UTM
+        print test_point3d_goal_UTM
+
+        self.no_fly_zone_polygons_reduced = []
+
+        # Calculate nominal max flight time
+        max_flight_distance_scaled = self.uav_nominal_battery_time_s * self.uav_nominal_airspeed_horz_mps * self.no_fly_reduce_flight_time_factor
+        if self.debug:
+            print colored(self.tmp_res_indent+'Max flight distance scaled %.02f [m]' % (max_flight_distance_scaled), self.default_term_color_res)
+
+        for i in range(len(self.no_fly_zone_polygons)):
+            result_start_point, dist_start_point = self.is_point_in_no_fly_zone_UTM(test_point3d_start_UTM, i, False)
+            #result_goal_point, dist_goal_point = self.is_point_in_no_fly_zone_UTM(test_point3d_goal_UTM, i, False)
+            #print dist_start_point
+            #print dist_start_point, dist_goal_point
+            #if dist_start_point <= max_flight_distance_scaled or dist_goal_point <= max_flight_distance_scaled:
+            if dist_start_point <= max_flight_distance_scaled:
+                self.no_fly_zone_polygons_reduced.append(self.no_fly_zone_polygons[i])
+
+        if self.debug:
+            print colored(self.tmp_res_indent+'No-fly zones / polygons reduced from %i to %i' % (len(self.no_fly_zone_polygons), len(self.no_fly_zone_polygons_reduced)), self.default_term_color_res)
+
+        if len(self.no_fly_zone_polygons) > len(self.no_fly_zone_polygons_reduced):
+            self.no_fly_zones_reduced = True
+            return True
+        return False
+
+    def is_point_in_no_fly_zones_UTM(self, point3dUTM, use_buffer_zone = True):
         """
         Tests if an UTM point is within any of the no-fly zone polygons
         Input: UTM point3d as array (y, x, alt_rel ...)
         Ouput: bool (True: point is inside) and distance to nearest polygon [m]
         """
         smallest_dist = self.inf
-        for i in range(len(self.no_fly_zone_polygons)):
-            within, dist = self.is_point_in_no_fly_zone_UTM(point3dUTM, i)
+        if self.no_fly_zones_reduced:
+            no_fly_zone_polygons_to_use = self.no_fly_zone_polygons_reduced
+        else:
+            no_fly_zone_polygons_to_use = self.no_fly_zone_polygons
+        for i in range(len(no_fly_zone_polygons_to_use)):
+            within, dist = self.is_point_in_no_fly_zone_UTM(point3dUTM, i, use_buffer_zone)
             if dist < smallest_dist:
                 smallest_dist = dist
             if within:
                 return True, dist
         return False, smallest_dist
-    def is_point_in_no_fly_zone_UTM(self, point3dUTM, polygon_index):
+    def is_point_in_no_fly_zone_UTM(self, point3dUTM, polygon_index, use_buffer_zone = True):
         """
         Tests if an UTM point is within a specified polygon
         Input: UTM point3d as array (y, x, alt_rel ...) and polygon index
@@ -213,27 +283,41 @@ class UAV_path_planner():
             test_point3dUTM = [point3dUTM['y'], point3dUTM['x'], point3dUTM['z_rel']]
         else:
             test_point3dUTM = point3dUTM
-        dist = self.no_fly_zone_polygons[polygon_index].distance(geometry.Point(test_point3dUTM))
-        if dist == 0.0  and test_point3dUTM[2] <= self.geofence_height:
-            return True, dist
-        else:
-            return False, dist
 
-    def is_point_in_no_fly_zones_geodetic(self, point3d_geodetic):
+        if self.no_fly_zones_reduced:
+            dist = self.no_fly_zone_polygons_reduced[polygon_index].distance(geometry.Point(test_point3dUTM))
+        else:
+            dist = self.no_fly_zone_polygons[polygon_index].distance(geometry.Point(test_point3dUTM))
+        if use_buffer_zone:
+            if dist <= self.no_fly_zone_buffer_zone  and test_point3dUTM[2] <= self.geofence_height:
+                return True, dist
+            else:
+                return False, dist
+        else:
+            if dist == 0.0  and test_point3dUTM[2] <= self.geofence_height:
+                return True, dist
+            else:
+                return False, dist
+
+    def is_point_in_no_fly_zones_geodetic(self, point3d_geodetic, use_buffer_zone = True):
         """
         Tests if a geodetic point is within any of the no-fly zone polygons
         Input: geodetic point3d as array (y, x, alt_rel ...)
         Ouput: bool (True: point is inside) and distance to nearest polygon [m]
         """
         smallest_dist = self.inf
-        for i in range(len(self.no_fly_zone_polygons)):
-            within, dist = self.is_point_in_no_fly_zone_geodetic(point3d_geodetic, i)
+        if self.no_fly_zones_reduced:
+            no_fly_zone_polygons_to_use = self.no_fly_zone_polygons_reduced
+        else:
+            no_fly_zone_polygons_to_use = self.no_fly_zone_polygons
+        for i in range(len(no_fly_zone_polygons_to_use)):
+            within, dist = self.is_point_in_no_fly_zone_geodetic(point3d_geodetic, i, use_buffer_zone)
             if dist < smallest_dist:
                 smallest_dist = dist
             if within:
                 return True, dist
         return False, smallest_dist
-    def is_point_in_no_fly_zone_geodetic(self, point3d_geodetic, polygon_index):
+    def is_point_in_no_fly_zone_geodetic(self, point3d_geodetic, polygon_index, use_buffer_zone = True):
         """
         Tests if a geodetic point is within a specified polygon
         Input: geodetic point3d as array (lat, lon, alt_rel) and polygon index
@@ -244,11 +328,8 @@ class UAV_path_planner():
         else:
             test_point3d_geodetic = point3d_geodetic
         test_point_UTM = self.pos3d_geodetic2pos3d_UTM(test_point3d_geodetic)
-        dist = self.no_fly_zone_polygons[polygon_index].distance(geometry.Point(test_point_UTM))
-        if dist == 0.0  and test_point_UTM[2] <= self.geofence_height:
-            return True, dist
-        else:
-            return False, dist
+        return self.is_point_in_no_fly_zone_UTM(test_point_UTM, polygon_index, use_buffer_zone)
+
 
     """ Drawing/plot functions """
     def draw_circle_OSM(self, point, circle_color_in = default_plot_color, circle_size_in = 10, circle_alpha_in = default_plot_alpha):
@@ -761,7 +842,7 @@ class UAV_path_planner():
                 planned_path[-1]['x'] = point_goal['x']
                 planned_path[-1]['z_rel'] = point_goal['z_rel']
 
-                planned_path = self.remove_waypoints_on_straight_lines(planned_path)
+                planned_path = self.remove_unneeded_waypoints_from_planned_path(planned_path)
 
                 # DRAW
                 self.draw_circle_UTM(point_goal_tuple, 'green', 12)
@@ -781,7 +862,7 @@ class UAV_path_planner():
                 neighbor = self.pos4dTUPLE_UTM_copy_and_move_point(current, y, x, z) # Construct the neighbor node; the function calculates the 4 dimension by the time required to travel between the nodes
 
                 # Calculate tentative g score by using the current g_score and the distance between the current and neighbor node
-                tentative_g_score = g_score[current] + self.node_cost(current, neighbor, point_goal_tuple)
+                tentative_g_score = g_score[current] + self.node_cost(current, neighbor)
 
                 if self.print_explore_node:
                     print colored(self.info_alt_indent+'Exploring node (%.02f [m], %.02f [m], %.02f [m], %.02f [s]) with tentative G score %.02f, prevoius G score %.02f (0 = node not visited)' % (neighbor[0], neighbor[1], neighbor[2], neighbor[3], tentative_g_score, g_score.get(neighbor, 0)), self.default_term_color_info_alt)
@@ -821,10 +902,10 @@ class UAV_path_planner():
         """
         return self.calc_euclidian_dist_UTM(point4dUTM1, point4dUTM2)[0]
 
-    def node_cost(self, parent_point4dUTM, child_point4dUTM, goal_point4dUTM):
+    def node_cost(self, parent_point4dUTM, child_point4dUTM):
         """
         Calculates the child node cost based on the parent node
-        Input: 3 4d UTM points; 1 parent, 1 child node, and 1 goal node (goal is currently not used)
+        Input: 2 4d UTM points; 1 parent and 1 child node
         Output: scalar node cost [unitless]
         """
         # rally points
@@ -832,7 +913,7 @@ class UAV_path_planner():
         travel_time = child_point4dUTM[3]-parent_point4dUTM[3]
         total_dist, horz_distance, vert_distance = self.calc_euclidian_dist_UTM(parent_point4dUTM, child_point4dUTM)
         # NOTE currently the thing below contains a linear dependency (linær afhængig)
-        return 0.1*travel_time#0.1*total_dist + 0.1*travel_time
+        return 0.1*travel_time #0.1*total_dist + 0.1*travel_time
 
     def print_a_star_open_list_nice(self, list_in):
         print colored('\nPrinting the open list; contains %i elements' % len(list_in), self.default_term_color_info)
@@ -859,7 +940,7 @@ class UAV_path_planner():
         path.reverse()
         return path
 
-    def remove_waypoints_on_straight_lines(self, planned_path):
+    def remove_unneeded_waypoints_from_planned_path(self, planned_path):
         """
         Removes unneeded waypoints from straight lines in the planned path
         Input: UTM planned path
@@ -893,10 +974,6 @@ class UAV_path_planner():
 
         out_arr.append(planned_path[index_high])
         out_arr.append(planned_path[-1]) # append the last element since it is not in the search
-
-        if True:
-            for element in out_arr:
-                print element
 
         if self.debug:
             print colored('Path reduced from %i to %i waypoints' % (len(planned_path), len(out_arr)), self.default_term_color_info)
@@ -1185,19 +1262,19 @@ class UAV_path_planner():
                     tmp_var = path[0]['alt']
                 except KeyError:
                     for i in range(len(path)):
-                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.05f [deg], lon: %.05f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt_rel'], path[i]['time_rel']), self.default_term_color_tmp_res)
+                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt_rel'], path[i]['time_rel']), self.default_term_color_tmp_res)
                 else:
                     for i in range(len(path)):
-                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.05f [deg], lon: %.05f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt'], path[i]['time_rel']), self.default_term_color_tmp_res)
+                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt'], path[i]['time_rel']), self.default_term_color_tmp_res)
             else:
                 try:
                     tmp_var = path[0]['alt']
                 except KeyError:
                     for i in range(len(path)):
-                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.05f [deg], lon: %.54f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt_rel'], path[i]['time']), self.default_term_color_tmp_res)
+                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt_rel'], path[i]['time']), self.default_term_color_tmp_res)
                 else:
                     for i in range(len(path)):
-                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.05f [deg], lon: %.05f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt'], path[i]['time']), self.default_term_color_tmp_res)
+                        print colored(self.tmp_res_indent+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt'], path[i]['time']), self.default_term_color_tmp_res)
         else:
             print colored('\nCannot print path because it is empty', self.default_term_color_error)
     def convert_rel2abs_time(self, path, start_time_epoch = False):
@@ -1226,17 +1303,6 @@ if __name__ == '__main__':
     # Save the start time before anything else
     time_task_start_s = time.time()
 
-    # Instantiate UAV_path_planner class
-    UAV_path_planner_module = UAV_path_planner(True)
-
-    """ Load no-fly zones """
-    #if UAV_path_planner_module.no_fly_zone_init_and_parse(): # load online
-    if UAV_path_planner_module.no_fly_zone_init_and_parse('data_sources/no_fly_zones/KmlUasZones_sec2.kml'): # load offline file
-        print colored('No-fly zones loaded', UAV_path_planner_module.default_term_color_res)
-    else:
-        print colored('No-fly zones NOT loaded', UAV_path_planner_module.default_term_color_error)
-
-    """ Path planning start """
     # Define start and goal points
     ## Set 1
     #start_point_3dDICT = {'lat': 55.395774, 'lon': 10.319949, 'alt_rel': 0}
@@ -1246,8 +1312,25 @@ if __name__ == '__main__':
     ## Set 2
     start_point_3dDICT = {'lat': 55.431122, 'lon': 10.420436, 'alt_rel': 0}
     goal_point_3dDICT  = {'lat': 55.427750, 'lon': 10.433737, 'alt_rel': 0}
-    #goal_point_3dDICT  = {'lat': 55.427203, 'lon': 10.419043, 'alt_rel': 0}
+    goal_point_3dDICT  = {'lat': 55.427203, 'lon': 10.419043, 'alt_rel': 0}
 
+    # Instantiate UAV_path_planner class
+    UAV_path_planner_module = UAV_path_planner(True)
+
+    """ Load no-fly zones """
+    #if UAV_path_planner_module.no_fly_zone_init_and_parse(): # load online
+    #if UAV_path_planner_module.no_fly_zone_init_and_parse('data_sources/no_fly_zones/KmlUasZones_sec2.kml'): # load offline file
+    if UAV_path_planner_module.no_fly_zone_init_and_parse('data_sources/no_fly_zones/KmlUasZones_2018-05-02-15-50.kml'): # load offline file
+        print colored('No-fly zones loaded', UAV_path_planner_module.default_term_color_res)
+    else:
+        print colored('No-fly zones NOT loaded', UAV_path_planner_module.default_term_color_error)
+
+    if UAV_path_planner_module.reduce_ploygons_geodetic(start_point_3dDICT, goal_point_3dDICT):
+        print colored('No-fly zones reduced', UAV_path_planner_module.default_term_color_res)
+    else:
+        print colored('No-fly zones NOT reduced', UAV_path_planner_module.default_term_color_error)
+
+    """ Path planning start """
     # Plan path
     path_planned = UAV_path_planner_module.plan_path(start_point_3dDICT, goal_point_3dDICT)
     # Print planned path
