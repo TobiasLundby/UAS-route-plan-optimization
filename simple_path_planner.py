@@ -29,6 +29,7 @@ import csv # for saving statistics and path
 from heapq import * # for the heap used in the A star algorithm
 from data_sources.no_fly_zones.kml_reader import kml_no_fly_zones_parser
 from shapely import geometry # used to calculate the distance to polygons
+from rdp import rdp
 
 """ Program defines """
 PATH_PLANNER_ASTAR      = 0
@@ -842,7 +843,8 @@ class UAV_path_planner():
                 planned_path[-1]['x'] = point_goal['x']
                 planned_path[-1]['z_rel'] = point_goal['z_rel']
 
-                planned_path = self.remove_unneeded_waypoints_from_planned_path(planned_path)
+                planned_path = self.reduce_path_simple_straight_line_UTM(planned_path)
+                self.reduce_path_rdp_UTM(planned_path)
 
                 # DRAW
                 self.draw_circle_UTM(point_goal_tuple, 'green', 12)
@@ -940,7 +942,7 @@ class UAV_path_planner():
         path.reverse()
         return path
 
-    def remove_unneeded_waypoints_from_planned_path(self, planned_path):
+    def reduce_path_simple_straight_line_UTM(self, planned_path):
         """
         Removes unneeded waypoints from straight lines in the planned path
         Input: UTM planned path
@@ -979,6 +981,23 @@ class UAV_path_planner():
             print colored('Path reduced from %i to %i waypoints' % (len(planned_path), len(out_arr)), self.default_term_color_info)
 
         return out_arr
+
+    def reduce_path_rdp_UTM(self, points4dUTM, tolerance=-1):
+        """
+        Removes waypoints according to the Ramer-Douglas-Peucker algorithm
+        Input: a set of 4d UTM points and optional tolerance
+        """
+        polygon_test = [ [1, 1], [2, 2.2], [3.3, 3], [4, 4] ]
+        print polygon_test
+
+        if tolerance == -1:
+            print 'No tolerance provided, using tolerance = 0'
+            polygon_test_back = rdp(polygon_test)
+            # NOTE this is the same as the algorithm I've tried to make above
+        else:
+            print 'Tolerance is %.02f' % (tolerance)
+            polygon_test_back = rdp(polygon_test, tolerance)
+        print polygon_test_back
 
     def pos4dTUPLE_UTM_copy_and_move_point(self, point4dUTM, y_offset, x_offset, z_offset):
         """
@@ -1318,6 +1337,7 @@ if __name__ == '__main__':
     UAV_path_planner_module = UAV_path_planner(True)
 
     """ Load no-fly zones """
+    print colored('Trying to load no-fly zones', UAV_path_planner_module.default_term_color_info)
     #if UAV_path_planner_module.no_fly_zone_init_and_parse(): # load online
     #if UAV_path_planner_module.no_fly_zone_init_and_parse('data_sources/no_fly_zones/KmlUasZones_sec2.kml'): # load offline file
     if UAV_path_planner_module.no_fly_zone_init_and_parse('data_sources/no_fly_zones/KmlUasZones_2018-05-02-15-50.kml'): # load offline file
