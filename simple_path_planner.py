@@ -20,18 +20,18 @@ import time
 import datetime # datetime.now
 import pytz # timezones in the datetime format
 from copy import copy, deepcopy
-from guppy import hpy # for getting heap info
 import csv # for saving statistics and path
 from heapq import * # for the heap used in the A star algorithm
 from libs.coordinate import coordinate_transform
 from libs.map_plotter import map_plotter
+from libs.memory_usage import memory_usage
 from data_sources.no_fly_zones.kml_reader import kml_no_fly_zones_parser
 from shapely import geometry # used to calculate the distance to polygons
 from rdp import rdp
 
 
 """ User constants """
-PRINT_STATISTICS        = False
+PRINT_STATISTICS        = True
 SAVE_STATISTICS_TO_FILE = False
 
 class UAV_path_planner():
@@ -920,8 +920,12 @@ if __name__ == '__main__':
     # Save the start time before anything else
     time_task_start_s = time.time()
 
+    # Instantiate memory_usage class
+    memory_usage_module = memory_usage()
+    memory_usage_module.save_heap_start() # Save the heap size before calculating and outputting statistics
+
     # Define start and goal points
-    ## Set 1
+    ## Set 1 - DO NOT use since they are actually in a no-fly zone
     #start_point_3dDICT = {'lat': 55.395774, 'lon': 10.319949, 'alt_rel': 0}
     #goal_point_3dDICT  = {'lat': 55.392968, 'lon': 10.341793, 'alt_rel': 0} # further away
     #goal_point_3dDICT  = {'lat': 55.394997, 'lon': 10.321601, 'alt_rel': 0} # closer to start point
@@ -964,12 +968,9 @@ if __name__ == '__main__':
 
     """ Path planning done, finalize with statistics """
     if len(path_planned) >= 1:
-        # Save the end time
-        time_task_end_s = time.time()
-        # Save the heap size before calculating and outputting statistics
-        h = hpy()
-        heap = h.heap() # Extract heap
-        heap_str = str(heap) # Convert to string to make a deepcopy so it is not just pointing to an object which changes
+        time_task_end_s = time.time() # Save the end time
+        memory_usage_module.save_heap() # Save the heap size before calculating and outputting statistics
+
         # Calculate runtime
         runtime_s = time_task_end_s - time_task_start_s
 
@@ -977,28 +978,28 @@ if __name__ == '__main__':
         used_path_planner = UAV_path_planner_module.PATH_PLANNER_NAMES[UAV_path_planner_module.PATH_PLANNER]
         estimated_flight_time = path_planned[len(path_planned)-1]['time'] - path_planned[0]['time']
 
-        index_end_objects = heap_str.find(' objects')
-        object_amount = int(heap_str[22:index_end_objects])
-
-        index_start_bytes = heap_str.find('Total size = ')
-        index_end_bytes = heap_str.find(' bytes.')
-        byte_amount = int(heap_str[index_start_bytes+13:index_end_bytes])
+        byte_amount = memory_usage_module.get_bytes()
+        byte_amount_diff = memory_usage_module.get_bytes_diff()
+        object_amount = memory_usage_module.get_objects()
+        object_amount_diff = memory_usage_module.get_objects_diff()
 
         no_waypoints = len(path_planned)
 
         # Print statistics
         if PRINT_STATISTICS:
-            print colored('\n          Path planner: %s' % used_path_planner, 'yellow')
-            print colored('          Path fitness: %f' % path_planned_fitness, 'yellow')
-            print colored('        Total distance: %.02f [m]' % total_dist, 'yellow')
-            print colored('   Horizontal distance: %.02f [m]' % horz_dist, 'yellow')
-            print colored('     Vertical distance: %.02f [m]' % vert_dist, 'yellow')
-            print colored('               Runtime: %f [s] (%s)' % (runtime_s, str(datetime.timedelta(seconds=runtime_s))), 'yellow')
-            print colored('  Number of bytes used: %i' % byte_amount, 'yellow')
-            print colored('Number of objects used: %i' % object_amount, 'yellow')
-            print colored(' Estimated flight time: %.02f [s] (%s)' % (estimated_flight_time, str(datetime.timedelta(seconds=estimated_flight_time))), 'yellow') # TODO
-            print colored('   Number of waypoints: %i' % (no_waypoints), 'yellow')
-            print colored('                  Path: %s' % (str(path_planned)), 'yellow')
+            print colored('\n                              Path planner: %s' % used_path_planner, 'yellow')
+            print colored('                              Path fitness: %f' % path_planned_fitness, 'yellow')
+            print colored('                            Total distance: %.02f [m]' % total_dist, 'yellow')
+            print colored('                       Horizontal distance: %.02f [m]' % horz_dist, 'yellow')
+            print colored('                         Vertical distance: %.02f [m]' % vert_dist, 'yellow')
+            print colored('                                   Runtime: %f [s] (%s)' % (runtime_s, str(datetime.timedelta(seconds=runtime_s))), 'yellow')
+            print colored('                      Number of bytes used: %i' % byte_amount, 'yellow')
+            print colored('  Number of bytes used by the path planner: %i' % byte_amount_diff, 'yellow')
+            print colored('                    Number of objects used: %i' % object_amount, 'yellow')
+            print colored('Number of objects used by the path planner: %i' % object_amount_diff, 'yellow')
+            print colored('                     Estimated flight time: %.02f [s] (%s)' % (estimated_flight_time, str(datetime.timedelta(seconds=estimated_flight_time))), 'yellow') # TODO
+            print colored('                       Number of waypoints: %i' % (no_waypoints), 'yellow')
+            print colored('                                      Path: %s' % (str(path_planned)), 'yellow')
 
         # Save statistics to file
         if SAVE_STATISTICS_TO_FILE:
@@ -1008,8 +1009,8 @@ if __name__ == '__main__':
             file_name = sub_folder+'/'+file_name
             output_file_CSV = open(file_name, 'w')
             output_writer_CSV = csv.writer(output_file_CSV,quoting=csv.QUOTE_MINIMAL)
-            fields = ['path planner', 'path fitness [unitless]', 'total distance [m]', 'horizontal distance [m]', 'vertical distance [m]', 'runtime [s]', 'bytes used', 'objects used', 'flight time [s]', 'waypoints', 'start point', 'goal point', 'path']
+            fields = ['path planner', 'path fitness [unitless]', 'total distance [m]', 'horizontal distance [m]', 'vertical distance [m]', 'runtime [s]', 'bytes used', 'bytes used by the path planner', 'objects used', 'objects used by the path planner', 'flight time [s]', 'waypoints', 'start point', 'goal point', 'path']
             output_writer_CSV.writerow(fields)
-            data = [used_path_planner, path_planned_fitness, total_dist, horz_dist, vert_dist, runtime_s, byte_amount, object_amount, estimated_flight_time, no_waypoints, start_point_3dDICT, goal_point_3dDICT, path_planned]
+            data = [used_path_planner, path_planned_fitness, total_dist, horz_dist, vert_dist, runtime_s, byte_amount, byte_amount_diff, object_amount, object_amount_diff, estimated_flight_time, no_waypoints, start_point_3dDICT, goal_point_3dDICT, path_planned]
             output_writer_CSV.writerow(data)
             output_file_CSV.close()
