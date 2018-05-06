@@ -17,9 +17,8 @@ from bokeh.tile_providers import CARTODBPOSITRON
 from bokeh.models import ColumnDataSource, MercatorTicker, MercatorTickFormatter
 from math import pow, sqrt, pi, cos
 from termcolor import colored
-from pyproj import Proj, transform, Geod
+from pyproj import Geod
 import datetime
-from libs.transverse_mercator_py.utm import utmconv
 import time
 import datetime # datetime.now
 import pytz # timezones in the datetime format
@@ -27,14 +26,13 @@ from copy import copy, deepcopy
 from guppy import hpy # for getting heap info
 import csv # for saving statistics and path
 from heapq import * # for the heap used in the A star algorithm
+from libs.coordinate import coordinate_transform
 from data_sources.no_fly_zones.kml_reader import kml_no_fly_zones_parser
 from shapely import geometry # used to calculate the distance to polygons
 from rdp import rdp
 
 """ Program defines """
 PATH_PLANNER_ASTAR      = 0
-geodetic_proj           = Proj('+init=EPSG:4326')  # EPSG:3857 - WGS 84 / Pseudo-Mercator - https://epsg.io/3857 - OSM projection
-OSM_proj                = Proj('+init=EPSG:3857')  # EPSG:4326 - WGS 84 / World Geodetic System 1984, used in GPS - https://epsg.io/4326
 geoid_distance          = Geod(ellps='WGS84') # used for calculating Great Circle Distance
 
 """ User defines """
@@ -93,21 +91,21 @@ class UAV_path_planner():
         self.debug = debug
         self.debug_test = False
 
-        # Instantiate utmconv class
-        self.uc = utmconv()
-
         # Set output file for Bokeh
         output_file("path_planning.html")
 
         # Set bounds for map plot
         use_bounds = False
 
+        # Init coordinate transform class
+        self.coord_conv = coordinate_transform()
+
         # range bounds supplied in web mercator coordinates
         if use_bounds:
             bounds_bottom_left_Geodetic = [54.5, 8]
             bounds_top_right_Geodetic = [58, 13]
-            bounds_bottom_left_PseudoMercator = UAV_path_planner_module.Geodetic2PseudoMercator(bounds_bottom_left_Geodetic)
-            bounds_top_right_PseudoMercator   = UAV_path_planner_module.Geodetic2PseudoMercator(bounds_top_right_Geodetic)
+            bounds_bottom_left_PseudoMercator = self.coord_conv.Geodetic2PseudoMercator(bounds_bottom_left_Geodetic)
+            bounds_top_right_PseudoMercator   = self.coord_conv.Geodetic2PseudoMercator(bounds_top_right_Geodetic)
             print colored('Bottom left: lat: %d, lng: %d, x: %d, y: %d' % (bounds_bottom_left_Geodetic[0], bounds_bottom_left_Geodetic[1], bounds_bottom_left_PseudoMercator[0], bounds_bottom_left_PseudoMercator[1]), 'yellow')
             print colored('  Top right: lat: %d, lng: %d, x: %d, y: %d' % (bounds_top_right_Geodetic[0], bounds_top_right_Geodetic[1], bounds_top_right_PseudoMercator[0], bounds_top_right_PseudoMercator[1]), 'yellow')
             self.p = figure(x_range=(bounds_bottom_left_PseudoMercator[0], bounds_top_right_PseudoMercator[0]), y_range=(bounds_bottom_left_PseudoMercator[1], bounds_top_right_PseudoMercator[1]))#, x_axis_type="mercator", y_axis_type="mercator")
@@ -160,7 +158,7 @@ class UAV_path_planner():
             no_fly_zones = self.no_fly_zone_reader_module.get_zones() # extract the no-fly zones
             for no_fly_zone in no_fly_zones:
                 no_fly_zone_coordinates = no_fly_zone['coordinates'] # extract the coordinates
-                no_fly_zone_coordinates_UTM = self.pos3d_geodetic2pos3d_UTM_multiple(no_fly_zone_coordinates) # convert coordinates to UTM
+                no_fly_zone_coordinates_UTM = self.coord_conv.pos3d_geodetic2pos3d_UTM_multiple(no_fly_zone_coordinates) # convert coordinates to UTM
                 no_fly_zone_coordinates_UTM_y_x = [[x[0],x[1]] for x in no_fly_zone_coordinates_UTM] # extract y and x
                 #print no_fly_zone_coordinates_UTM_y_x
                 self.no_fly_zone_polygons.append(geometry.Polygon(no_fly_zone_coordinates_UTM_y_x))
@@ -177,14 +175,14 @@ class UAV_path_planner():
         res_bool, index = self.no_fly_zone_reader_module.get_polygon_index_from_id('01c2f279-fc2c-421d-baa7-60afd0a0b8ac')
 
         test_point_geodetic = [55.399512, 10.319328, 0]
-        test_point_UTM = self.pos3d_geodetic2pos3d_UTM(test_point_geodetic)
+        test_point_UTM = self.coord_conv.pos3d_geodetic2pos3d_UTM(test_point_geodetic)
         #print test_point_UTM
         dist1 = self.no_fly_zone_polygons[index].distance(geometry.Point(test_point_UTM))
         if self.debug_test:
             print '\nTest point 2: should be inside: distance = %.02f' % dist1
 
         test_point_geodetic = [55.397001, 10.307698, 0]
-        test_point_UTM = self.pos3d_geodetic2pos3d_UTM(test_point_geodetic)
+        test_point_UTM = self.coord_conv.pos3d_geodetic2pos3d_UTM(test_point_geodetic)
         #print test_point_UTM
         dist2 = self.no_fly_zone_polygons[index].distance(geometry.Point(test_point_UTM))
         if self.debug_test:
@@ -206,12 +204,12 @@ class UAV_path_planner():
             test_point3d_start_geodetic = [point3d_start_geodetic['lat'], point3d_start_geodetic['lon'], point3d_start_geodetic['alt_rel']]
         else:
             test_point3d_start_geodetic = point3d_start_geodetic
-        test_point_start_UTM = self.pos3d_geodetic2pos3d_UTM(test_point3d_start_geodetic)
+        test_point_start_UTM = self.coord_conv.pos3d_geodetic2pos3d_UTM(test_point3d_start_geodetic)
         if isinstance(point3d_start_geodetic, dict):
             test_point3d_goal_geodetic = [point3d_goal_geodetic['lat'], point3d_goal_geodetic['lon'], point3d_goal_geodetic['alt_rel']]
         else:
             test_point3d_goal_geodetic = point3d_goal_geodetic
-        test_point_goal_UTM = self.pos3d_geodetic2pos3d_UTM(test_point3d_goal_geodetic)
+        test_point_goal_UTM = self.coord_conv.pos3d_geodetic2pos3d_UTM(test_point3d_goal_geodetic)
 
         return self.reduce_ploygons_UTM(test_point_start_UTM, test_point_goal_UTM)
 
@@ -346,7 +344,7 @@ class UAV_path_planner():
         Input: 2d geodetic DICT point along with optional graphic parameters
         Output: none but drawing on the provided plot
         """
-        points_in_converted = self.check_pos2dALL_geodetic2pos2dDICT_OSM(point)
+        points_in_converted = self.coord_conv.check_pos2dALL_geodetic2pos2dDICT_OSM(point)
         self.p.circle(x=points_in_converted['x'], y=points_in_converted['y'], size = circle_size_in, fill_color=circle_color_in, fill_alpha=circle_alpha_in)
     def draw_circle_UTM(self, point, circle_color_in = default_plot_color, circle_size_in = 10, circle_alpha_in = default_plot_alpha):
         """
@@ -355,11 +353,11 @@ class UAV_path_planner():
         Output: none but drawing on the provided plot
         """
         if isinstance(point, dict):
-            (back_conv_lat, back_conv_lon) = self.uc.utm_to_geodetic(point['hemisphere'], point['zone'], point['y'], point['x'])
+            (back_conv_lat, back_conv_lon) = self.coord_conv.UTM2geodetic(point['hemisphere'], point['zone'], point['y'], point['x'])
         elif isinstance(point, tuple):
-            (back_conv_lat, back_conv_lon) = self.uc.utm_to_geodetic(point[4], point[5], point[0], point[1])
+            (back_conv_lat, back_conv_lon) = self.coord_conv.UTM2geodetic(point[4], point[5], point[0], point[1])
         point2dDICT = {'lat':back_conv_lat,'lon':back_conv_lon}
-        points_in_converted = self.check_pos2dALL_geodetic2pos2dDICT_OSM(point2dDICT)
+        points_in_converted = self.coord_conv.check_pos2dALL_geodetic2pos2dDICT_OSM(point2dDICT)
         self.p.circle(x=points_in_converted['x'], y=points_in_converted['y'], size = circle_size_in, fill_color=circle_color_in, fill_alpha=circle_alpha_in)
 
     def draw_points_UTM(self, points_in, list_type, point_color = default_plot_color, point_size = 7):
@@ -392,18 +390,18 @@ class UAV_path_planner():
         """
         # Convert start point from UTM to geodetic to OSM
         if isinstance(point_start, dict):
-            (back_conv_lat_start, back_conv_lon_start) = self.uc.utm_to_geodetic(point_start['hemisphere'], point_start['zone'], point_start['y'], point_start['x'])
+            (back_conv_lat_start, back_conv_lon_start) = self.coord_conv.UTM2geodetic(point_start['hemisphere'], point_start['zone'], point_start['y'], point_start['x'])
         elif isinstance(point_start, tuple):
-            (back_conv_lat_start, back_conv_lon_start) = self.uc.utm_to_geodetic(point_start[4], point_start[5], point_start[0], point_start[1])
+            (back_conv_lat_start, back_conv_lon_start) = self.coord_conv.UTM2geodetic(point_start[4], point_start[5], point_start[0], point_start[1])
         point2dDICT_start = {'lat':back_conv_lat_start,'lon':back_conv_lon_start}
-        points_in_converted_start = self.check_pos2dALL_geodetic2pos2dDICT_OSM(point2dDICT_start)
+        points_in_converted_start = self.coord_conv.check_pos2dALL_geodetic2pos2dDICT_OSM(point2dDICT_start)
         # Convert end point from UTM to geodetic to OSM
         if isinstance(point_end, dict):
-            (back_conv_lat_end, back_conv_lon_end) = self.uc.utm_to_geodetic(point_end['hemisphere'], point_end['zone'], point_end['y'], point_end['x'])
+            (back_conv_lat_end, back_conv_lon_end) = self.coord_conv.UTM2geodetic(point_end['hemisphere'], point_end['zone'], point_end['y'], point_end['x'])
         elif isinstance(point_end, tuple):
-            (back_conv_lat_end, back_conv_lon_end) = self.uc.utm_to_geodetic(point_end[4], point_end[5], point_end[0], point_end[1])
+            (back_conv_lat_end, back_conv_lon_end) = self.coord_conv.UTM2geodetic(point_end[4], point_end[5], point_end[0], point_end[1])
         point2dDICT_end = {'lat':back_conv_lat_end,'lon':back_conv_lon_end}
-        points_in_converted_end = self.check_pos2dALL_geodetic2pos2dDICT_OSM(point2dDICT_end)
+        points_in_converted_end = self.coord_conv.check_pos2dALL_geodetic2pos2dDICT_OSM(point2dDICT_end)
         # Draw line from OSM points
         self.p.line([points_in_converted_start['x'], points_in_converted_end['x']], [points_in_converted_start['y'], points_in_converted_end['y']], line_color = line_color_in, line_width = line_width_in, line_alpha = line_alpha_in)
 
@@ -415,7 +413,7 @@ class UAV_path_planner():
         """
         if len(points_in) > 0:
             # Check and convert points
-            points_in_converted = self.check_pos2dALL_geodetic2pos2dDICT_OSM(points_in)
+            points_in_converted = self.coord_conv.check_pos2dALL_geodetic2pos2dDICT_OSM(points_in)
 
             for i in range(len(points_in_converted)-1):
                 self.draw_line_OSM(points_in_converted[i], points_in_converted[i+1])
@@ -447,7 +445,7 @@ class UAV_path_planner():
         """
         if len(geofence_in) > 2:
             # Check and convert points
-            geofence_in_converted = self.check_pos2dALL_geodetic2pos2dDICT_OSM(geofence_in)
+            geofence_in_converted = self.coord_conv.check_pos2dALL_geodetic2pos2dDICT_OSM(geofence_in)
 
             points_OSM_x = []
             points_OSM_y = []
@@ -458,244 +456,6 @@ class UAV_path_planner():
 
     def show_plot(self):
         show(self.p)
-
-    """
-    Geographical location formats:
-        pos2d
-            Geodetic: 2 value 1 element array of lat, lon
-            OSM: 2 value 1 element array of x, y
-
-        pos2dDICT:
-            Geodetic: 2 value 1 element DICT of lat, lon; geodetic
-            OSM: 2 value 1 element OSM DICT of x, y
-
-        pos3d:
-            Geodetic: 3 value 1 element array of lat, lon, alt_rel
-
-        pos3dDICT:
-            Geodetic: 3 value 1 element DICT of lat, lon, alt_rel
-
-        pos4d:
-            UTM: 7 value 1 element array of y (easting), x (norting), alt_rel, time_rel, hemisphere, zone, letter
-            Geodetic: 4 value 1 element array of lat, lon, alt_rel, time_rel
-
-        pos4dDICT:
-            UTM: 7 value 1 element DICT of hemisphere, zone, letter, y, x, z_rel, time_rel
-            Geodetic:
-                4 value 1 element DICT of lat, lon, alt_rel, time_rel
-                4 value 1 element DICT of lat, lon, alt, time_rel
-
-        Fields:
-            lat: latitude [dd]
-            lon: longitude [dd]
-            alt_rel: relative altitude to start point height [m]
-            alt: (absolute) GPS altitude [m]
-            time_rel: relative time to start point time (default 0) [s]
-            time: (absolute) timestamps in EPOCH format [s]
-            x:
-                OSM: positive right on map
-                UTM: norting, positive up on map
-            y:
-                OSM: positive up on map
-                UTM: easting, positive right on map
-    """
-    def Geodetic2PseudoMercator(self, lat, lon = False):
-        """
-        Converts geodetic latitude and longitude to pseudo mercator (OSM) x and y
-        Input: latitude, longitude (EPSG:4326) or array of lat and lon as the lat input
-        Output: x, y(EPSG:3857)
-        """
-        if lon == False and len(lat) == 2:
-            x,y = transform(geodetic_proj, OSM_proj, lat[1], lat[0])
-        else:
-            x,y = transform(geodetic_proj, OSM_proj, lon, lat)
-        return (x,y)
-    def PseudoMercator2Geodetic(self, x,y):
-        """
-        Converts x and y pseudo mercator (OSM) to geodetic latitude and longitude
-        Input: x, y(EPSG:3857)
-        Output: latitude, longitude (EPSG:4326)
-        """
-        lon, lat = transform(OSM_proj, geodetic_proj, x, y)
-        return (lat, lon)
-
-    def check_pos2dALL_geodetic2pos2dDICT_OSM(self, pos2dALL_geodetic):
-        """ Cheks and converts all formats of pos2D (geodetic) to pos2dDICT_OSM
-        Input: 2 value 1 element DICT of lat, lon or array of lat, lon
-        Output: 2 value 1 element OSM DICT of x, y
-        """
-        if isinstance(pos2dALL_geodetic, list):
-            pos2dDICT_OSM = []
-            try:
-                tmp_var = pos2dALL_geodetic[0]['lat']
-            except TypeError:
-                # convert the points
-                for i in range(len(pos2dALL_geodetic)):
-                    pos2dDICT_OSM.append( self.pos2dDICT_geodetic2pos2dDICT_OSM( self.pos2d2pos2dDICT_geodetic(pos2dALL_geodetic[i]) ) )
-            else:
-                for i in range(len(pos2dALL_geodetic)):
-                    pos2dDICT_OSM.append( self.pos2dDICT_geodetic2pos2dDICT_OSM(pos2dALL_geodetic[i]) )
-        elif isinstance(pos2dALL_geodetic, dict):
-            pos2dDICT_OSM = self.pos2dDICT_geodetic2pos2dDICT_OSM(pos2dALL_geodetic)
-        return pos2dDICT_OSM
-
-    def pos2dDICT_geodetic2pos2dDICT_OSM(self, pos2dDICT_geodetic):
-        """ Converts pos2dDICT_geodetic to pos2dDICT_OSM
-        Input: 2 value 1 element DICT of lat, lon
-        Output: 2 value 1 element OSM DICT of x, y
-        """
-        x,y = self.Geodetic2PseudoMercator(pos2dDICT_geodetic['lat'], pos2dDICT_geodetic['lon'])
-        return {'x':x,'y':y}
-    def pos2dDICT_OSM2pos2dDICT_geodetic(self, pos2dDICT_OSM):
-        """ Converts pos2dDICT_OSM to pos2dDICT_geodetic
-        Input: 2 value 1 element OSM DICT of x, y
-        Output: 2 value 1 element DICT of lat, lon
-        """
-        lat,lon = self.PseudoMercator2Geodetic(pos2dDICT_OSM['x'], pos2dDICT_OSM['y'])
-        return {'lat':lat,'lon':lon}
-
-    def pos2d2pos2dDICT_OSM(self, pos2d):
-        """ Converts pos2d to pos2dDICT, OSM
-        Input: 2 value 1 element array of x, y
-        Output: 2 value 1 element DICT of x, y
-        """
-        return {'x':pos2d[0],'y':pos2d[1]}
-    def pos2dDICT2pos2d_OSM(self, pos2dDICT):
-        """ Converts pos2d to pos2d, OSM
-        Input: 2 value 1 element array of x, y
-        Output: 2 value 1 element DICT of x, y
-        """
-        return [pos2dDICT['x'],pos2dDICT['y']]
-
-    def pos2d2pos2dDICT_geodetic(self, pos2d):
-        """ Converts pos2d to pos2dDICT, geodetic
-        Input: 2 value 1 element array of lat, lon
-        Output: 2 value 1 element DICT of lat, lon
-        """
-        return {'lat':pos2d[0],'lon':pos2d[1]}
-    def pos2dDICT2pos2d_geodetic(self, pos2dDICT):
-        """ Converts pos2dDICT to pos2d, geodetic
-        Input: 2 value 1 element DICT of lat, lon
-        Output: 2 value 1 element array of lat, lon
-        """
-        return [pos2dDICT['lat'],pos2dDICT['lon']]
-
-    def pos3d_geodetic2pos3d_UTM_multiple(self, pos3d_geodetic_multiple):
-        """ Converts multiple geodetic pos3d to UTM pos3d
-        Input: multiple geodetic points as 3 value 1 array of lat, lon, alt_rel
-        Output: multiple UTM points as 6 value 1 element array of y/easting, x/norting, alt_rel, hemisphere, zone, and letter
-        """
-        converted_points = []
-        for element in pos3d_geodetic_multiple:
-            converted_points.append( self.pos3d_geodetic2pos3d_UTM(element) )
-        return converted_points
-    def pos3d_UTM2pos3d_geodetic_multiple(self, pos3d_UTM_multiple):
-        """ Converts multiple UTM pos3d to geodetic pos3d
-        Input: multiple UTM points as 6 value 1 element array of y/easting, x/norting, alt_rel, hemisphere, zone, and letter
-        Output: multiple geodetic points as 3 value 1 array of lat, lon, alt_rel
-        """
-        converted_points = []
-        for element in pos3d_UTM_multiple:
-            converted_points.append( self.pos3d_UTM2pos3d_geodetic(element) )
-        return converted_points
-    def pos3d_geodetic2pos3d_UTM(self, pos3d_geodetic):
-        """ Converts geodetic pos3d to UTM pos3d
-        Input: 3 value 1 array of lat, lon, alt_rel
-        Output: 6 value 1 element array of y/easting, x/norting, alt_rel, hemisphere, zone, and letter
-        """
-        (hemisphere, zone, letter, easting, northing) = self.uc.geodetic_to_utm(pos3d_geodetic[0],pos3d_geodetic[1])
-        return [easting, northing, pos3d_geodetic[2], hemisphere, zone, letter]
-    def pos3d_UTM2pos3d_geodetic(self, pos3d_UTM):
-        """ Converts UTM pos3d to geodetic pos3d
-        Input: 6 value 1 element array of y/easting, x/norting, alt_rel, hemisphere, zone, and letter
-        Output: 3 value 1 array of lat, lon, alt_rel
-        """
-        (back_conv_lat, back_conv_lon) = self.uc.utm_to_geodetic (pos3d_UTM[3], pos3d_UTM[4], pos3d_UTM[0], pos3d_UTM[1])
-        return [back_conv_lat, back_conv_lon, pos3d_UTM[2]]
-
-    def pos3dDICT2pos2dDICT_geodetic(self, pos3dDICT):
-        """ Converts pos3dDICT to pos2dDICT, geodetic
-        Input: 3 value 1 element DICT of lat, lon, alt_rel
-        Output: 2 value 1 element DICT of lat, lon; discards alt_rel
-        """
-        return {'lat':pos3dDICT['lat'],'lon':pos3dDICT['lon']}
-    def pos2dDICT2pos3dDICT_geodetic(self, pos2dDICT):
-        """ Converts pos2dDICT to pos3dDICT, geodetic
-        Input: 2 value 1 element DICT of lat, lon
-        Output: 3 value 1 element DICT of lat, lon, alt_rel (defaulted to 0)
-        """
-        return {'lat':pos2dDICT['lat'],'lon':pos2dDICT['lon'],'alt_rel':0}
-
-    def pos3d2pos3dDICT_geodetic(self, pos3d):
-        """ Converts pos3d to pos3dDICT, geodetic
-        Input: 3 value 1 element array of lat, lon, alt_rel
-        Output: 3 value 1 element DICT of lat, lon, alt_rel
-        """
-        return {'lat':pos3d[0],'lon':pos3d[1],'alt_rel':pos3d[2]}
-    def pos3dDICT2pos3d_geodetic(self, pos3dDICT):
-        """ Converts pos3dDICT to pos3d, geodetic
-        Input: 3 value 1 element DICT of lat, lon, alt_rel
-        Output: 3 value 1 element array of lat, lon, alt_rel
-        """
-        return [pos3dDICT['lat'],pos3dDICT['lon'],pos3dDICT['alt_rel']]
-
-    def pos3dDICT_geodetic2pos4dDICT_UTM(self, pos3dDICT):
-        """ Converts pos3dDICT (geodetic) to pos4dDICT (UTM)
-        Input: 3 value 1 element DICT of lat, lon, alt_rel
-        Output: 4 value 1 element DICT of x, y, z_rel (relative to start height), time_rel (defaulted to None and relative to start time) along with UTM parameters (hemisphere, zone, and letter)
-        See https://developer.dji.com/mobile-sdk/documentation/introduction/flightController_concepts.html for coordinate system reference
-        and https://www.basicairdata.eu/knowledge-center/background-topics/coordinate-system/
-            x = norting = up: flying direction
-            y = easting = right: tangent to flying direction
-        """
-        (hemisphere, zone, letter, easting, northing) = self.uc.geodetic_to_utm(pos3dDICT['lat'],pos3dDICT['lon'])
-        return {'hemisphere':hemisphere,'zone':zone,'letter':letter,'y':easting,'x':northing,'z_rel':pos3dDICT['alt_rel'],'time_rel':None}
-    def pos4dDICT_UTM2pos4dDICT_geodetic(self, pos4dDICT_UTM):
-        """ Converts pos4dDICT (UTM) to pos4dDICT (geodetic)
-        Input: 7 value 1 element DICT of hemisphere, zone, letter, y, x, z_rel, time_rel
-        Output: 4 value 1 element DICT of lat, lon, alt_rel (relative to start height), time_rel
-        """
-        (back_conv_lat, back_conv_lon) = self.uc.utm_to_geodetic (pos4dDICT_UTM['hemisphere'], pos4dDICT_UTM['zone'], pos4dDICT_UTM['y'], pos4dDICT_UTM['x'])
-        return {'lat':back_conv_lat,'lon':back_conv_lon,'alt_rel':pos4dDICT_UTM['z_rel'],'time_rel':pos4dDICT_UTM['time_rel']}
-
-    def pos4d2pos4dDICT_geodetic(self, pos4d):
-        """ Converts pos4d to pos4dDICT, geodetic
-        Input: 4 value 1 element array of lat, lon, alt_rel, time_rel
-        Output: 4 value 1 element DICT of lat, lon, alt_rel, time_rel
-        """
-        return {'lat':pos4d[0],'lon':pos4d[1],'alt_rel':pos4d[2],'time_rel':pos4d[3]}
-    def pos4dDICT2pos4d_geodetic(self, pos4dDICT):
-        """ Converts pos4dDICT to pos4d, geodetic
-        Input: 4 value 1 element DICT of lat, lon, alt_rel, time_rel
-        Output: 4 value 1 element array of lat, lon, alt_rel, time_rel
-        """
-        return [pos4dDICT['lat'],pos4dDICT['lon'],pos4dDICT['alt_rel'],pos4dDICT['time_rel']]
-
-    def pos4d2pos4dDICT_UTM(self, pos4d):
-        """ Converts pos4d to pos4dDICT, UTM
-        Input: 7 value 1 element array of y (easting), x (norting), alt_rel, time_rel, hemisphere, zone, letter
-        Output: 7 value 1 element DICT of hemisphere, zone, letter, y, x, z_rel, time_rel
-        """
-        return {'hemisphere':pos4d[4],'zone':pos4d[5],'letter':pos4d[6],'y':pos4d[0],'x':pos4d[1],'z_rel':pos4d[2],'time_rel':pos4d[3]}
-    def pos4dDICT2pos4d_UTM(self, pos4dDICT):
-        """ Converts pos4d to pos4dDICT, UTM
-        Input: 7 value 1 element DICT of hemisphere, zone, letter, y, x, z_rel, time_rel
-        Output: 7 value 1 element array of y (easting), x (norting), alt_rel, time_rel, hemisphere, zone, letter
-        """
-        return [pos4dDICT['y'], pos4dDICT['x'], pos4dDICT['z_rel'], pos4dDICT['time_rel'], pos4dDICT['hemisphere'], pos4dDICT['zone'], pos4dDICT['letter']]
-
-    def pos4dDICT2pos4dTUPLE_UTM(self, pos4dDICT):
-        """ Converts pos4d to pos4dDICT, UTM
-        Input: 7 value 1 element DICT of hemisphere, zone, letter, y, x, z_rel, time_rel
-        Output: 7 value 1 element TUPLE of y (easting), x (norting), alt_rel, time_rel, hemisphere, zone, letter
-        """
-        return (pos4dDICT['y'], pos4dDICT['x'], pos4dDICT['z_rel'], pos4dDICT['time_rel'], pos4dDICT['hemisphere'], pos4dDICT['zone'], pos4dDICT['letter'])
-    def pos4dTUPLE2pos4dDICT_UTM(self, pos4dTUPLE):
-        """ Converts pos4d to pos4dDICT, UTM
-        Input: 7 value 1 element array of y (easting), x (norting), alt_rel, time_rel, hemisphere, zone, letter
-        Output: 7 value 1 element DICT of hemisphere, zone, letter, y, x, z_rel, time_rel
-        """
-        return {'hemisphere':pos4dTUPLE[4],'zone':pos4dTUPLE[5],'letter':pos4dTUPLE[6],'y':pos4dTUPLE[0],'x':pos4dTUPLE[1],'z_rel':pos4dTUPLE[2],'time_rel':pos4dTUPLE[3]}
 
     """ Path planning functions """
     def plan_path(self, point_start, point_goal):
@@ -710,13 +470,13 @@ class UAV_path_planner():
         try:
             tmp_var = point_start['lat']
         except TypeError:
-            point_start_converted_geodetic = self.pos3d2pos3dDICT_geodetic(point_start)
+            point_start_converted_geodetic = self.coord_conv.pos3d2pos3dDICT_geodetic(point_start)
         else:
             point_start_converted_geodetic = point_start
         try:
             tmp_var = point_goal['lat']
         except TypeError:
-            point_goal_converted_geodetic = self.pos3d2pos3dDICT_geodetic(point_goal)
+            point_goal_converted_geodetic = self.coord_conv.pos3d2pos3dDICT_geodetic(point_goal)
         else:
             point_goal_converted_geodetic = point_goal
         print colored(self.info_alt_indent+'Start point: lat: %.03f, lon: %.03f' % (point_start_converted_geodetic['lat'], point_start_converted_geodetic['lon']), self.default_term_color_info_alt)
@@ -725,8 +485,8 @@ class UAV_path_planner():
         # Convert to UTM for path planning
         if self.debug:
             print colored('Converting points from geodetic to UTM', self.default_term_color_info)
-        point_start_converted_UTM = self.pos3dDICT_geodetic2pos4dDICT_UTM(point_start_converted_geodetic)
-        point_goal_converted_UTM = self.pos3dDICT_geodetic2pos4dDICT_UTM(point_goal_converted_geodetic)
+        point_start_converted_UTM = self.coord_conv.pos3dDICT_geodetic2pos4dDICT_UTM(point_start_converted_geodetic)
+        point_goal_converted_UTM = self.coord_conv.pos3dDICT_geodetic2pos4dDICT_UTM(point_goal_converted_geodetic)
         if self.debug:
             print colored(self.res_indent+'Start point: %d %c %.5fe %.5fn' % (point_start_converted_UTM['zone'], point_start_converted_UTM['letter'], point_start_converted_UTM['y'], point_start_converted_UTM['x']), self.default_term_color_res)
             print colored(self.res_indent+' Goal point: %d %c %.5fe %.5fn' % (point_goal_converted_UTM['zone'], point_goal_converted_UTM['letter'], point_goal_converted_UTM['y'], point_goal_converted_UTM['x']), self.default_term_color_res)
@@ -754,7 +514,7 @@ class UAV_path_planner():
         # Convert path from UTM to geodetic
         path_geodetic = []
         for i in range(len(path_UTM)):
-            path_geodetic.append( self.pos4dDICT_UTM2pos4dDICT_geodetic( path_UTM[i] ) )
+            path_geodetic.append( self.coord_conv.pos4dDICT_UTM2pos4dDICT_geodetic( path_UTM[i] ) )
         return path_geodetic
 
     def plan_planner_Astar(self, point_start, point_goal):
@@ -771,8 +531,8 @@ class UAV_path_planner():
         # Set start time of start point to 0 (relative)
         point_start['time_rel'] = 0
         # Convert points to tuples
-        point_start_tuple = self.pos4dDICT2pos4dTUPLE_UTM(point_start)
-        point_goal_tuple = self.pos4dDICT2pos4dTUPLE_UTM(point_goal)
+        point_start_tuple = self.coord_conv.pos4dDICT2pos4dTUPLE_UTM(point_start)
+        point_goal_tuple = self.coord_conv.pos4dDICT2pos4dTUPLE_UTM(point_goal)
 
         # Generate scaled neighbors based on map step size
         if len(self.neighbors_scaled) == 0:
@@ -936,9 +696,9 @@ class UAV_path_planner():
         """
         path = [] # make empty array to hold the path
         while current_node in came_from:
-            path.append(self.pos4dTUPLE2pos4dDICT_UTM(current_node)) # add the current node to the path
+            path.append(self.coord_conv.pos4dTUPLE2pos4dDICT_UTM(current_node)) # add the current node to the path
             current_node = came_from[current_node] # get the parent node
-        path.append(self.pos4dTUPLE2pos4dDICT_UTM(start_node))
+        path.append(self.coord_conv.pos4dTUPLE2pos4dDICT_UTM(start_node))
         path.reverse()
         return path
 
@@ -1092,7 +852,7 @@ class UAV_path_planner():
             except TypeError:
                 print 'converting'
                 for i in range(len(path)):
-                    path_converted.append( self.pos4d2pos4dDICT_geodetic( path[i] ) )
+                    path_converted.append( self.coord_conv.pos4d2pos4dDICT_geodetic( path[i] ) )
             else:
                 path_converted = path
 
@@ -1230,12 +990,12 @@ class UAV_path_planner():
         print colored(self.tmp_res_indent+'longitude:  %.10f'  % (test_lon), self.default_term_color_tmp_res)
 
         # Convert from geodetic to UTM
-        (hemisphere, zone, letter, easting, northing) = self.uc.geodetic_to_utm (test_lat,test_lon)
+        (hemisphere, zone, letter, easting, northing) = self.coord_conv.geodetic2UTM (test_lat,test_lon)
         print colored('Converted from geodetic to UTM [m]:', self.default_term_color_info)
         print colored(self.res_indent+'%d %c %.5fe %.5fn' % (zone, letter, easting, northing), self.default_term_color_res)
 
         # Convert back from UTM to geodetic
-        (back_conv_lat, back_conv_lon) = self.uc.utm_to_geodetic (hemisphere, zone, easting, northing)
+        (back_conv_lat, back_conv_lon) = self.coord_conv.UTM2geodetic (hemisphere, zone, easting, northing)
         print colored('Converted back from UTM to geodetic [deg]:', self.default_term_color_info)
         print colored(self.res_indent+' latitude:  %.10f'  % (back_conv_lat), self.default_term_color_res)
         print colored(self.res_indent+'longitude:  %.10f'  % (back_conv_lon), self.default_term_color_res)
@@ -1336,11 +1096,13 @@ if __name__ == '__main__':
     # Instantiate UAV_path_planner class
     UAV_path_planner_module = UAV_path_planner(True)
 
+    UAV_path_planner_module.utm_test(55.431122,10.420436)
+
     """ Load no-fly zones """
     print colored('Trying to load no-fly zones', UAV_path_planner_module.default_term_color_info)
     #if UAV_path_planner_module.no_fly_zone_init_and_parse(): # load online
-    #if UAV_path_planner_module.no_fly_zone_init_and_parse('data_sources/no_fly_zones/KmlUasZones_sec2.kml'): # load offline file
-    if UAV_path_planner_module.no_fly_zone_init_and_parse('data_sources/no_fly_zones/KmlUasZones_2018-05-02-15-50.kml'): # load offline file
+    if UAV_path_planner_module.no_fly_zone_init_and_parse('data_sources/no_fly_zones/KmlUasZones_sec2.kml'): # load offline file
+        #if UAV_path_planner_module.no_fly_zone_init_and_parse('data_sources/no_fly_zones/KmlUasZones_2018-05-02-15-50.kml'): # load offline file
         print colored('No-fly zones loaded', UAV_path_planner_module.default_term_color_res)
     else:
         print colored('No-fly zones NOT loaded', UAV_path_planner_module.default_term_color_error)
