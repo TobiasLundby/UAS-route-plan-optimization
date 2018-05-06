@@ -29,7 +29,6 @@ from data_sources.no_fly_zones.kml_reader import kml_no_fly_zones_parser
 from shapely import geometry # used to calculate the distance to polygons
 from rdp import rdp
 
-
 """ User constants """
 PRINT_STATISTICS        = True
 SAVE_STATISTICS_TO_FILE = False
@@ -441,8 +440,8 @@ class UAV_path_planner():
                 planned_path[-1]['x'] = point_goal['x']
                 planned_path[-1]['z_rel'] = point_goal['z_rel']
 
-                planned_path = self.reduce_path_simple_straight_line_UTM(planned_path)
-                self.reduce_path_rdp_UTM(planned_path)
+                # planned_path = self.reduce_path_simple_straight_line_UTM(planned_path)
+                planned_path = self.reduce_path_rdp_UTM(planned_path,5)
 
                 # DRAW
                 self.map_plotter.draw_circle_UTM(point_goal_tuple, 'green', 12)
@@ -543,10 +542,9 @@ class UAV_path_planner():
     def reduce_path_simple_straight_line_UTM(self, planned_path):
         """
         Removes unneeded waypoints from straight lines in the planned path
-        Input: UTM planned path
+        Input: UTM planned path (a set of 4d UTM tuple points)
         Output: optimized UTM planned path
         """
-        # TODO not complete
         dir_last = None
         index_low = 0
         index_high = 0
@@ -580,22 +578,52 @@ class UAV_path_planner():
 
         return out_arr
 
-    def reduce_path_rdp_UTM(self, points4dUTM, tolerance=-1):
+    def reduce_path_rdp_UTM(self, planned_path, tolerance=-1):
         """
         Removes waypoints according to the Ramer-Douglas-Peucker algorithm
-        Input: a set of 4d UTM points and optional tolerance
+        Input: UTM planned path (a set of 4d UTM tuple points) and optional tolerance [m]
+        Output: optimized UTM planned path
         """
-        polygon_test = [ [1, 1], [2, 2.2], [3.3, 3], [4, 4] ]
-        print polygon_test
+        print planned_path[0]
+        hemisphere = planned_path[0]['hemisphere']
+        zone = planned_path[0]['zone']
+        letter = planned_path[0]['letter']
+
+        planned_path_yxz = []
+        for element in planned_path:
+            planned_path_yxz.append([element['y'], element['x'], element['z_rel']])
+        for element in planned_path_yxz:
+            print element
+        #{'zone': 32, 'time_rel': 0, 'hemisphere': 'N', 'letter': 'U', 'y': 589883.0749798268, 'x': 6143685.479446305, 'z_rel': 0}
 
         if tolerance == -1:
             print 'No tolerance provided, using tolerance = 0'
-            polygon_test_back = rdp(polygon_test)
+            planned_path_yxz = rdp(planned_path_yxz)
             # NOTE this is the same as the algorithm I've tried to make above
         else:
             print 'Tolerance is %.02f' % (tolerance)
-            polygon_test_back = rdp(polygon_test, tolerance)
-        print polygon_test_back
+            planned_path_yxz = rdp(planned_path_yxz, tolerance)
+
+        planned_path = []
+        # make the right format again
+        for element in planned_path_yxz:
+            print element
+            #planned_path.append({'zone': z, 'time_rel': 0, 'hemisphere': 'N', 'letter': 'U', 'y': 589883.0749798268, 'x': 6143685.479446305, 'z_rel': 0})
+            #{'hemisphere':hemisphere,'zone':zone,'letter':letter,'y':element[0],'x':element[1],'z_rel':element[2],'time_rel':pos4dTUPLE[3]}
+
+        for i in range(len(planned_path_yxz)):
+            print i, planned_path_yxz[i]
+            if i == 0:
+                planned_path.append({'hemisphere':hemisphere,'zone':zone,'letter':letter,'y':planned_path_yxz[i][0],'x':planned_path_yxz[i][1],'z_rel':planned_path_yxz[i][2],'time_rel':0})
+            else:
+                print 'Travel time:',self.calc_travel_time_from_UTMpoints(planned_path_yxz[i-1], planned_path_yxz[i]), 's'
+                travel_time_abs = planned_path[i-1]['time_rel'] + self.calc_travel_time_from_UTMpoints(planned_path_yxz[i-1], planned_path_yxz[i])
+                planned_path.append({'hemisphere':hemisphere,'zone':zone,'letter':letter,'y':planned_path_yxz[i][0],'x':planned_path_yxz[i][1],'z_rel':planned_path_yxz[i][2],'time_rel':travel_time_abs})
+                #TODO
+
+        for element in planned_path:
+            print element
+        return planned_path
 
     def pos4dTUPLE_UTM_copy_and_move_point(self, point4dUTM, y_offset, x_offset, z_offset):
         """
@@ -618,7 +646,7 @@ class UAV_path_planner():
         if isinstance(point4dUTM1, dict) and isinstance(point4dUTM2, dict):
             total3d = sqrt( pow(point4dUTM1['x']-point4dUTM2['x'],2) + pow(point4dUTM1['y']-point4dUTM2['y'],2) + pow(point4dUTM1['z_rel']-point4dUTM2['z_rel'],2) )
             vert_distance = abs(point4dUTM1['z_rel']-point4dUTM2['z_rel'])
-        elif isinstance(point4dUTM1, tuple) and isinstance(point4dUTM2, tuple):
+        elif ( isinstance(point4dUTM1, tuple) or isinstance(point4dUTM1, list) ) and ( isinstance(point4dUTM2, tuple) or isinstance(point4dUTM2, list) ):
             total3d = sqrt( pow(point4dUTM1[1]-point4dUTM2[1],2) + pow(point4dUTM1[0]-point4dUTM2[0],2) + pow(point4dUTM1[2]-point4dUTM2[2],2) )
             vert_distance = abs(point4dUTM1[2]-point4dUTM2[2])
         else:
@@ -636,7 +664,7 @@ class UAV_path_planner():
         """
         if isinstance(point4dUTM1, dict) and isinstance(point4dUTM2, dict):
             return sqrt( pow(point4dUTM1['x']-point4dUTM2['x'],2) + pow(point4dUTM1['y']-point4dUTM2['y'],2) )
-        elif isinstance(point4dUTM1, tuple) and isinstance(point4dUTM2, tuple):
+        elif ( isinstance(point4dUTM1, tuple) or isinstance(point4dUTM1, list) ) and ( isinstance(point4dUTM2, tuple) or isinstance(point4dUTM2, list) ):
             return sqrt( pow(point4dUTM1[1]-point4dUTM2[1],2) + pow(point4dUTM1[0]-point4dUTM2[0],2) )
         else:
             print colored('Cannot calculate euclidian horizontal distance because formats do not match', self.default_term_color_error)

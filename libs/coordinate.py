@@ -65,6 +65,7 @@ class coordinate_transform():
 
         # Instantiate utmconv class
         self.uc = utmconv()
+        self.first_UTM_conv = True
 
     def Geodetic2PseudoMercator(self, lat, lon = False):
         """
@@ -89,6 +90,17 @@ class coordinate_transform():
     def UTM2geodetic(self, hemisphere, zone, y, x):
         return self.uc.utm_to_geodetic(hemisphere, zone, y, x)
     def geodetic2UTM(self, lat, lon):
+        """
+        Converts geodetic coordinates to UTM coordiantes
+        Note that it locks the zone after the first conversion
+        Input: latitude and longitude [dd]
+        Output: hemisphere, zone, zone letter, easting, northing
+        """
+        if self.first_UTM_conv:
+            (hemisphere, zone, letter, easting, northing) = self.uc.geodetic_to_utm(lat, lon)
+            self.uc.set_zone_override(zone)
+            self.first_UTM_conv = False
+            return (hemisphere, zone, letter, easting, northing)
         return self.uc.geodetic_to_utm(lat, lon)
 
     def check_pos2dALL_geodetic2pos2dDICT_OSM(self, pos2dALL_geodetic):
