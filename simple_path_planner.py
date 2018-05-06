@@ -12,9 +12,6 @@ License: BSD 3-Clause
 """
 
 """ Import libraries """
-from bokeh.plotting import figure, show, output_file
-from bokeh.tile_providers import CARTODBPOSITRON
-from bokeh.models import ColumnDataSource, MercatorTicker, MercatorTickFormatter
 from math import pow, sqrt, pi, cos
 from termcolor import colored
 from pyproj import Geod
@@ -27,20 +24,13 @@ from guppy import hpy # for getting heap info
 import csv # for saving statistics and path
 from heapq import * # for the heap used in the A star algorithm
 from libs.coordinate import coordinate_transform
+from libs.map_plotter import map_plotter
 from data_sources.no_fly_zones.kml_reader import kml_no_fly_zones_parser
 from shapely import geometry # used to calculate the distance to polygons
 from rdp import rdp
 
-""" Program defines """
-PATH_PLANNER_ASTAR      = 0
-geoid_distance          = Geod(ellps='WGS84') # used for calculating Great Circle Distance
 
-""" User defines """
-default_term_color_res  = 'green'
-default_plot_color      = 'red'
-default_plot_alpha      = 0.8
-PATH_PLANNER            = PATH_PLANNER_ASTAR
-PATH_PLANNER_NAMES      = ['A star algorithm']
+""" User constants """
 PRINT_STATISTICS        = False
 SAVE_STATISTICS_TO_FILE = False
 
@@ -51,6 +41,9 @@ class UAV_path_planner():
     uav_nominal_battery_time_min    = 20 # unit: min
     uav_nominal_battery_time_s      = uav_nominal_battery_time_min*60 # unit: s
     """ Path planning constants """
+    PATH_PLANNER_ASTAR              = 0 # just an internal number to recognize the path planner
+    PATH_PLANNER_NAMES              = ['A star algorithm']
+    PATH_PLANNER                    = PATH_PLANNER_ASTAR # the name of the chosen path path planner; NOTE the user can set this
     goal_acceptance_radius          = 10 # unit: m
     map_horz_step_size              = 10 # unit: m
     # neighbors in 8 connect 2d planning; values can be scaled if needed
@@ -85,41 +78,17 @@ class UAV_path_planner():
     no_fly_reduce_flight_time_factor = 2 # unit: unitless ; reason: if the wind is 12m/s and the drone if flying with 15m/s the safe reducing is 1.8 (not safe) ≈ 2 (safe)
     forever                         = 60*60*24*365*100  # unit: s; 100 years excl. leap year
     inf                             = 4294967295 # 32bit from 0
+    geoid_distance                  = Geod(ellps='WGS84') # used for calculating Great Circle Distance
 
     def __init__(self, debug = False):
         """ Constructor """
         self.debug = debug
         self.debug_test = False
 
-        # Set output file for Bokeh
-        output_file("path_planning.html")
-
-        # Set bounds for map plot
-        use_bounds = False
-
         # Init coordinate transform class
         self.coord_conv = coordinate_transform()
 
-        # range bounds supplied in web mercator coordinates
-        if use_bounds:
-            bounds_bottom_left_Geodetic = [54.5, 8]
-            bounds_top_right_Geodetic = [58, 13]
-            bounds_bottom_left_PseudoMercator = self.coord_conv.Geodetic2PseudoMercator(bounds_bottom_left_Geodetic)
-            bounds_top_right_PseudoMercator   = self.coord_conv.Geodetic2PseudoMercator(bounds_top_right_Geodetic)
-            print colored('Bottom left: lat: %d, lng: %d, x: %d, y: %d' % (bounds_bottom_left_Geodetic[0], bounds_bottom_left_Geodetic[1], bounds_bottom_left_PseudoMercator[0], bounds_bottom_left_PseudoMercator[1]), 'yellow')
-            print colored('  Top right: lat: %d, lng: %d, x: %d, y: %d' % (bounds_top_right_Geodetic[0], bounds_top_right_Geodetic[1], bounds_top_right_PseudoMercator[0], bounds_top_right_PseudoMercator[1]), 'yellow')
-            self.p = figure(x_range=(bounds_bottom_left_PseudoMercator[0], bounds_top_right_PseudoMercator[0]), y_range=(bounds_bottom_left_PseudoMercator[1], bounds_top_right_PseudoMercator[1]))#, x_axis_type="mercator", y_axis_type="mercator")
-        else:
-            self.p = figure()
-        # alternative way to add lat lng axis due to above commented method does not work, https://github.com/bokeh/bokeh/issues/6986
-        self.p.xaxis[0].ticker = MercatorTicker(dimension='lon')
-        self.p.yaxis[0].ticker = MercatorTicker(dimension='lat')
-        self.p.xaxis[0].formatter = MercatorTickFormatter(dimension='lon')
-        self.p.yaxis[0].formatter = MercatorTickFormatter(dimension='lat')
-        self.p.add_tile(CARTODBPOSITRON)
-        # Add axis labels to plot
-        self.p.xaxis.axis_label = "Longitude [deg]"
-        self.p.yaxis.axis_label = "Latitude [deg]"
+        self.map_plotter = map_plotter(self.coord_conv)
 
         # Set initial values for loading of no-fly zones
         self.no_fly_zones_loaded = False
@@ -160,30 +129,27 @@ class UAV_path_planner():
                 no_fly_zone_coordinates = no_fly_zone['coordinates'] # extract the coordinates
                 no_fly_zone_coordinates_UTM = self.coord_conv.pos3d_geodetic2pos3d_UTM_multiple(no_fly_zone_coordinates) # convert coordinates to UTM
                 no_fly_zone_coordinates_UTM_y_x = [[x[0],x[1]] for x in no_fly_zone_coordinates_UTM] # extract y and x
-                #print no_fly_zone_coordinates_UTM_y_x
-                self.no_fly_zone_polygons.append(geometry.Polygon(no_fly_zone_coordinates_UTM_y_x))
-
-            return self.test_polygons()
+                self.no_fly_zone_polygons.append(geometry.Polygon(no_fly_zone_coordinates_UTM_y_x)) # append the polygon to the combined polygons
+            return self.test_polygons() # return combined polygons
 
     def test_polygons(self):
         """
         Tests the polygon implementation with 2 known points, one that are within the polygon and one that isn't.
         It finds a specific polygon (ID: 01c2f279-fc2c-421d-baa7-60afd0a0b8ac) and uses predefined points for testing
+        Note that it required the specific polygon to be in the polygon list
         Input: none
         Output: bool (True = polygons work, False = polygons does not work)
         """
         res_bool, index = self.no_fly_zone_reader_module.get_polygon_index_from_id('01c2f279-fc2c-421d-baa7-60afd0a0b8ac')
-
+        # Calcluate dist for point 1 which is inside the polygon
         test_point_geodetic = [55.399512, 10.319328, 0]
         test_point_UTM = self.coord_conv.pos3d_geodetic2pos3d_UTM(test_point_geodetic)
-        #print test_point_UTM
         dist1 = self.no_fly_zone_polygons[index].distance(geometry.Point(test_point_UTM))
         if self.debug_test:
             print '\nTest point 2: should be inside: distance = %.02f' % dist1
-
+        # Calcluate dist for point 2 which is NOT inside the polygon
         test_point_geodetic = [55.397001, 10.307698, 0]
         test_point_UTM = self.coord_conv.pos3d_geodetic2pos3d_UTM(test_point_geodetic)
-        #print test_point_UTM
         dist2 = self.no_fly_zone_polygons[index].distance(geometry.Point(test_point_UTM))
         if self.debug_test:
             print '\nTest point 2: should NOT be inside: distance = %.02f' % dist2
@@ -329,134 +295,6 @@ class UAV_path_planner():
         test_point_UTM = self.pos3d_geodetic2pos3d_UTM(test_point3d_geodetic)
         return self.is_point_in_no_fly_zone_UTM(test_point_UTM, polygon_index, use_buffer_zone)
 
-
-    """ Drawing/plot functions """
-    def draw_circle_OSM(self, point, circle_color_in = default_plot_color, circle_size_in = 10, circle_alpha_in = default_plot_alpha):
-        """
-        Draws a circle on the map plot from OSM coordinates
-        Input: 2d OSM DICT point along with optional graphic parameters
-        Output: none but drawing on the provided plot
-        """
-        self.p.circle(x=point['x'], y=point['y'], size = circle_size_in, fill_color=circle_color_in, fill_alpha=circle_alpha_in)
-    def draw_circle_geodetic(self, point, circle_color_in = default_plot_color, circle_size_in = 10, circle_alpha_in = default_plot_alpha):
-        """
-        Draws a circle on the map plot from geodetic coordinates
-        Input: 2d geodetic DICT point along with optional graphic parameters
-        Output: none but drawing on the provided plot
-        """
-        points_in_converted = self.coord_conv.check_pos2dALL_geodetic2pos2dDICT_OSM(point)
-        self.p.circle(x=points_in_converted['x'], y=points_in_converted['y'], size = circle_size_in, fill_color=circle_color_in, fill_alpha=circle_alpha_in)
-    def draw_circle_UTM(self, point, circle_color_in = default_plot_color, circle_size_in = 10, circle_alpha_in = default_plot_alpha):
-        """
-        Draws a circle on the map plot from UTM coordinates
-        Input: 4d UTM DICT or tuple point along with optional graphic parameters
-        Output: none but drawing on the provided plot
-        """
-        if isinstance(point, dict):
-            (back_conv_lat, back_conv_lon) = self.coord_conv.UTM2geodetic(point['hemisphere'], point['zone'], point['y'], point['x'])
-        elif isinstance(point, tuple):
-            (back_conv_lat, back_conv_lon) = self.coord_conv.UTM2geodetic(point[4], point[5], point[0], point[1])
-        point2dDICT = {'lat':back_conv_lat,'lon':back_conv_lon}
-        points_in_converted = self.coord_conv.check_pos2dALL_geodetic2pos2dDICT_OSM(point2dDICT)
-        self.p.circle(x=points_in_converted['x'], y=points_in_converted['y'], size = circle_size_in, fill_color=circle_color_in, fill_alpha=circle_alpha_in)
-
-    def draw_points_UTM(self, points_in, list_type, point_color = default_plot_color, point_size = 7):
-        """
-        Draws points in the closed or open list
-        Input: list and list type (0: open list, 1: closed list)
-        Output: none but drawing on the provided plot
-        """
-        if list_type == 0:
-            print colored(self.info_alt_indent+'Drawing points from open list; elements % i' % ( len(points_in) ), self.default_term_color_info_alt)
-            for element in points_in:
-                self.draw_circle_UTM(element[1], point_color, point_size)
-        elif list_type == 1:
-            print colored(self.info_alt_indent+'Drawing points from closed list; elements % i' % ( len(points_in) ), self.default_term_color_info_alt)
-            for element in points_in:
-                self.draw_circle_UTM(element, point_color, point_size)
-
-    def draw_line_OSM(self, point_start, point_end, line_color_in = default_plot_color, line_width_in = 2, line_alpha_in = default_plot_alpha):
-        """
-        Draws a line on the map plot from OSM coordinates
-        Input: 2d OSM DICT point along with optional graphic parameters
-        Output: none but drawing on the provided plot
-        """
-        self.p.line([point_start['x'], point_end['x']], [point_start['y'], point_end['y']], line_color = line_color_in, line_width = line_width_in, line_alpha = line_alpha_in)
-    def draw_line_UTM(self, point_start, point_end, line_color_in = default_plot_color, line_width_in = 2, line_alpha_in = default_plot_alpha):
-        """
-        Draws a line on the map plot from UTM coordinates
-        Input: 2d (also accepts 4d) UTM DICT or tuple point along with optional graphic parameters
-        Output: none but drawing on the provided plot
-        """
-        # Convert start point from UTM to geodetic to OSM
-        if isinstance(point_start, dict):
-            (back_conv_lat_start, back_conv_lon_start) = self.coord_conv.UTM2geodetic(point_start['hemisphere'], point_start['zone'], point_start['y'], point_start['x'])
-        elif isinstance(point_start, tuple):
-            (back_conv_lat_start, back_conv_lon_start) = self.coord_conv.UTM2geodetic(point_start[4], point_start[5], point_start[0], point_start[1])
-        point2dDICT_start = {'lat':back_conv_lat_start,'lon':back_conv_lon_start}
-        points_in_converted_start = self.coord_conv.check_pos2dALL_geodetic2pos2dDICT_OSM(point2dDICT_start)
-        # Convert end point from UTM to geodetic to OSM
-        if isinstance(point_end, dict):
-            (back_conv_lat_end, back_conv_lon_end) = self.coord_conv.UTM2geodetic(point_end['hemisphere'], point_end['zone'], point_end['y'], point_end['x'])
-        elif isinstance(point_end, tuple):
-            (back_conv_lat_end, back_conv_lon_end) = self.coord_conv.UTM2geodetic(point_end[4], point_end[5], point_end[0], point_end[1])
-        point2dDICT_end = {'lat':back_conv_lat_end,'lon':back_conv_lon_end}
-        points_in_converted_end = self.coord_conv.check_pos2dALL_geodetic2pos2dDICT_OSM(point2dDICT_end)
-        # Draw line from OSM points
-        self.p.line([points_in_converted_start['x'], points_in_converted_end['x']], [points_in_converted_start['y'], points_in_converted_end['y']], line_color = line_color_in, line_width = line_width_in, line_alpha = line_alpha_in)
-
-    def draw_path_geodetic(self, points_in):
-        """
-        Draws a path on the map plot from geodetic coordinates
-        Input: set of 2d geodetic points (either array or DICT)
-        Output: none but drawing on the provided plot
-        """
-        if len(points_in) > 0:
-            # Check and convert points
-            points_in_converted = self.coord_conv.check_pos2dALL_geodetic2pos2dDICT_OSM(points_in)
-
-            for i in range(len(points_in_converted)-1):
-                self.draw_line_OSM(points_in_converted[i], points_in_converted[i+1])
-            for i in range(len(points_in_converted)):
-                if i == 0 or i == (len(points_in_converted)-1): # first point make other colored
-                    self.draw_circle_OSM(points_in_converted[i], 'firebrick')
-                else:
-                    self.draw_circle_OSM(points_in_converted[i], 'red',7)
-    def draw_path_UTM(self, points_in):
-        """
-        Draws a path on the map plot from UTM coordinates
-        Input: set of 4d UTM point tuples
-        Output: none but drawing on the provided plot
-        """
-        if len(points_in) > 0:
-            for i in range(len(points_in)-1):
-                self.draw_line_UTM(points_in[i], points_in[i+1])
-            for i in range(len(points_in)):
-                if i == 0 or i == (len(points_in)-1): # first point make other colored
-                    self.draw_circle_UTM(points_in[i], 'firebrick')
-                else:
-                    self.draw_circle_UTM(points_in[i], 'red',7)
-
-    def draw_geofence_geodetic(self, geofence_in):
-        """
-        Draws a ploygon on the map plot from geodetic coordinates
-        Input: a set of 2d geodetic points (either array or DICT) representing a polygon
-        Output: none but drawing on the provided plot
-        """
-        if len(geofence_in) > 2:
-            # Check and convert points
-            geofence_in_converted = self.coord_conv.check_pos2dALL_geodetic2pos2dDICT_OSM(geofence_in)
-
-            points_OSM_x = []
-            points_OSM_y = []
-            for i in range(len(geofence_in)):
-                points_OSM_x.append(geofence_in_converted[i]['x'])
-                points_OSM_y.append(geofence_in_converted[i]['y'])
-            self.p.patch(points_OSM_x, points_OSM_y, alpha=0.5, line_width=2)
-
-    def show_plot(self):
-        show(self.p)
-
     """ Path planning functions """
     def plan_path(self, point_start, point_goal):
         """
@@ -500,7 +338,7 @@ class UAV_path_planner():
             return []
 
         # Go to selected path planner
-        if PATH_PLANNER == PATH_PLANNER_ASTAR:
+        if self.PATH_PLANNER == self.PATH_PLANNER_ASTAR:
             print colored('Planning using A start', self.default_term_color_info)
             path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM)
         else:
@@ -607,12 +445,12 @@ class UAV_path_planner():
                 self.reduce_path_rdp_UTM(planned_path)
 
                 # DRAW
-                self.draw_circle_UTM(point_goal_tuple, 'green', 12)
-                self.draw_path_UTM(planned_path)
+                self.map_plotter.draw_circle_UTM(point_goal_tuple, 'green', 12)
+                self.map_plotter.draw_path_UTM(planned_path)
                 if self.draw_open_list:
-                    self.draw_points_UTM(open_list, 0, 'yellow', 2)
+                    self.map_plotter.draw_points_UTM(open_list, 0, 'yellow', 2)
                 if self.draw_closed_list:
-                    self.draw_points_UTM(closed_list, 1, 'grey', 5)
+                    self.map_plotter.draw_points_UTM(closed_list, 1, 'grey', 5)
 
                 return planned_path # return the path
 
@@ -652,8 +490,8 @@ class UAV_path_planner():
                     f_score[neighbor] = tentative_g_score + neighbor_heiristic#self.heuristic_a_star(neighbor, point_goal_tuple) # Calculate and add the f score (combination of g score and heuristic)
                     heappush(open_list, (f_score[neighbor], neighbor)) # Add the node to the open list
 
-        self.draw_circle_UTM(point_start_tuple, 'green')
-        self.draw_circle_UTM(point_goal_tuple, 'green')
+        self.map_plotter.draw_circle_UTM(point_start_tuple, 'green')
+        self.map_plotter.draw_circle_UTM(point_goal_tuple, 'green')
         return [] # No path found
 
     def heuristic_a_star(self, point4dUTM1, point4dUTM2):
@@ -902,7 +740,7 @@ class UAV_path_planner():
         Output: Great circle distance between points
         """
         # https://jswhit.github.io/pyproj/pyproj.Geod-class.html
-        az12, az21, dist = geoid_distance.inv(lon1,lat1,lon2,lat2)
+        az12, az21, dist = self.geoid_distance.inv(lon1,lat1,lon2,lat2)
         return dist
 
     def calc_vert_dist(self, path):
@@ -1096,8 +934,6 @@ if __name__ == '__main__':
     # Instantiate UAV_path_planner class
     UAV_path_planner_module = UAV_path_planner(True)
 
-    UAV_path_planner_module.utm_test(55.431122,10.420436)
-
     """ Load no-fly zones """
     print colored('Trying to load no-fly zones', UAV_path_planner_module.default_term_color_info)
     #if UAV_path_planner_module.no_fly_zone_init_and_parse(): # load online
@@ -1124,7 +960,7 @@ if __name__ == '__main__':
     path_planned_fitness, total_dist, horz_dist, vert_dist = UAV_path_planner_module.evaluate_path(path_planned)
 
     # Show a plot of the planned path
-    UAV_path_planner_module.show_plot()
+    UAV_path_planner_module.map_plotter.show_plot()
 
     """ Path planning done, finalize with statistics """
     if len(path_planned) >= 1:
@@ -1138,7 +974,7 @@ if __name__ == '__main__':
         runtime_s = time_task_end_s - time_task_start_s
 
         # Calculate statistics
-        used_path_planner = PATH_PLANNER_NAMES[PATH_PLANNER]
+        used_path_planner = UAV_path_planner_module.PATH_PLANNER_NAMES[UAV_path_planner_module.PATH_PLANNER]
         estimated_flight_time = path_planned[len(path_planned)-1]['time'] - path_planned[0]['time']
 
         index_end_objects = heap_str.find(' objects')
