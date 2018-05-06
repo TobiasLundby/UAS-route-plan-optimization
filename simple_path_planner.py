@@ -441,7 +441,7 @@ class UAV_path_planner():
                 planned_path[-1]['z_rel'] = point_goal['z_rel']
 
                 # planned_path = self.reduce_path_simple_straight_line_UTM(planned_path)
-                planned_path = self.reduce_path_rdp_UTM(planned_path,5)
+                planned_path = self.reduce_path_rdp_UTM(planned_path, 5)
 
                 # DRAW
                 self.map_plotter.draw_circle_UTM(point_goal_tuple, 'green', 12)
