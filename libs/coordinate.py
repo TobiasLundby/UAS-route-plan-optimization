@@ -48,8 +48,8 @@ Geographical location formats:
 """
 
 """ Import libraries """
-from pyproj import Proj, transform
-from transverse_mercator_py.utm import utmconv
+from pyproj import Proj, transform # Transform coordiantes between projections
+from transverse_mercator_py.utm import utmconv # Convert between geodetic and UTM coordinates
 
 class coordinate_transform():
     def __init__(self, debug = False):
@@ -280,3 +280,36 @@ class coordinate_transform():
         Output: 7 value 1 element DICT of hemisphere, zone, letter, y, x, z_rel, time_rel
         """
         return {'hemisphere':pos4dTUPLE[4],'zone':pos4dTUPLE[5],'letter':pos4dTUPLE[6],'y':pos4dTUPLE[0],'x':pos4dTUPLE[1],'z_rel':pos4dTUPLE[2],'time_rel':pos4dTUPLE[3]}
+
+    def utm_test(self, test_lat, test_lon):
+        """
+        Test of the UTM class which uses 2 geodetic points and determines the error from forward and back conversion
+           Heavily inspired by https://github.com/FroboLab/frobomind/blob/master/fmLib/math/geographics/transverse_mercator/src/transverse_mercator_py/utm_test.py
+        Input: 2 geodetic points
+        Output: None but output in terminal
+        """
+        # Print initial geodetic points
+        print '\nTest position [deg]:'
+        print ' latitude:  %.10f'  % (test_lat)
+        print 'longitude:  %.10f'  % (test_lon)
+
+        # Convert from geodetic to UTM
+        (hemisphere, zone, letter, easting, northing) = self.coord_conv.geodetic2UTM (test_lat,test_lon)
+        print 'Converted from geodetic to UTM [m]:'
+        print '%d %c %.5fe %.5fn' % (zone, letter, easting, northing)
+
+        # Convert back from UTM to geodetic
+        (back_conv_lat, back_conv_lon) = self.coord_conv.UTM2geodetic (hemisphere, zone, easting, northing)
+        print 'Converted back from UTM to geodetic [deg]:'
+        print ' latitude:  %.10f'  % (back_conv_lat)
+        print 'longitude:  %.10f'  % (back_conv_lon)
+
+        # Determine conversion position error [m]
+        lat_err = abs(back_conv_lat-test_lat)
+        lon_err = abs(back_conv_lon-test_lon)
+        earth_radius = 6378137.0 # [m]
+        lat_pos_err = lat_err/360.0 * 2*pi*earth_radius
+        lon_pos_err = lon_err/360.0 * 2*pi*(cos(back_conv_lat)*earth_radius)
+        print 'Positional error from the two conversions [m]:'
+        print ' latitude:  %.09f'  % (lat_pos_err)
+        print 'longitude:  %.09f'  % (lon_pos_err)
