@@ -8,7 +8,7 @@ Description: KML parser for the no-fly zones obtained from https://www.droneluft
     License: BSD 3-Clause
 """
 
-from pykml import parser
+from pykml import parser # KML file parser
 from get_no_fly_zones import get_no_fly_zones
 import time
 
