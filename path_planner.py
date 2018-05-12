@@ -475,7 +475,7 @@ class UAV_path_planner():
                 time_cur = get_cur_time_epoch()
                 print colored('Path found in %.02f [s]' % (time_cur-time_start), TERM_COLOR_RES)
                 planned_path = self.backtrace_path(came_from, current, point_start_tuple, point_goal_tuple)
-                print colored('Path has %i waypoints' % (len(planned_path)), TERM_COLOR_RES)
+                print colored('Path has %i waypoints\n' % (len(planned_path)), TERM_COLOR_RES)
 
                 planned_path = self.reduce_path_rdp_UTM(planned_path, 6*step_size_vert)
 
