@@ -55,26 +55,111 @@ class kml_no_fly_zones_parser():
         """
         self.coordinate3d_combined = []
         itr = 0 # Incremented in the beginning so first element has itr=1
-        for element in data.Document.Placemark:
-            itr += 1
+        try:
+            data.Document.Placemark
+        except AttributeError:
             if self.debug:
-                print '\nPlacemark', itr
+                print "This is another sort of file, presumable the one provided by Kjeld"
             try:
-                element.Polygon
+                data.Document.Folder
             except AttributeError:
                 if self.debug:
-                    print 'Something is wrong about the zone formatting; trying different method'
+                    print "Cannot recognize format, skippng parsing of the data"
+            else:
+                if self.debug:
+                    print "Format recognized, trying to parse data"
+                for folder in data.Document.Folder:
+                    try:
+                        folder_name = str(folder.name)
+                    except UnicodeEncodeError:
+                        if self.debug:
+                            print 'Something is wrong with the name format (contains special characters which \'lxml.objectify.StringElement\' cannot handle); defaulting name to \'NaN\''
+                        folder_name = 'NaN'
+                    if folder_name != 'Danmark':
+                        for element in folder.Placemark:
+                            # extract the coordinates so a test can be made on the size due to a bug in Kjelds no-fly zone file
+                            coordinates_raw =  element.Polygon.outerBoundaryIs.LinearRing.coordinates
+                            coordinates_str_split = str(coordinates_raw).split(' ')
+                            del coordinates_str_split[-1] # delete the last element since it is just empty and not 3 elements
+
+                            if len(coordinates_str_split) > 2:
+                                element_style = str(element.styleUrl)
+                                element_style = element_style[1:]
+                                element_id = str(itr)
+                                itr += 1
+
+                                try:
+                                    element_name = str(element.name)
+                                except UnicodeEncodeError:
+                                    if self.debug:
+                                        print 'Something is wrong with the name format (contains special characters which \'lxml.objectify.StringElement\' cannot handle); defaulting name to \'NaN\''
+                                    element_name = 'NaN'
+
+                                coordinate3d_placemark = []
+                                for coordinate in coordinates_str_split:
+                                    coordinate3d = []
+                                    sub_coordinates = coordinate.split(',')
+                                    for sub_coordinate in sub_coordinates:
+                                        coordinate3d.append(float(sub_coordinate))
+                                    coordinate3d = [coordinate3d[1], coordinate3d[0], coordinate3d[2]]  # correct the order to lat, lon, alt_rel instead of lon, lat, alt_rel
+                                    coordinate3d_placemark.append(coordinate3d)
+                                if self.debug:
+                                    print folder_name, element_name, element_style, element_id, len(coordinates_str_split)
+                                self.coordinate3d_combined.append({'style': element_style, 'id': element_id, 'name': element_name, 'coordinates': coordinate3d_placemark})
+                    else:
+                        if self.debug:
+                            print "Found denmark folder, skipping zones"
+        else:
+            for element in data.Document.Placemark:
+                itr += 1
+                if self.debug:
+                    print '\nPlacemark', itr
                 try:
-                    element.MultiGeometry
+                    element.Polygon
                 except AttributeError:
                     if self.debug:
-                        print 'Something is wrong about the zone formatting; skipping zone!'
-                    continue
+                        print 'Something is wrong about the zone formatting; trying different method'
+                    try:
+                        element.MultiGeometry
+                    except AttributeError:
+                        if self.debug:
+                            print 'Something is wrong about the zone formatting; skipping zone!'
+                        continue
+                    else:
+                        if self.debug:
+                            print 'MultiGeometry object, amount of subpolygons', len(element.MultiGeometry.Polygon)
+
+                        # Save the values that are the same for each subpolygon
+                        element_style = str(element.styleUrl)
+                        element_style = element_style[9:]
+                        element_id = str(element.id)
+                        try:
+                            element_name = str(element.name)
+                        except UnicodeEncodeError:
+                            if self.debug:
+                                print 'Something is wrong with the name format (contains special characters which \'lxml.objectify.StringElement\' cannot handle); defaulting name to \'NaN\''
+                            element_name = 'NaN'
+                        sub_itr = 0
+                        for sub_element in element.MultiGeometry.Polygon:
+                            coordinates_raw =  sub_element.outerBoundaryIs.LinearRing.coordinates
+                            coordinates_str_split = str(coordinates_raw).split(' ')
+                            del coordinates_str_split[-1] # delete the last element since it is just empty and not 3 elements
+
+                            coordinate3d_placemark = []
+                            for coordinate in coordinates_str_split:
+                                coordinate3d = []
+                                sub_coordinates = coordinate.split(',')
+                                for sub_coordinate in sub_coordinates:
+                                    coordinate3d.append(float(sub_coordinate))
+                                coordinate3d = [coordinate3d[1], coordinate3d[0], coordinate3d[2]] # correct the order to lat, lon, alt_rel instead of lon, lat, alt_rel
+                                coordinate3d_placemark.append(coordinate3d)
+                            if self.debug:
+                                print element_id+'-'+str(sub_itr)
+                            self.coordinate3d_combined.append({'style': element_style, 'id': element_id+'-'+str(sub_itr), 'name': element_name, 'coordinates': coordinate3d_placemark})
+                            sub_itr += 1
                 else:
                     if self.debug:
-                        print 'MultiGeometry object, amount of subpolygons', len(element.MultiGeometry.Polygon)
-
-                    # Save the values that are the same for each subpolygon
+                        print 'Single Polygon object'
                     element_style = str(element.styleUrl)
                     element_style = element_style[9:]
                     element_id = str(element.id)
@@ -84,52 +169,22 @@ class kml_no_fly_zones_parser():
                         if self.debug:
                             print 'Something is wrong with the name format (contains special characters which \'lxml.objectify.StringElement\' cannot handle); defaulting name to \'NaN\''
                         element_name = 'NaN'
-                    sub_itr = 0
-                    for sub_element in element.MultiGeometry.Polygon:
-                        coordinates_raw =  sub_element.outerBoundaryIs.LinearRing.coordinates
-                        coordinates_str_split = str(coordinates_raw).split(' ')
-                        del coordinates_str_split[-1] # delete the last element since it is just 0.0 and not 3 elements
 
-                        coordinate3d_placemark = []
-                        for coordinate in coordinates_str_split:
-                            coordinate3d = []
-                            sub_coordinates = coordinate.split(',')
-                            for sub_coordinate in sub_coordinates:
-                                coordinate3d.append(float(sub_coordinate))
-                            coordinate3d = [coordinate3d[1], coordinate3d[0], coordinate3d[2]] # correct the order to lat, lon, alt_rel instead of lon, lat, alt_rel
-                            coordinate3d_placemark.append(coordinate3d)
-                        if self.debug:
-                            print element_id+'-'+str(sub_itr)
-                        self.coordinate3d_combined.append({'style': element_style, 'id': element_id+'-'+str(sub_itr), 'name': element_name, 'coordinates': coordinate3d_placemark})
-                        sub_itr += 1
-            else:
-                if self.debug:
-                    print 'Single Polygon object'
-                element_style = str(element.styleUrl)
-                element_style = element_style[9:]
-                element_id = str(element.id)
-                try:
-                    element_name = str(element.name)
-                except UnicodeEncodeError:
+                    coordinates_raw =  element.Polygon.outerBoundaryIs.LinearRing.coordinates
+                    coordinates_str_split = str(coordinates_raw).split(' ')
+                    del coordinates_str_split[-1] # delete the last element since it is just empty and not 3 elements
+
+                    coordinate3d_placemark = []
+                    for coordinate in coordinates_str_split:
+                        coordinate3d = []
+                        sub_coordinates = coordinate.split(',')
+                        for sub_coordinate in sub_coordinates:
+                            coordinate3d.append(float(sub_coordinate))
+                        coordinate3d = [coordinate3d[1], coordinate3d[0], coordinate3d[2]]  # correct the order to lat, lon, alt_rel instead of lon, lat, alt_rel
+                        coordinate3d_placemark.append(coordinate3d)
                     if self.debug:
-                        print 'Something is wrong with the name format (contains special characters which \'lxml.objectify.StringElement\' cannot handle); defaulting name to \'NaN\''
-                    element_name = 'NaN'
-
-                coordinates_raw =  element.Polygon.outerBoundaryIs.LinearRing.coordinates
-                coordinates_str_split = str(coordinates_raw).split(' ')
-                del coordinates_str_split[-1] # delete the last element since it is just 0.0 and not 3 elements
-
-                coordinate3d_placemark = []
-                for coordinate in coordinates_str_split:
-                    coordinate3d = []
-                    sub_coordinates = coordinate.split(',')
-                    for sub_coordinate in sub_coordinates:
-                        coordinate3d.append(float(sub_coordinate))
-                    coordinate3d = [coordinate3d[1], coordinate3d[0], coordinate3d[2]]  # correct the order to lat, lon, alt_rel instead of lon, lat, alt_rel
-                    coordinate3d_placemark.append(coordinate3d)
-                if self.debug:
-                    print element_id
-                self.coordinate3d_combined.append({'style': element_style, 'id': element_id, 'name': element_name, 'coordinates': coordinate3d_placemark})
+                        print element_id
+                    self.coordinate3d_combined.append({'style': element_style, 'id': element_id, 'name': element_name, 'coordinates': coordinate3d_placemark})
         self.placemarks = itr
         if len(self.coordinate3d_combined) == 0:
             print 'No no-fly zones were parsed'
