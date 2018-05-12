@@ -55,6 +55,7 @@ class UAV_path_planner():
     AVG_WAYPOINT_DIST_FACTOR        = 1 # unit: unitless
     """ Other constants """
     NO_FLY_ZONE_HEIGHT              = 100 # unit: m
+    NO_FLY_ZONE_BASE_BUFFER_DIST    = 10 # unit: m; added to the buffer distance if the funcitons are not explicitly told not to
     NO_FLY_ZONE_REDUCE_FLIGHT_DISTANCE_FACTOR = 2 # unit: unitless ; used for reducing the no-fly zones based on the flight distance of the start point, reason: if the wind is 12m/s and the drone if flying with 15m/s the safe reducing is 1.8 (not safe) ≈ 2 (safe)
     GEOID_WGS84                     = Geod(ellps='WGS84') # used for calculating Great Circle Distance
 
@@ -79,7 +80,7 @@ class UAV_path_planner():
         self.rally_points_loaded = False
 
         # Initialize objects for prevoius A start path plannings
-        self.prev_Astar_step_sizes = []
+        self.prev_Astar_step_size_and_points = []
         self.prev_Astar_closed_lists = []
         self.prev_Astar_open_lists = []
         self.prev_Astar_came_froms = []
@@ -196,7 +197,7 @@ class UAV_path_planner():
             print colored(SUB_RES_INDENT+'Max flight distance scaled %.02f [m] = %.02f [km]' % (max_flight_distance_scaled, max_flight_distance_scaled/1000), TERM_COLOR_RES)
 
         for i in range(len(self.no_fly_zone_polygons)):
-            result_start_point, dist_start_point = self.is_point_in_no_fly_zone_UTM(test_point3d_start_UTM, i)
+            result_start_point, dist_start_point = self.is_point_in_no_fly_zone_UTM(test_point3d_start_UTM, i, buffer_distance_m = 0, use_base_buffer_distance_m = False)
             if dist_start_point <= max_flight_distance_scaled:
                 self.no_fly_zone_polygons_reduced.append(self.no_fly_zone_polygons[i])
 
@@ -208,10 +209,10 @@ class UAV_path_planner():
             return True
         return False
 
-    def is_point_in_no_fly_zones_UTM(self, point3dUTM, buffer_distance_m = 0):
+    def is_point_in_no_fly_zones_UTM(self, point3dUTM, buffer_distance_m = 0, use_base_buffer_distance_m = True):
         """
         Tests if an UTM point is within any of the no-fly zone polygons
-        Input: UTM point3d as array (y, x, alt_rel ...) along with an optional buffer distance [m]
+        Input: UTM point3d as array (y, x, alt_rel ...) along with an optional buffer distance [m] and use of base buffer distance (define)
         Ouput: bool (True: point is inside) and distance to nearest polygon [m]
         """
         smallest_dist = INF
@@ -220,16 +221,16 @@ class UAV_path_planner():
         else:
             no_fly_zone_polygons_to_use = self.no_fly_zone_polygons
         for i in range(len(no_fly_zone_polygons_to_use)):
-            within, dist = self.is_point_in_no_fly_zone_UTM(point3dUTM, i, buffer_distance_m)
+            within, dist = self.is_point_in_no_fly_zone_UTM(point3dUTM, i, buffer_distance_m, use_base_buffer_distance_m)
             if dist < smallest_dist:
                 smallest_dist = dist
             if within:
                 return True, dist
         return False, smallest_dist
-    def is_point_in_no_fly_zone_UTM(self, point3dUTM, polygon_index, buffer_distance_m = 0):
+    def is_point_in_no_fly_zone_UTM(self, point3dUTM, polygon_index, buffer_distance_m = 0, use_base_buffer_distance_m = True):
         """
         Tests if an UTM point is within a specified polygon
-        Input: UTM point3d as array (y, x, alt_rel ...) and polygon index along with an optional buffer distance [m]
+        Input: UTM point3d as array (y, x, alt_rel ...) and polygon index along with an optional buffer distance [m] and use of base buffer distance (define)
         Ouput: bool (True: point is inside) and distance to polygon [m]
         """
         if isinstance(point3dUTM, dict):
@@ -242,15 +243,21 @@ class UAV_path_planner():
         else:
             dist = self.no_fly_zone_polygons[polygon_index].distance(geometry.Point(test_point3dUTM))
 
-        if dist <= buffer_distance_m  and test_point3dUTM[2] <= self.NO_FLY_ZONE_HEIGHT:
-            return True, dist
+        if use_base_buffer_distance_m:
+            if dist <= buffer_distance_m+self.NO_FLY_ZONE_BASE_BUFFER_DIST and test_point3dUTM[2] <= self.NO_FLY_ZONE_HEIGHT+self.NO_FLY_ZONE_BASE_BUFFER_DIST :
+                return True, dist
+            else:
+                return False, dist
         else:
-            return False, dist
+            if dist <= buffer_distance_m and test_point3dUTM[2] <= self.NO_FLY_ZONE_HEIGHT:
+                return True, dist
+            else:
+                return False, dist
 
-    def is_point_in_no_fly_zones_geodetic(self, point3d_geodetic, buffer_distance_m = 0):
+    def is_point_in_no_fly_zones_geodetic(self, point3d_geodetic, buffer_distance_m = 0, use_base_buffer_distance_m = True):
         """
         Tests if a geodetic point is within any of the no-fly zone polygons
-        Input: geodetic point3d as array (y, x, alt_rel ...) along with an optional buffer distance [m]
+        Input: geodetic point3d as array (y, x, alt_rel ...) along with an optional buffer distance [m] and use of base buffer distance (define)
         Ouput: bool (True: point is inside) and distance to nearest polygon [m]
         """
         smallest_dist = INF
@@ -259,16 +266,16 @@ class UAV_path_planner():
         else:
             no_fly_zone_polygons_to_use = self.no_fly_zone_polygons
         for i in range(len(no_fly_zone_polygons_to_use)):
-            within, dist = self.is_point_in_no_fly_zone_geodetic(point3d_geodetic, i, use_buffer_zone)
+            within, dist = self.is_point_in_no_fly_zone_geodetic(point3d_geodetic, i, use_buffer_zone, use_base_buffer_distance_m)
             if dist < smallest_dist:
                 smallest_dist = dist
             if within:
                 return True, dist
         return False, smallest_dist
-    def is_point_in_no_fly_zone_geodetic(self, point3d_geodetic, polygon_index, buffer_distance_m = 0):
+    def is_point_in_no_fly_zone_geodetic(self, point3d_geodetic, polygon_index, buffer_distance_m = 0, use_base_buffer_distance_m = True):
         """
         Tests if a geodetic point is within a specified polygon
-        Input: geodetic point3d as array (lat, lon, alt_rel) and polygon index along with an optional buffer distance [m]
+        Input: geodetic point3d as array (lat, lon, alt_rel) and polygon index along with an optional buffer distance [m] and use of base buffer distance (define)
         Ouput: bool (True: point is inside) and distance to polygon [m]
         """
         if isinstance(point3d_geodetic, dict):
@@ -276,7 +283,7 @@ class UAV_path_planner():
         else:
             test_point3d_geodetic = point3d_geodetic
         test_point_UTM = self.pos3d_geodetic2pos3d_UTM(test_point3d_geodetic)
-        return self.is_point_in_no_fly_zone_UTM(test_point_UTM, polygon_index, use_buffer_zone)
+        return self.is_point_in_no_fly_zone_UTM(test_point_UTM, polygon_index, use_buffer_zone, use_base_buffer_distance_m)
 
     """ Path planning functions """
     def plan_path(self, point_start, point_goal):
@@ -320,8 +327,10 @@ class UAV_path_planner():
         # Go to selected path planner
         if self.PATH_PLANNER == self.PATH_PLANNER_ASTAR:
             print colored('Planning using A start', TERM_COLOR_INFO)
-            path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 10, 1, max_search_time = 0.5)
-            path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 10, 1, max_search_time = 0.5)
+            path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 16, 1, max_search_time = 1.5)
+            path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 8, 1, max_search_time = 4)
+            path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 4, 1, max_search_time = 8)
+            path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 2, 1, max_search_time = 16)
         else:
             print colored('Path planner type not defined', TERM_COLOR_ERROR)
             return []
@@ -384,8 +393,8 @@ class UAV_path_planner():
 
         # Check if the path planner should continue instead of starting from scratch
         continue_planning = False
-        for i in range(len(self.prev_Astar_step_sizes)):
-            if self.prev_Astar_step_sizes[i] == [step_size_horz, step_size_vert] and not force_replanning:
+        for i in range(len(self.prev_Astar_step_size_and_points)):
+            if self.prev_Astar_step_size_and_points[i] == [step_size_horz, step_size_vert, point_start, point_goal] and not force_replanning:
                 if self.debug:
                     print colored('Continuing search using prevoiusly computed data', TERM_COLOR_INFO)
                 # Get old data
@@ -468,7 +477,7 @@ class UAV_path_planner():
                 planned_path = self.backtrace_path(came_from, current, point_start_tuple, point_goal_tuple)
                 print colored('Path has %i waypoints' % (len(planned_path)), TERM_COLOR_RES)
 
-                planned_path = self.reduce_path_rdp_UTM(planned_path, 5)
+                planned_path = self.reduce_path_rdp_UTM(planned_path, 6*step_size_vert)
 
                 # DRAW
                 self.map_plotter.draw_path_UTM(planned_path)
@@ -518,7 +527,7 @@ class UAV_path_planner():
         print colored('A star path planner stopped, visited %i nodes (max %i) in %.02f [s] (max %.02f [s])\n' % (open_list_popped_ctr, max_node_exploration, time_cur-time_last, max_search_time), TERM_COLOR_SUB_RES)
 
         # Save the planning data so it can be resumed
-        self.prev_Astar_step_sizes.append( [step_size_horz, step_size_vert] )
+        self.prev_Astar_step_size_and_points.append( [step_size_horz, step_size_vert, point_start, point_goal] )
         self.prev_Astar_closed_lists.append( closed_list )
         self.prev_Astar_open_lists.append( open_list )
         self.prev_Astar_came_froms.append( came_from )
@@ -526,6 +535,7 @@ class UAV_path_planner():
         self.prev_Astar_f_scores.append( f_score )
         self.prev_Astar_smallest_heuristics.append( smallest_heuristic )
 
+        # Draw start and goal points so plot is not empty
         self.map_plotter.draw_circle_UTM(point_start_tuple, 'green')
         self.map_plotter.draw_circle_UTM(point_goal_tuple, 'green')
         return [] # No path found
