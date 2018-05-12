@@ -354,7 +354,7 @@ class UAV_path_planner():
         # Check if the weather exceeds limits - TODO
         return True
 
-    def plan_planner_Astar(self, point_start, point_goal, step_size_horz, step_size_vert, max_node_exploration = INF, max_search_time = FOREVER):
+    def plan_planner_Astar(self, point_start, point_goal, step_size_horz, step_size_vert, max_node_exploration = INF, max_search_time = FOREVER, force_replanning = False):
         """
         A star algorithm path planner
         Input: start and goal point in UTM format
@@ -364,7 +364,7 @@ class UAV_path_planner():
             Christian Careaga: http://code.activestate.com/recipes/578919-python-a-pathfinding-with-binary-heap/
             Python docs: https://docs.python.org/2/library/heapq.html
         """
-        print colored('Entered A star path planner', TERM_COLOR_INFO)
+        print colored('Entered A star path planner with horizontal step-size %.02f [m] and horizontal step-size %.02f [m]' % (step_size_horz, step_size_vert), TERM_COLOR_INFO)
         # Set start time of start point to 0 (relative)
         point_start['time_rel'] = 0
         # Convert points to tuples
@@ -383,39 +383,64 @@ class UAV_path_planner():
                             neighbors_scaled.append( [y*step_size_horz, x*step_size_horz, z*step_size_vert] )
 
         # Check if the path planner should continue instead of starting from scratch
+        continue_planning = False
         for i in range(len(self.prev_Astar_step_sizes)):
-            if self.prev_Astar_step_sizes[i] == [step_size_horz, step_size_vert]:
-                print 'Same settings as already used, can continue'
-        # closed list: The set of nodes already evaluated
-        closed_list = set()
+            if self.prev_Astar_step_sizes[i] == [step_size_horz, step_size_vert] and not force_replanning:
+                if self.debug:
+                    print colored('Continuing search using prevoiusly computed data', TERM_COLOR_INFO)
+                # Get old data
+                closed_list = self.prev_Astar_closed_lists[i]
+                came_from = self.prev_Astar_came_froms[i]
+                g_score = self.prev_Astar_g_scores[i]
+                f_score = self.prev_Astar_f_scores[i]
+                open_list = self.prev_Astar_open_lists[i]
+                smallest_heuristic = self.prev_Astar_smallest_heuristics[i]
+                # Delete the old data
+                del self.prev_Astar_closed_lists[i]
+                del self.prev_Astar_came_froms[i]
+                del self.prev_Astar_g_scores[i]
+                del self.prev_Astar_f_scores[i]
+                del self.prev_Astar_open_lists[i]
+                del self.prev_Astar_smallest_heuristics[i]
+                continue_planning = True
+                if self.debug:
+                    print colored(INFO_ALT_INDENT+'Continue point heuristic: %f' % smallest_heuristic, TERM_COLOR_INFO_ALT)
 
-        # For each node, which node it can most efficiently be reached from.
-        # If a node can be reached from many nodes, cameFrom will eventually contain the
-        # most efficient previous step.
-        came_from = {}
+        if not continue_planning:
+            if self.debug:
+                print colored('Starting new path planning', TERM_COLOR_INFO)
+            # closed list: The set of nodes already evaluated
+            closed_list = set()
 
-        # For each node, the cost of getting from the start node to that node.
-        g_score = {}
-        # The cost of going from start to start is zero.
-        g_score[point_start_tuple] = 0
+            # For each node, which node it can most efficiently be reached from.
+            # If a node can be reached from many nodes, cameFrom will eventually contain the
+            # most efficient previous step.
+            came_from = {}
 
-        # For each node, the total cost of getting from the start node to the goal
-        # by passing by that node. That value is partly known, partly heuristic.
-        f_score = {}
-        # For the first node, that value is completely heuristic.
-        f_score[point_start_tuple] = self.heuristic_a_star(point_start_tuple, point_goal_tuple)
-        if self.debug:
-            print colored(INFO_ALT_INDENT+'Start point heuristic: %f' % f_score[point_start_tuple], TERM_COLOR_INFO_ALT)
+            # For each node, the cost of getting from the start node to that node.
+            g_score = {}
+            # The cost of going from start to start is zero.
+            g_score[point_start_tuple] = 0
 
-        # open list: The set of currently discovered nodes that are not evaluated yet.
-        open_list = []
+            # For each node, the total cost of getting from the start node to the goal
+            # by passing by that node. That value is partly known, partly heuristic.
+            f_score = {}
+            # For the first node, that value is completely heuristic.
+            f_score[point_start_tuple] = self.heuristic_a_star(point_start_tuple, point_goal_tuple)
+            if self.debug:
+                print colored(INFO_ALT_INDENT+'Start point heuristic: %f' % f_score[point_start_tuple], TERM_COLOR_INFO_ALT)
 
-        # Initially, only the start node is known.
-        heappush(open_list, (f_score[point_start_tuple], point_start_tuple))
+            # open list: The set of currently discovered nodes that are not evaluated yet.
+            open_list = []
 
-        # Var for seeing the progress of the search
+            # Initially, only the start node is known.
+            heappush(open_list, (f_score[point_start_tuple], point_start_tuple))
+
+            # Take note of the smallest heuristic
+            smallest_heuristic = INF
+
+        # Variables for seeing the progress of the search
         open_list_popped_ctr = 0
-        smallest_heuristic = INF
         time_start = get_cur_time_epoch()
         time_cur = time_start
         time_last = time_start
@@ -490,7 +515,7 @@ class UAV_path_planner():
                     f_score[neighbor] = tentative_g_score + neighbor_heiristic#self.heuristic_a_star(neighbor, point_goal_tuple) # Calculate and add the f score (combination of g score and heuristic)
                     heappush(open_list, (f_score[neighbor], neighbor)) # Add the node to the open list
             time_cur = get_cur_time_epoch()
-        print colored('A star path planner stopped, visited %i (max %i) in %.02f [s] (max %.02f [s])' % (open_list_popped_ctr, max_node_exploration, time_cur-time_last, max_search_time), TERM_COLOR_SUB_RES)
+        print colored('A star path planner stopped, visited %i nodes (max %i) in %.02f [s] (max %.02f [s])\n' % (open_list_popped_ctr, max_node_exploration, time_cur-time_last, max_search_time), TERM_COLOR_SUB_RES)
 
         # Save the planning data so it can be resumed
         self.prev_Astar_step_sizes.append( [step_size_horz, step_size_vert] )
