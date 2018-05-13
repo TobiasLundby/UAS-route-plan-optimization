@@ -37,7 +37,7 @@ forever = 60*60*24*365*100 # 100 years excl. leap year
 inf = 4294967295 # 32bit from 0
 internet_connection_tries = 5
 
-run_modes = ['test']
+run_modes = ['download', 'simulate']
 
 class droneid_data():
     def __init__(self, debug = False, force_sim_to_real = False):
@@ -529,6 +529,7 @@ class droneid_data():
             return_arr.append(self.get_lat(drone_index))
             return return_arr
         else: return None
+
     def get_drones_all(self):
         """
         Returns all drones downloaded
@@ -550,6 +551,20 @@ class droneid_data():
             for line in self.DroneIDdataStructured:
                 if line[11] == 0: # sim = 0 = real drone
                     return_arr.append(line)
+        return return_arr
+
+    def get_drones_real_limited(self):
+        """
+        Returns the real drones downloaded in a specific limited format
+        Input: none
+        Output: real downloaded drones in a specific limited format (ID, lat, lon, alt)
+        """
+        # TODO
+        return_arr = []
+        if self.drone_count > 0:
+            for line in self.DroneIDdataStructured:
+                if line[11] == 0: # sim = 0 = real drone
+                    return_arr.append([line[2], line[4], line[5], line[6]])
         return return_arr
 
     def get_drones_sim(self):
@@ -660,15 +675,29 @@ if __name__ == '__main__':
         ]
 
         if sys.argv[1] == run_modes[0]:
-            print 'Entering', run_modes[0],' mode'
+            print 'Entering', run_modes[0],'mode'
+
+            # Declare DroneID module
+            droneid_module = droneid_data(False)
+            droneid_module.download_data()
+
+            ctr = 0
+            try:
+                while True:
+                    time.sleep(1)
+                    ctr = ctr + 1
+                    droneid_module.update_data(3)
+                    #droneid_module.print_raw()
+                    #droneid_module.print_data()
+                    droneid_module.print_CSV()
+                    #print droneid_module.get_drones_sim()
+            except KeyboardInterrupt:
+                pass
+        elif sys.argv[1] == run_modes[1]:
+            print 'Entering', run_modes[1],'mode'
 
             # Declare simulator module
             simulator_module = droneid_simulator(False)
-            simulator_module.send_log_entry(LOG_TEST_DATA[2])
-
-            # Declare DroneID module
-            droneid_module = droneid_data()
-            droneid_module.download_data()
 
             ctr = 0
             try:
@@ -680,19 +709,16 @@ if __name__ == '__main__':
                         LOG_TEST_DATA[2]['lng'] = LOG_TEST_DATA[2]['lng'] + 0.0001
                         LOG_TEST_DATA[2]['alt'] = LOG_TEST_DATA[2]['alt'] + 0.1
                         simulator_module.send_log_entry (LOG_TEST_DATA[2])
+                        print 'Updated drone ID', LOG_TEST_DATA[2]['aid']
 
                         LOG_TEST_DATA[3]['lat'] = LOG_TEST_DATA[3]['lat'] - 0.0001
                         LOG_TEST_DATA[3]['lng'] = LOG_TEST_DATA[3]['lng'] - 0.0001
                         LOG_TEST_DATA[3]['alt'] = LOG_TEST_DATA[3]['alt'] + 0.1
                         simulator_module.send_log_entry (LOG_TEST_DATA[3])
+                        print 'Updated drone ID', LOG_TEST_DATA[3]['aid']
                         ctr = 0
-                    #droneid_module.update_data(3)
-                    #droneid_module.print_raw()
-                    #droneid_module.print_data()
-                    print droneid_module.get_drones_sim()
             except KeyboardInterrupt:
                 pass
-
 
     else:
         print "Proper use of script requires argument to set mode"
