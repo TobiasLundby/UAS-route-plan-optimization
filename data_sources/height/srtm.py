@@ -77,7 +77,7 @@ import zipfile
 import os
 
 class srtm_lib():
-	def __init__(self, dir_tiles, debug = False):
+	def __init__(self, dir_tiles = '', debug = False):
 		self.dir_tiles = dir_tiles
 		self.tile_data = []
 		self.tile_name = []

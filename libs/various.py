@@ -24,6 +24,7 @@ RES_INDENT                      = ' ++ '
 """ Other constants """
 FOREVER                         = 60*60*24*365*100  # unit: s; 100 years excl. leap year
 INF                             = 4294967295 # 32bit from 0
+DATA_VOID                       = -32768
 
 """ Helper functions """
 def get_cur_time_epoch():

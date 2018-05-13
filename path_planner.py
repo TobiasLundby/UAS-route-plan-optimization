@@ -23,6 +23,7 @@ from libs.map_plotter import map_plotter
 from libs.memory_usage import memory_usage
 from data_sources.no_fly_zones.kml_reader import kml_no_fly_zones_parser
 from data_sources.drone_id.get_droneid_data import droneid_data
+from data_sources.height.srtm import srtm_lib
 from libs.various import *
 from shapely import geometry # used to calculate the distance to polygons
 from rdp import rdp
@@ -80,6 +81,7 @@ class UAV_path_planner():
         # Instantiate droneid data class
         self.droneid = droneid_data(debug = False, force_sim_to_real = DRONEID_FORCE_ALL_REAL)
 
+
         # Set initial values for loading of no-fly zones
         self.no_fly_zones_loaded = False
         self.no_fly_zone_reader_module = None
@@ -90,6 +92,9 @@ class UAV_path_planner():
         # Set initial values for rally points
         self.rally_points_loaded = False
 
+        # Set initial values for height map
+        self.height_map_loaded = False
+
         # Initialize objects for prevoius A start path plannings
         self.prev_Astar_step_size_and_points = []
         self.prev_Astar_closed_lists = []
@@ -98,6 +103,51 @@ class UAV_path_planner():
         self.prev_Astar_g_scores = []
         self.prev_Astar_f_scores = []
         self.prev_Astar_smallest_heuristics = []
+
+    """ Height map """
+    def height_map_init(self, dir, start_point2d):
+        """
+        Instantiates the height map module and tests it using a point so the data is downloaded (if needed)
+        Input: filename of height map root and a test point (preferrably the start point)
+        Output: none
+        """
+        # Instantiate height map class
+        self.height_map = srtm_lib(dir)
+        if isinstance(start_point2d, dict):
+            test_point2d_geodetic = [start_point2d['lat'], start_point2d['lon']]
+        else:
+            test_point2d_geodetic = start_point2d
+        self.height_map.get_elevation(test_point2d_geodetic[0], test_point2d_geodetic[1])
+        self.height_map_loaded = True
+
+    def get_height_geodetic(self, test_point2d):
+        """
+        Returns the height in m above sea level
+        Input: geodetic 2d test point (can be more dims but these are ignored)
+        Output: height (if data void -32768)
+        """
+        if self.height_map_loaded:
+            if isinstance(test_point2d, dict):
+                test_point2d_geodetic = [test_point2d['lat'], test_point2d['lon']]
+            else:
+                test_point2d_geodetic = test_point2d
+            return self.height_map.get_elevation(test_point2d_geodetic[0], test_point2d_geodetic[1])
+        else:
+            print colored('Height map not loaded', TERM_COLOR_ERROR)
+            return DATA_VOID
+
+    def get_height_UTM(self, test_point2d):
+        """
+        Returns the height in m above sea level
+        Input: UTM 2d test point (can be more dims but these are ignored)
+        Output: height (if data void -32768)
+        """
+        if isinstance(test_point2d, dict):
+            test_point2d_UTM = [test_point2d['hemisphere'], test_point2d['zone'], test_point2d['y'], test_point2d['x']]
+        else:
+            test_point2d_UTM = [test_point2d[4], test_point2d[5], test_point2d[0], test_point2d[1]]
+        test_point2d_geodetic = self.coord_conv.UTM2geodetic(test_point2d_UTM[0], test_point2d_UTM[1], test_point2d_UTM[2], test_point2d_UTM[3])
+        return self.get_height_geodetic(test_point2d_geodetic)
 
     """ No-fly zones """
     def no_fly_zone_init_and_parse(self, file_name_in = None):
@@ -967,6 +1017,10 @@ if __name__ == '__main__':
 
     # Instantiate UAV_path_planner class
     UAV_path_planner_module = UAV_path_planner(True)
+
+    UAV_path_planner_module.height_map_init('data_sources/height/', start_point_3dDICT)
+    # print UAV_path_planner_module.height_map.get_elevation(start_point_3dDICT['lat'], start_point_3dDICT['lon'])
+    # exit(1)
 
     """ Load no-fly zones """
     print colored('Attempting to load no-fly zones', TERM_COLOR_INFO)
