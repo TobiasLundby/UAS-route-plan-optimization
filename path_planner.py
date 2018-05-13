@@ -22,6 +22,7 @@ from libs.coordinate import coordinate_transform
 from libs.map_plotter import map_plotter
 from libs.memory_usage import memory_usage
 from data_sources.no_fly_zones.kml_reader import kml_no_fly_zones_parser
+from data_sources.drone_id.get_droneid_data import droneid_data
 from libs.various import *
 from shapely import geometry # used to calculate the distance to polygons
 from rdp import rdp
@@ -29,6 +30,7 @@ from rdp import rdp
 """ User constants """
 PRINT_STATISTICS        = True
 SAVE_STATISTICS_TO_FILE = True
+DRONEID_FORCE_ALL_REAL  = True
 
 class UAV_path_planner():
     """ UAV constants """
@@ -64,10 +66,14 @@ class UAV_path_planner():
         self.debug = debug
         self.debug_test = False
 
-        # Init coordinate transform class
-        self.coord_conv = coordinate_transform()
+        # Instantiate coordinate transform class
+        self.coord_conv = coordinate_transform(debug = False)
 
-        self.map_plotter = map_plotter(self.coord_conv)
+        # Instantiate map plotter class
+        self.map_plotter = map_plotter(self.coord_conv, debug = False)
+
+        # Instantiate droneid data class
+        self.droneid = droneid_data(debug = False, force_sim_to_real = DRONEID_FORCE_ALL_REAL)
 
         # Set initial values for loading of no-fly zones
         self.no_fly_zones_loaded = False

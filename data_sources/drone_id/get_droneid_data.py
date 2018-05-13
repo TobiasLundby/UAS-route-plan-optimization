@@ -42,7 +42,7 @@ run_modes = ['test']
 class droneid_data():
     def __init__(self, debug = False, force_sim_to_real = False):
         self.internet_tester = internet_tools()
-        self.url = 'https://droneid.dk/tobias/droneid.php'
+        self.url = 'https://droneid.dk/tobias/droneid.php' # API URL
         self.debug = debug
         self.force_sim_to_real = force_sim_to_real
         self.aircraft_count = 0
@@ -60,6 +60,11 @@ class droneid_data():
             else:
                 break
     def download_data(self):
+        """
+        Downloads the active drones from droneID
+        Input: none
+        Output: bool (True = download successful, False = download failed)
+        """
         self.drone_count = 0
         self.DroneIDdataRaw = []
         self.DroneIDdataStructured = []
@@ -72,9 +77,11 @@ class droneid_data():
         except HTTPError, e:
             print 'The server couldn\'t fulfill the request.'
             print 'Error code: ', e.code
+            return False
         except URLError, e:
             print 'Failed to reach server.'
             print 'Reason: ', e.reason
+            return False
         except IOError, e:
             if hasattr(e, 'reason'):
                 print 'Failed to reach server.'
@@ -82,6 +89,7 @@ class droneid_data():
             elif hasattr(e, 'code'):
                 print 'The server couldn\'t fulfill the request.'
                 print 'Error code: ', e.code
+            return False
         else:
             if self.debug:
                 print 'No errors encountered during download, attempting to read result'
@@ -131,11 +139,16 @@ class droneid_data():
             response.close()
             if self.debug:
                 print "Result read successfully"
-
             # Make JSON Data
             # for row in self.DroneIDdataStructured:
             #     print row
+            return True
     def update_data(self, max_history_data = inf):
+        """
+        Updates the internal class drone data by redownloading and adding/updating
+        Input: optional limit on historical data
+        Output: bool (True = download successful, False = download failed)
+        """
         if self.debug:
             print '\nUpdate begun'
         self.drone_new_data_count = 0
@@ -148,9 +161,11 @@ class droneid_data():
         except HTTPError, e:
             print 'The server couldn\'t fulfill the request.'
             print 'Error code: ', e.code
+            return False
         except URLError, e:
             print 'Failed to reach server.'
             print 'Reason: ', e.reason
+            return False
         except IOError, e:
             if hasattr(e, 'reason'):
                 print 'Failed to reach server.'
@@ -158,6 +173,7 @@ class droneid_data():
             elif hasattr(e, 'code'):
                 print 'The server couldn\'t fulfill the request.'
                 print 'Error code: ', e.code
+            return False
         else:
             if self.debug:
                 print 'No errors encountered during download, attempting to read result'
@@ -236,25 +252,55 @@ class droneid_data():
                             self.drone_count = self.drone_count + 1
             if self.debug:
                 print 'Update done\n'
+            return True
+
     def clear_history_data(self):
+        """
+        Clears the historical data
+        Input: none
+        Output: bool (True = deleted history, False = deletion failed due to no drones present in the system)
+        """
         if self.drone_count > 0:
             for line in self.DroneIDdataStructured:
                 line[12] = []
                 line[13] = []
                 line[14] = []
                 line[15] = []
+
     def print_data(self):
+        """
+        Prints all the avaliable drone data (structured)
+        Input: none
+        Output: none but prints to the terminal
+        """
         if self.drone_count > 0:
             print self.DroneIDdataStructured
+
     def print_raw(self):
+        """
+        Prints all the avaliable drone data (raw as directly from the download)
+        Input: none
+        Output: none but prints to the terminal
+        """
         if self.drone_count > 0:
             print self.DroneIDdataRaw
     def print_CSV(self):
+        """
+        Prints all the avaliable drone data (CSV)
+        Input: none
+        Output: none but prints to the terminal
+        """
         if self.drone_count > 0:
             print ",".join(self.DroneIDdataFields)
             for line in self.DroneIDdataRaw:
                 print line
+
     def print_drone_pretty(self, drone_index):
+        """
+        Prints the data from a single drone in a easy redable format
+        Input: index of a drone present in the data
+        Output: none but prints to the terminal
+        """
         if self.drone_count > drone_index and type(drone_index)==int:
             if self.get_sim(drone_index):
                 print "NOTE: SIMULATED DRONE (link quality and battery SoC hardcoded)"
@@ -272,9 +318,21 @@ class droneid_data():
             print "Link quailty:", self.get_lnk(drone_index), '%'
             print "Battery SoC: ", self.get_eng(drone_index), '%'
             print "Simulated:   ", self.get_sim(drone_index)
+
     def print_format(self):
+        """
+        Prints the data format
+        Input: none
+        Output: none but prints to the terminal
+        """
         print "time_stamp,time_since_epoch,id,name,lat,lon,alt,acc,fix,lnk,eng,sim"
+
     def print_description(self):
+        """
+        Prints a field description
+        Input: none
+        Output: none but prints to the terminal
+        """
         print """\nField description:
         time_stamp: Formatted time stamp
         time: seconds since Epoch
@@ -294,106 +352,235 @@ class droneid_data():
         lnk: GSM link signal quality 0-100%
         eng: Energy (battery) level: 0-100%
         sim: True if simulated data """
+
     def get_time_stamp(self, drone_index):
+        """
+        Returns the time stamp of the specified drone
+        Input: index of a drone present in the data
+        Output: drone time stamp
+        """
         # GMT+1
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][0]
         else: return None
+
     def get_time_since_epoch(self, drone_index):
+        """
+        Returns the time stamp in EPOCH format of the specified drone
+        Input: index of a drone present in the data
+        Output: drone time stamp in EPOCH format
+        """
         # https://www.epochconverter.com/
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][1]
         else: return None
+
     def get_time_since_epoch_formatted_UTC(self, drone_index):
+        """
+        Returns the time stamp in UTC timezone of the specified drone
+        Input: index of a drone present in the data
+        Output: drone time stamp in UTC format
+        """
         # https://www.epochconverter.com/
         if self.drone_count > drone_index and type(drone_index)==int:
             return datetime.datetime.fromtimestamp(self.DroneIDdataStructured[drone_index][1], pytz.UTC).strftime('%Y-%m-%d %H:%M:%S')
         else: return None
+
     def get_time_since_epoch_formatted_local(self, drone_index):
+        """
+        Returns the time stamp in local timezone of the specified drone
+        Input: index of a drone present in the data
+        Output: drone time stamp in local timezone
+        """
         # https://www.epochconverter.com/
         if self.drone_count > drone_index and type(drone_index)==int:
             return datetime.datetime.fromtimestamp(self.DroneIDdataStructured[drone_index][1]).strftime('%Y-%m-%d %H:%M:%S')
         else: return None
+
     def get_id(self, drone_index):
+        """
+        Returns the id of the specified drone
+        Input: index of a drone present in the data
+        Output: drone id
+        """
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][2]
         else: return None
+
     def get_name(self, drone_index):
+        """
+        Returns the name of the specified drone
+        Input: index of a drone present in the data
+        Output: drone name
+        """
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][3]
         else: return None
+
     def get_lat(self, drone_index):
+        """
+        Returns the latitude of the specified drone
+        Input: index of a drone present in the data
+        Output: drone latitude
+        """
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][4]
         else: return None
+
     def get_lng(self, drone_index):
+        """
+        Returns the longitude of the specified drone
+        Input: index of a drone present in the data
+        Output: drone longitude
+        """
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][5]
         else: return None
+
     def get_alt_m(self, drone_index):
+        """
+        Returns the altitude of the specified drone
+        Input: index of a drone present in the data
+        Output: drone altitude
+        """
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][6]
         else: return None
+
     def get_alt_ft(self, drone_index):
+        """
+        Returns the altitude in feet of the specified drone
+        Input: index of a drone present in the data
+        Output: drone altitude in feet
+        """
         # unit: feet
         return self.get_alt_m(drone_index)*3.28084
+
     def get_acc(self, drone_index):
+        """
+        Returns the accuracy of the specified drone
+        Input: index of a drone present in the data
+        Output: drone accuracy
+        """
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][7]
         else: return None
+
     def get_fix(self, drone_index):
+        """
+        Returns the fix type of the specified drone
+        Input: index of a drone present in the data
+        Output: drone fix type
+        """
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][8]
         else: return None
+
     def get_lnk(self, drone_index):
+        """
+        Returns the GSM link signal quality of the specified drone
+        Input: index of a drone present in the data
+        Output: drone GSM link signal quality (0-100%)
+        """
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][9]
         else: return None
+
     def get_eng(self, drone_index):
+        """
+        Returns the energy (battery) of the specified drone
+        Input: index of a drone present in the data
+        Output: drone energy (battery) (0-100%)
+        """
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][10]
         else: return None
+
     def get_sim(self, drone_index):
+        """
+        Returns the simulated field of the specified drone
+        Input: index of a drone present in the data
+        Output: drone simulated bool (True = simulated, False = real)
+        """
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index][11]
         else: return None
+
     def get_time_since_epoch_history(self, drone_index):
-        # Returns the epoch time history inclusive the current last epoch time (not included in history array)
+        """
+        Returns the EPOCH time history inclusive the current last epoch time (not included in history array)
+        Input: index of a drone present in the data
+        Output: drone time stamp history in EPOCH format
+        """
         if self.drone_count > drone_index and type(drone_index)==int:
             return_arr = self.DroneIDdataStructured[drone_index][12]
             return_arr.append(self.get_time_since_epoch(drone_index))
             return return_arr
         else: return None
+
     def get_lat_history(self, drone_index):
-        # Returns the epoch time history inclusive the current last epoch time (not included in history array)
+        """
+        Returns the epoch time history inclusive the current last epoch time (not included in history array)
+        Input: index of a drone present in the data
+        Output: drone latitude history
+        """
         if self.drone_count > drone_index and type(drone_index)==int:
             return_arr = self.DroneIDdataStructured[drone_index][13]
             return_arr.append(self.get_lat(drone_index))
             return return_arr
         else: return None
     def get_drones_all(self):
+        """
+        Returns all drones downloaded
+        Input: none
+        Output: all downloaded drones in structured format
+        """
         if self.drone_count > 0:
             return self.DroneIDdataStructured
         return None
+
     def get_drones_real(self):
+        """
+        Returns the real drones downloaded
+        Input: none
+        Output: real downloaded drones in structured format
+        """
         return_arr = []
         if self.drone_count > 0:
             for line in self.DroneIDdataStructured:
                 if line[11] == 0: # sim = 0 = real drone
                     return_arr.append(line)
         return return_arr
+
     def get_drones_sim(self):
+        """
+        Returns the simulated drones downloaded
+        Input: none
+        Output: simulated downloaded drones in structured format
+        """
         return_arr = []
         if self.drone_count > 0:
             for line in self.DroneIDdataStructured:
                 if line[11] == 1: # sim = 1 = simulated drone
                     return_arr.append(line)
         return return_arr
+
     def get_drone_data(self, drone_index):
+        """
+        Returns data on a single drone
+        Input: index of a drone present in the data
+        Output: data on the specified drone
+        """
         if self.drone_count > drone_index and type(drone_index)==int:
             return self.DroneIDdataStructured[drone_index]
         else: return None
+
     def get_drone_data_from_name(self, drone):
+        """
+        Returns data on a single drone from a name
+        Input: name of a drone present in the data
+        Output: data on the specified drone
+        """
         if self.drone_count > 0:
             if drone != "" and type(drone)==str:
                 for line in self.DroneIDdataStructured:
@@ -402,7 +589,13 @@ class droneid_data():
                 return []
             else: return None
         else: return None
+
     def get_drone_index_from_name(self, drone):
+        """
+        Returns the drone index from a name
+        Input: name of a drone present in the data
+        Output: drone index
+        """
         if self.drone_count > 0:
             if drone != "" and type(drone)==str:
                 itr = 0
@@ -413,7 +606,13 @@ class droneid_data():
                 return None
             else: return None
         else: return None
+
     def get_drone_index_from_id(self, drone_id):
+        """
+        Returns the drone index from an ID
+        Input: ID of a drone present in the data
+        Output: drone index
+        """
         if self.drone_count > 0:
             if drone_id >= 0 and type(drone_id)==int:
                 itr = 0
