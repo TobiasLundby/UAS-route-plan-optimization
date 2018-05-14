@@ -79,7 +79,7 @@ class path_planner_gui(StoppableThread):
     def set_global_plan_status(self, txt):
         self.label_global_plan_status_res.configure(text=txt)
     def set_global_plan_search_time(self, val):
-        self.label_global_plan_search_time_res.configure(text='%.01f' % val)
+        self.label_global_plan_search_time_res.configure(text='%.01f [s]' % val)
     def set_global_plan_nodes_visited(self, val):
         self.label_global_plan_nodes_visited_res.configure(text='%i' % val)
 

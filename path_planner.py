@@ -398,25 +398,24 @@ class UAV_path_planner():
             point_goal_converted_geodetic = self.coord_conv.pos3d2pos3dDICT_geodetic(point_goal)
         else:
             point_goal_converted_geodetic = point_goal
-        #print colored(INFO_ALT_INDENT+'Start point: lat: %.03f, lon: %.03f' % (point_start_converted_geodetic['lat'], point_start_converted_geodetic['lon']), TERM_COLOR_INFO_ALT)
-        #print colored(INFO_ALT_INDENT+' Goal point: lat: %.03f, lon: %.03f' % (point_goal_converted_geodetic['lat'], point_goal_converted_geodetic['lon']), TERM_COLOR_INFO_ALT)
+        if self.debug:
+            print colored(INFO_ALT_INDENT+'Start point: lat: %.03f, lon: %.03f' % (point_start_converted_geodetic['lat'], point_start_converted_geodetic['lon']), TERM_COLOR_INFO_ALT)
+            print colored(INFO_ALT_INDENT+' Goal point: lat: %.03f, lon: %.03f' % (point_goal_converted_geodetic['lat'], point_goal_converted_geodetic['lon']), TERM_COLOR_INFO_ALT)
 
         self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('converting points') )
         # Convert to UTM for path planning
-        # if self.debug:
-        #     print colored('Converting points from geodetic to UTM', TERM_COLOR_INFO)
         point_start_converted_UTM = self.coord_conv.pos3dDICT_geodetic2pos4dDICT_UTM(point_start_converted_geodetic)
         point_goal_converted_UTM = self.coord_conv.pos3dDICT_geodetic2pos4dDICT_UTM(point_goal_converted_geodetic)
-        # if self.debug:
-        #     print colored(RES_INDENT+'Start point: %d %c %.5fe %.5fn' % (point_start_converted_UTM['zone'], point_start_converted_UTM['letter'], point_start_converted_UTM['y'], point_start_converted_UTM['x']), TERM_COLOR_RES)
-        #     print colored(RES_INDENT+' Goal point: %d %c %.5fe %.5fn' % (point_goal_converted_UTM['zone'], point_goal_converted_UTM['letter'], point_goal_converted_UTM['y'], point_goal_converted_UTM['x']), TERM_COLOR_RES)
+        if self.debug:
+            print colored(RES_INDENT+'Start point: %d %c %.5fe %.5fn' % (point_start_converted_UTM['zone'], point_start_converted_UTM['letter'], point_start_converted_UTM['y'], point_start_converted_UTM['x']), TERM_COLOR_RES)
+            print colored(RES_INDENT+' Goal point: %d %c %.5fe %.5fn' % (point_goal_converted_UTM['zone'], point_goal_converted_UTM['letter'], point_goal_converted_UTM['y'], point_goal_converted_UTM['x']), TERM_COLOR_RES)
 
         # Update the start heuristic in the GUI
         self.gui.on_main_thread( lambda: self.gui.set_global_plan_start_heuristic(self.heuristic_a_star(point_start_converted_UTM, point_goal_converted_UTM, self.GLOBAL_PLANNING)) )
 
         step_size_horz = 50
-        step_size_vert = 10
-        search_time_max = 200
+        step_size_vert = 5
+        search_time_max = 300
         # Pre path planning check
         self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('pre-plan check') )
         if not self.pre_planner_check(point_start_converted_UTM, point_goal_converted_UTM, step_size_horz):
@@ -593,6 +592,9 @@ class UAV_path_planner():
                 planned_path = self.backtrace_path(came_from, current, point_start_tuple, point_goal_tuple)
                 print colored('Path has %i waypoints\n' % (len(planned_path)), TERM_COLOR_RES)
 
+                for element in planned_path:
+                    print element
+
                 planned_path = self.reduce_path_rdp_UTM(planned_path, 6*step_size_vert)
 
                 # DRAW
@@ -613,7 +615,7 @@ class UAV_path_planner():
                 neighbor = self.pos4dTUPLE_UTM_copy_and_move_point(current, y, x, z, type_of_planning) # Construct the neighbor node; the function calculates the 4 dimension by the time required to travel between the nodes
 
                 # Calculate tentative g score by using the current g_score and the distance between the current and neighbor node
-                tentative_g_score = g_score[current] + self.node_cost(current, neighbor, point_start_tuple, point_goal_tuple, step_size_horz, type_of_planning)
+                tentative_g_score = g_score[current] + self.node_cost(current, neighbor, point_start_tuple, point_goal_tuple, step_size_horz, type_of_planning = type_of_planning, point_start_alt_abs = point_start_alt_abs)
 
                 if self.PP_PRINT_EXPLORE_NODE:
                     print colored(INFO_ALT_INDENT+'Exploring node (%.02f [m], %.02f [m], %.02f [m], %.02f [s]) with tentative G score %.02f, prevoius G score %.02f (0 = node not visited)' % (neighbor[0], neighbor[1], neighbor[2], neighbor[3], tentative_g_score, g_score.get(neighbor, 0)), TERM_COLOR_INFO_ALT)
@@ -681,7 +683,7 @@ class UAV_path_planner():
         #heuristic = self.calc_euclidian_horz_dist_UTM(point4dUTM1, point4dUTM2)
         return heuristic
 
-    def node_cost(self, parent_point4dUTM, child_point4dUTM, start_point4dUTM, goal_point4dUTM, step_size_horz, type_of_planning = 0):
+    def node_cost(self, parent_point4dUTM, child_point4dUTM, start_point4dUTM, goal_point4dUTM, step_size_horz, type_of_planning = 0, point_start_alt_abs = 0):
         """
         Calculates the child node cost based on the parent node
         Input: 4 4d UTM points; 1 parent, 1 child node, 1 start node, and 1 goal node.
@@ -694,20 +696,31 @@ class UAV_path_planner():
         node_cost = 0
         if type_of_planning == self.GLOBAL_PLANNING:
             # Calculate the travel time from the already present info (computed in copy_and_move)
-            travel_time = child_point4dUTM[3]-parent_point4dUTM[3]
-            #total_dist, horz_distance, vert_distance = self.calc_euclidian_dist_UTM(parent_point4dUTM, child_point4dUTM)
+            #travel_time = child_point4dUTM[3]-parent_point4dUTM[3] # The global planner does not use time!
+            travel_time = self.calc_travel_time_from_UTMpoints(child_point4dUTM, parent_point4dUTM)
+            total_dist_seg, seg_horz_distance_seg, seg_vert_distance_seg = self.calc_euclidian_dist_UTM(parent_point4dUTM, child_point4dUTM)
+
             # Calculate the distance to the start and goal node to see if the altutide whould be affected
             #total_dist_start, horz_distance_start, vert_distance_start = self.calc_euclidian_dist_UTM(start_point4dUTM, child_point4dUTM)
             total_dist_goal, horz_distance_goal, vert_distance_goal = self.calc_euclidian_dist_UTM(goal_point4dUTM, child_point4dUTM)
 
+            # Calculate the height of the child point
+            point_child_alt_abs = self.get_altitude_UTM(child_point4dUTM)
+            point_child_et_start_alt_diff = point_child_alt_abs - point_start_alt_abs
+            #print point_start_alt_abs, point_child_alt_abs, point_child_et_start_alt_diff, self.IDEAL_FLIGHT_ALTITUDE+point_child_et_start_alt_diff, child_point4dUTM[2], abs(self.IDEAL_FLIGHT_ALTITUDE+point_child_et_start_alt_diff - child_point4dUTM[2])
+
             # Penalize for flight altitude
             if horz_distance_goal > step_size_horz: # Not close to the goal - keep ideal altitude
-                node_cost += abs(self.IDEAL_FLIGHT_ALTITUDE-child_point4dUTM[2])
+                node_cost += abs(self.IDEAL_FLIGHT_ALTITUDE+point_child_et_start_alt_diff - child_point4dUTM[2])
             else: # Close to the goal - move towards goal altitude
                 node_cost += abs(goal_point4dUTM[2]-child_point4dUTM[2])
 
             # Penalize for travel time
-            node_cost += 0.1*travel_time #0.1*total_dist + 0.1*travel_time
+            node_cost += travel_time #0.1*total_dist + 0.1*travel_time
+
+            # Penalize for flight distance
+            node_cost += total_dist_seg
+
             return node_cost
 
         elif type_of_planning == self.LOCAL_PLANNING:
@@ -1077,12 +1090,13 @@ if __name__ == '__main__':
     memory_usage_module.save_heap_start() # Save the heap size before calculating and outputting statistics
 
     ## Test points
-    start_point_3dDICT = {'lat': 55.431122, 'lon': 10.420436, 'alt_rel': 0}
-    start_point_3dDICT = {'lat': 55.431122, 'lon': 10.420436, 'alt_rel': 0}
-    start_point_3dDICT = {'lat': 55.435259, 'lon': 10.410862, 'alt_rel': 0}
-    goal_point_3dDICT  = {'lat': 55.427750, 'lon': 10.433737, 'alt_rel': 0} # far away
-    goal_point_3dDICT  = {'lat': 55.427043, 'lon': 10.450245, 'alt_rel': 0} # far away
-    #goal_point_3dDICT  = {'lat': 55.427203, 'lon': 10.419043, 'alt_rel': 0} # closer
+    start_point_3dDICT = {'lat': 55.431122, 'lon': 10.420436, 'alt_rel': 0} # org
+    start_point_3dDICT = {'lat': 55.431122, 'lon': 10.420436, 'alt_rel': 0} # more north west
+    start_point_3dDICT = {'lat': 55.435259, 'lon': 10.410862, 'alt_rel': 0} # even more north west
+    goal_point_3dDICT  = {'lat': 55.427750, 'lon': 10.433737, 'alt_rel': 0} # more north east
+    goal_point_3dDICT  = {'lat': 55.427043, 'lon': 10.450245, 'alt_rel': 0} # even more north east
+    goal_point_3dDICT  = {'lat': 55.424736, 'lon': 10.419749, 'alt_rel': 0} # more south
+    #goal_point_3dDICT  = {'lat': 55.427203, 'lon': 10.419043, 'alt_rel': 0} # org
 
     # Instantiate UAV_path_planner class
     UAV_path_planner_module = UAV_path_planner(True, data_path_no_fly_zones = 'data_sources/no_fly_zones/drone_nofly_dk.kml', data_path_height_map = 'data_sources/height/')
