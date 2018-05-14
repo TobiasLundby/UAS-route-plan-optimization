@@ -25,6 +25,7 @@ from data_sources.no_fly_zones.kml_reader import kml_no_fly_zones_parser
 from data_sources.drone_id.get_droneid_data import droneid_data
 from data_sources.height.srtm import srtm_lib
 from libs.various import *
+from libs.gui import path_planner_gui
 from shapely import geometry # used to calculate the distance to polygons
 from rdp import rdp
 import logging
@@ -67,7 +68,7 @@ class UAV_path_planner():
     NO_FLY_ZONE_REDUCE_FLIGHT_DISTANCE_FACTOR = 2 # unit: unitless ; used for reducing the no-fly zones based on the flight distance of the start point, reason: if the wind is 12m/s and the drone if flying with 15m/s the safe reducing is 1.8 (not safe) ≈ 2 (safe)
     GEOID_WGS84                     = Geod(ellps='WGS84') # used for calculating Great Circle Distance
 
-    def __init__(self, debug = False):
+    def __init__(self, debug = False, data_path_no_fly_zones = None, data_path_height_map = None):
         """ Constructor """
         self.debug = debug
         self.debug_test = False
@@ -78,9 +79,9 @@ class UAV_path_planner():
         # Instantiate map plotter class
         self.map_plotter = map_plotter(self.coord_conv, debug = False)
 
-        # Instantiate droneid data class
-        self.droneid = droneid_data(debug = False, force_sim_to_real = DRONEID_FORCE_ALL_REAL)
-
+        # Instantiate and start the GUI
+        self.gui = path_planner_gui()
+        self.gui.start()
 
         # Set initial values for loading of no-fly zones
         self.no_fly_zones_loaded = False
@@ -88,12 +89,37 @@ class UAV_path_planner():
         self.no_fly_zone_polygons = []
         self.no_fly_zone_polygons_reduced = []
         self.no_fly_zones_reduced = False
-
-        # Set initial values for rally points
-        self.rally_points_loaded = False
+        # Instantiate and load no-fly zone class
+        self.gui.on_main_thread( lambda: self.gui.set_label_no_fly_zones('loading') )
+        no_fly_zone_load_res = False
+        if data_path_no_fly_zones == None: no_fly_zone_load_res = self.no_fly_zone_init_and_parse()
+        else: no_fly_zone_load_res = self.no_fly_zone_init_and_parse(data_path_no_fly_zones)
+        if no_fly_zone_load_res: self.gui.on_main_thread( lambda: self.gui.set_label_no_fly_zones('loaded') )
+        else: self.gui.on_main_thread( lambda: self.gui.set_label_no_fly_zones('error') )
+        # Reduce no-fly zones
+        if self.reduce_ploygons_geodetic(start_point_3dDICT, goal_point_3dDICT): self.gui.on_main_thread( lambda: self.gui.set_label_no_fly_zones('loaded, reduced') )
+        else: self.gui.on_main_thread( lambda: self.gui.set_label_no_fly_zones('loaded, not reduced') )
 
         # Set initial values for height map
         self.height_map_loaded = False
+        # Instantiate and load height map class
+        if data_path_height_map == None:
+            self.gui.on_main_thread( lambda: self.gui.set_label_height_map('missing') )
+        else:
+            self.gui.on_main_thread( lambda: self.gui.set_label_height_map('loading') )
+            self.height_map_init('data_sources/height/', start_point_3dDICT)
+            self.gui.on_main_thread( lambda: self.gui.set_label_height_map('loaded') )
+
+        # Instantiate and load droneid data class
+        self.droneid = droneid_data(debug = False, force_sim_to_real = DRONEID_FORCE_ALL_REAL)
+        self.gui.on_main_thread( lambda: self.gui.set_label_drone_id('loading') )
+        if self.droneid.download_data():
+            self.gui.on_main_thread( lambda: self.gui.set_label_drone_id('loaded') )
+        else:
+            self.gui.on_main_thread( lambda: self.gui.set_label_drone_id('error') )
+
+        # Set initial values for rally points
+        self.rally_points_loaded = False
 
         # Initialize objects for prevoius A start path plannings
         self.prev_Astar_step_size_and_points = []
@@ -103,6 +129,9 @@ class UAV_path_planner():
         self.prev_Astar_g_scores = []
         self.prev_Astar_f_scores = []
         self.prev_Astar_smallest_heuristics = []
+
+    def stop_gui(self):
+        self.gui.stop_thread()
 
     """ Height map """
     def height_map_init(self, dir, start_point2d):
@@ -380,6 +409,9 @@ class UAV_path_planner():
             print colored(RES_INDENT+'Start point: %d %c %.5fe %.5fn' % (point_start_converted_UTM['zone'], point_start_converted_UTM['letter'], point_start_converted_UTM['y'], point_start_converted_UTM['x']), TERM_COLOR_RES)
             print colored(RES_INDENT+' Goal point: %d %c %.5fe %.5fn' % (point_goal_converted_UTM['zone'], point_goal_converted_UTM['letter'], point_goal_converted_UTM['y'], point_goal_converted_UTM['x']), TERM_COLOR_RES)
 
+        # Update the start heuristic in the GUI
+        self.gui.set_global_plan_start_heuristic(self.heuristic_a_star(point_start_converted_UTM, point_goal_converted_UTM, self.GLOBAL_PLANNING))
+
         # Pre path planning check
         if not self.pre_planner_check(point_start_converted_UTM, point_goal_converted_UTM):
             print colored('Error: did not pass pre path planning check', TERM_COLOR_ERROR)
@@ -388,10 +420,10 @@ class UAV_path_planner():
         # Go to selected path planner
         if self.PATH_PLANNER == self.PATH_PLANNER_ASTAR:
             print colored('Planning using A start', TERM_COLOR_INFO)
-            path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 0.25, 1, type_of_planning = self.GLOBAL_PLANNING, max_search_time = FOREVER)
-            #path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 8, 1, type_of_planning = self.GLOBAL_PLANNING, max_search_time = 4)
-            #path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 4, 1, type_of_planning = self.GLOBAL_PLANNING, max_search_time = 8)
-            #path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 2, 1, type_of_planning = self.GLOBAL_PLANNING, max_search_time = 16)
+            path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 16, 15, type_of_planning = self.GLOBAL_PLANNING, max_search_time = FOREVER)
+            path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 8, 10, type_of_planning = self.GLOBAL_PLANNING, max_search_time = 16)
+            path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 4, 5, type_of_planning = self.GLOBAL_PLANNING, max_search_time = 32)
+            path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 2, 2.5, type_of_planning = self.GLOBAL_PLANNING, max_search_time = 64)
         else:
             print colored('Path planner type not defined', TERM_COLOR_ERROR)
             return []
@@ -587,6 +619,7 @@ class UAV_path_planner():
                     if neighbor_heiristic < smallest_heuristic:
                         #print colored(SUB_RES_INDENT+'Smallest heuristic: %f' % neighbor_heiristic, TERM_COLOR_SUB_RES)
                         smallest_heuristic = neighbor_heiristic
+                        self.gui.set_global_plan_cur_heuristic(smallest_heuristic)
                     f_score[neighbor] = tentative_g_score + neighbor_heiristic#self.heuristic_a_star(neighbor, point_goal_tuple) # Calculate and add the f score (combination of g score and heuristic)
                     heappush(open_list, (f_score[neighbor], neighbor)) # Add the node to the open list
             time_cur = get_cur_time_epoch()
@@ -1012,36 +1045,18 @@ if __name__ == '__main__':
 
     ## Set 2
     start_point_3dDICT = {'lat': 55.431122, 'lon': 10.420436, 'alt_rel': 0}
-    goal_point_3dDICT  = {'lat': 55.427750, 'lon': 10.433737, 'alt_rel': 0}
-    goal_point_3dDICT  = {'lat': 55.427203, 'lon': 10.419043, 'alt_rel': 0}
+    goal_point_3dDICT  = {'lat': 55.427750, 'lon': 10.433737, 'alt_rel': 0} # far away
+    goal_point_3dDICT  = {'lat': 55.427203, 'lon': 10.419043, 'alt_rel': 0} # closer
 
     # Instantiate UAV_path_planner class
-    UAV_path_planner_module = UAV_path_planner(True)
-
-    UAV_path_planner_module.height_map_init('data_sources/height/', start_point_3dDICT)
-    # print UAV_path_planner_module.height_map.get_elevation(start_point_3dDICT['lat'], start_point_3dDICT['lon'])
-    # exit(1)
-
-    """ Load no-fly zones """
-    print colored('Attempting to load no-fly zones', TERM_COLOR_INFO)
-    #if UAV_path_planner_module.no_fly_zone_init_and_parse(): # load online
-    #if UAV_path_planner_module.no_fly_zone_init_and_parse('data_sources/no_fly_zones/KmlUasZones_sec2.kml'): # load offline file - only contains 4 no-fly zones from Odense
-    if UAV_path_planner_module.no_fly_zone_init_and_parse('data_sources/no_fly_zones/drone_nofly_dk.kml'): # load offline complete but old file
-        #if UAV_path_planner_module.no_fly_zone_init_and_parse('data_sources/no_fly_zones/KmlUasZones_2018-05-02-15-50.kml'): # load offline file
-        print colored('No-fly zones loaded', TERM_COLOR_RES)
-    else:
-        print colored('No-fly zones NOT loaded', TERM_COLOR_ERROR)
-
-    if UAV_path_planner_module.reduce_ploygons_geodetic(start_point_3dDICT, goal_point_3dDICT):
-        print colored('No-fly zones reduced', TERM_COLOR_RES)
-    else:
-        print colored('No-fly zones NOT reduced', TERM_COLOR_ERROR)
-
-    print colored('Attempting to load drone data from droneID', TERM_COLOR_INFO)
-    if UAV_path_planner_module.droneid.download_data():
-        print colored('Drones loaded', TERM_COLOR_RES)
-    else:
-        print colored('Drones NOT loaded', TERM_COLOR_ERROR)
+    UAV_path_planner_module = UAV_path_planner(True, data_path_no_fly_zones = 'data_sources/no_fly_zones/drone_nofly_dk.kml', data_path_height_map = 'data_sources/height/')
+    """
+    No-fly zone paths: (local) 'data_sources/no_fly_zones/drone_nofly_dk.kml' = old but has airports etc.
+                       (local) 'data_sources/no_fly_zones/KmlUasZones_2018-05-02-15-50.kml' = current from droneluftrum.dk
+                       (local) 'data_sources/no_fly_zones/KmlUasZones_sec2.kml' = only contains 4 no-fly zones from Odense
+                       Not specified = load online
+    Height map path:    (local) 'data_sources/height/'
+    """
 
     """ Path planning start """
     # Plan path
@@ -1109,3 +1124,6 @@ if __name__ == '__main__':
             data = [used_path_planner, path_planned_fitness, total_dist, horz_dist, vert_dist, runtime_total_s, runtime_pp_s, byte_amount, byte_amount_diff, object_amount, object_amount_diff, estimated_flight_time, no_waypoints, start_point_3dDICT, goal_point_3dDICT, path_planned]
             output_writer_CSV.writerow(data)
             output_file_CSV.close()
+
+    # Stop the GUI thread
+    UAV_path_planner_module.stop_gui()
