@@ -388,7 +388,7 @@ class UAV_path_planner():
         # Go to selected path planner
         if self.PATH_PLANNER == self.PATH_PLANNER_ASTAR:
             print colored('Planning using A start', TERM_COLOR_INFO)
-            path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 32, 10, type_of_planning = self.GLOBAL_PLANNING, max_search_time = FOREVER)
+            path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 0.25, 1, type_of_planning = self.GLOBAL_PLANNING, max_search_time = FOREVER)
             #path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 8, 1, type_of_planning = self.GLOBAL_PLANNING, max_search_time = 4)
             #path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 4, 1, type_of_planning = self.GLOBAL_PLANNING, max_search_time = 8)
             #path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 2, 1, type_of_planning = self.GLOBAL_PLANNING, max_search_time = 16)
