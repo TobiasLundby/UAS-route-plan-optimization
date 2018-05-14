@@ -14,7 +14,7 @@ Tkinter examples: https://dzone.com/articles/python-gui-examples-tkinter-tutoria
 from Tkinter import Tk, Label, Button, Entry, LEFT
 import threading
 from Queue import Queue, Empty
-import time
+import logging
 
 class StoppableThread(threading.Thread):
     def __init__(self):
@@ -36,6 +36,8 @@ class path_planner_gui(StoppableThread):
     def __init__(self, auto_start = False):
         StoppableThread.__init__(self)
         self.q = Queue()
+
+        self.logger = logging.getLogger(__name__)
         if auto_start:
             self.start()
 
@@ -45,7 +47,7 @@ class path_planner_gui(StoppableThread):
 
     def callback_close(self):
         self.root.quit()
-        print "Tkinter GUI has stopped but thread will first be joined upon closing of the program"
+        self.logger.info('Tkinter GUI has stopped but thread will first be joined upon closing of the program')
 
     def on_main_thread(self, func):
         self.q.put(func)
@@ -70,6 +72,17 @@ class path_planner_gui(StoppableThread):
         self.label_global_plan_start_heuristic_res.configure(text='%.02f' % val)
     def set_global_plan_cur_heuristic(self, val):
         self.label_global_plan_cur_heuristic_res.configure(text='%.02f' % val)
+    def set_global_plan_horz_step_size(self, val):
+        self.label_global_plan_horz_step_size_res.configure(text='%.01f [m]' % val)
+    def set_global_plan_vert_step_size(self, val):
+        self.label_global_plan_vert_step_size_res.configure(text='%.01f [m]' % val)
+    def set_global_plan_status(self, txt):
+        self.label_global_plan_status_res.configure(text=txt)
+    def set_global_plan_search_time(self, val):
+        self.label_global_plan_search_time_res.configure(text='%.01f' % val)
+    def set_global_plan_nodes_visited(self, val):
+        self.label_global_plan_nodes_visited_res.configure(text='%i' % val)
+
 
     def start_global_path_planning(self):
         print 'Should call some function to start the global path planner'
@@ -125,8 +138,10 @@ class path_planner_gui(StoppableThread):
         self.button_global_plan = Button(self.root, text="Start global planning", command=self.start_global_path_planning)
         self.button_global_plan.grid(row=row_num_left, column=0, columnspan = 2)
         row_num_left += 1
-        self.label_global_plan = Label(self.root, text="Status", font=("Arial Bold", 12))
-        self.label_global_plan.grid(row=row_num_left, column=0, columnspan = 2)
+        self.label_global_plan_status = Label(self.root, text="Status:")
+        self.label_global_plan_status.grid(row=row_num_left, column=0)
+        self.label_global_plan_status_res = Label(self.root, text="idle")
+        self.label_global_plan_status_res.grid(row=row_num_left, column=1)
         row_num_left += 1
         self.label_global_plan_start_heuristic = Label(self.root, text="Start heuristic:")
         self.label_global_plan_start_heuristic.grid(row=row_num_left, column=0)
@@ -137,6 +152,26 @@ class path_planner_gui(StoppableThread):
         self.label_global_plan_cur_heuristic.grid(row=row_num_left, column=0)
         self.label_global_plan_cur_heuristic_res = Label(self.root, text="N/A")
         self.label_global_plan_cur_heuristic_res.grid(row=row_num_left, column=1)
+        row_num_left += 1
+        self.label_global_plan_horz_step_size = Label(self.root, text="Horizontal step-size:")
+        self.label_global_plan_horz_step_size.grid(row=row_num_left, column=0)
+        self.label_global_plan_horz_step_size_res = Label(self.root, text="N/A")
+        self.label_global_plan_horz_step_size_res.grid(row=row_num_left, column=1)
+        row_num_left += 1
+        self.label_global_plan_vert_step_size = Label(self.root, text="Vertical step-size:")
+        self.label_global_plan_vert_step_size.grid(row=row_num_left, column=0)
+        self.label_global_plan_vert_step_size_res = Label(self.root, text="N/A")
+        self.label_global_plan_vert_step_size_res.grid(row=row_num_left, column=1)
+        row_num_left += 1
+        self.label_global_plan_search_time = Label(self.root, text="Search time:")
+        self.label_global_plan_search_time.grid(row=row_num_left, column=0)
+        self.label_global_plan_search_time_res = Label(self.root, text="N/A")
+        self.label_global_plan_search_time_res.grid(row=row_num_left, column=1)
+        row_num_left += 1
+        self.label_global_plan_nodes_visited = Label(self.root, text="Nodes visited:")
+        self.label_global_plan_nodes_visited.grid(row=row_num_left, column=0)
+        self.label_global_plan_nodes_visited_res = Label(self.root, text="N/A")
+        self.label_global_plan_nodes_visited_res.grid(row=row_num_left, column=1)
 
         row_num_left += 1
         self.button_local_plan = Button(self.root, text="Start local planning", command=self.start_local_path_planning)
@@ -177,6 +212,7 @@ if __name__ == "__main__":
     pp_gui = path_planner_gui()
     pp_gui.start()
 
+    import time
 
     var = 1
     do_exit = False
