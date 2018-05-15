@@ -422,7 +422,7 @@ class UAV_path_planner():
 
         step_size_horz = 75
         step_size_vert = 10
-        search_time_max = 40
+        search_time_max = 60
         # Pre path planning check
         self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('pre-plan check', 'yellow') )
         if not self.pre_planner_check(point_start_converted_UTM, point_goal_converted_UTM, step_size_horz):
@@ -452,11 +452,21 @@ class UAV_path_planner():
             path_geodetic.append( self.coord_conv.pos4dDICT_UTM2pos4dDICT_geodetic( path_UTM[i] ) )
         self.time_planning_completed_s = get_cur_time_epoch() # Save completed timestamp
 
+        self.send_path_to_gui_geodetic(path_geodetic)
+
         self.planned_path_global_UTM = path_UTM
         self.planned_path_global_geodetic = path_geodetic
         self.point_start_global_geodetic = point_start
         self.point_goal_global_geodetic  = point_goal
         return True
+
+    def send_path_to_gui_geodetic(self, path):
+        out_str = ''
+        for i in range(len(path)):
+            out_str += 'Waypoint %d: ' % i
+            out_str += str(path[i])
+            out_str += '\n'
+        self.gui.on_main_thread( lambda: self.gui.set_scrolledtext_global_path(out_str) )
 
     def pre_planner_check(self, point_start_UTM, point_goal_UTM, step_size_horz = 0):
         """
@@ -639,7 +649,7 @@ class UAV_path_planner():
                     #print 'INSIDE GEOFENCE'
                     continue
 
-                if neighbor[2] <= self.get_altitude_UTM(neighbor)-point_start_alt_abs: # note that <= is to include points on the surface (it is a drone, not a car)
+                if neighbor[2]+step_size_vert <= self.get_altitude_UTM(neighbor)-point_start_alt_abs: # note that <= is to include points on the surface (it is a drone, not a car)
                     #print 'Below the earths surface, neighbor rel altitude %.02f, neighbor abs altitude %.02f, start abs altitude %.02f' % (neighbor[2], self.get_altitude_UTM(neighbor), point_start_alt_abs)
                     continue
 

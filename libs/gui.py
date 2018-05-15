@@ -11,8 +11,9 @@ Inspiration: https://github.com/Akuli/tkinter-tutorial/blob/master/event-loop-st
 Tkinter examples: https://dzone.com/articles/python-gui-examples-tkinter-tutorial-like-geeks
 """
 
-from Tkinter import Tk, Label, Button, Entry, LEFT
+from Tkinter import Tk, Label, Button, Entry, LEFT, INSERT, END
 from ttk import Combobox
+import ScrolledText as tkst
 import threading
 from Queue import Queue, Empty
 import logging
@@ -107,19 +108,26 @@ class path_planner_gui(StoppableThread):
         self.label_global_plan_nodes_explored_res.configure(text='%i' % val)
         self.label_global_plan_nodes_explored_res.configure(fg=color)
 
+    def set_scrolledtext_global_path(self, txt):
+        self.scrolledtext_global_path.delete(1.0,END)
+        self.scrolledtext_global_path.insert(INSERT,txt)
+
     def global_planner_thread(self, point_start, point_goal, path_planner):
         if self.parent_class.plan_path_global(point_start, point_goal, path_planner): # Plan path and test the result to update the GUI
             self.button_local_plan.configure(state='normal')
             self.button_global_plan.configure(state='normal')
             self.button_global_plan.configure(text='Start global planning')
+            self.button_show_result_webpage.configure(state='normal')
         else: # The global path planner failed and therefore diable the local path planner and change the option to continue
             self.button_local_plan.configure(state='disabled')
             self.button_global_plan.configure(state='normal')
+            self.button_show_result_webpage.configure(state='disabled')
             self.button_global_plan.configure(text='Continue global planning')
 
     def start_global_path_planning(self):
         self.button_global_plan.configure(state='disabled')
         self.button_local_plan.configure(state='disabled')
+        self.button_show_result_webpage.configure(state='disabled')
 
         # Get data from the GUI
         start_point_3dDICT = {'lat': float(self.input_start_point_lat.get()), 'lon': float(self.input_start_point_lon.get()), 'alt_rel': 0}
@@ -133,6 +141,9 @@ class path_planner_gui(StoppableThread):
 
     def start_local_path_planning(self):
         print 'Should call some function to start the local path planner'
+
+    def show_result_webpage(self):
+        self.parent_class.map_plotter.show_plot()
 
     def run(self):
         self.root = Tk()
@@ -234,45 +245,57 @@ class path_planner_gui(StoppableThread):
         self.button_local_plan.configure(state='disabled') # disable the button since it cannot make a local plan before it has made a global plan
         self.button_local_plan.grid(row=row_num_left, column=0, columnspan = 2)
 
+        row_num_left += 1
+        self.button_show_result_webpage = Button(self.root, text="Show result webpage", command=self.show_result_webpage)
+        self.button_show_result_webpage.configure(state='disabled') # Disabled because no global plan has been made
+        self.button_show_result_webpage.grid(row=row_num_left, column=0, columnspan = 2)
+
         # Right side layout
         row_num_right = 0
         self.label_data_sources = Label(self.root, text="Data data sources", font=("Arial Bold", 10))
-        self.label_data_sources.grid(row=row_num_right, column=3, columnspan = 2)
+        self.label_data_sources.grid(row=row_num_right, column=2, columnspan = 2)
 
         row_num_right += 1
         self.label_data_source_no_fly_zones = Label(self.root, text="No-fly zones:")
-        self.label_data_source_no_fly_zones.grid(row=row_num_right, column=3)
+        self.label_data_source_no_fly_zones.grid(row=row_num_right, column=2)
         self.label_data_source_no_fly_zones_res = Label(self.root, text="not loaded")
         self.label_data_source_no_fly_zones_res.configure(fg='red')
-        self.label_data_source_no_fly_zones_res.grid(row=row_num_right, column=4)
+        self.label_data_source_no_fly_zones_res.grid(row=row_num_right, column=3)
 
         row_num_right += 1
         self.label_data_source_height_map = Label(self.root, text="Height map:")
-        self.label_data_source_height_map.grid(row=row_num_right, column=3)
+        self.label_data_source_height_map.grid(row=row_num_right, column=2)
         self.label_data_source_height_map_res = Label(self.root, text="not loaded")
         self.label_data_source_height_map_res.configure(fg='red')
-        self.label_data_source_height_map_res.grid(row=row_num_right, column=4)
+        self.label_data_source_height_map_res.grid(row=row_num_right, column=3)
 
         row_num_right += 1
         self.label_data_source_droneID = Label(self.root, text="DroneID:")
-        self.label_data_source_droneID.grid(row=row_num_right, column=3)
+        self.label_data_source_droneID.grid(row=row_num_right, column=2)
         self.label_data_source_droneID_res = Label(self.root, text="not loaded")
         self.label_data_source_droneID_res.configure(fg='red')
-        self.label_data_source_droneID_res.grid(row=row_num_right, column=4)
+        self.label_data_source_droneID_res.grid(row=row_num_right, column=3)
 
         row_num_right += 1
         self.label_data_source_adsb = Label(self.root, text="ADS-B:")
-        self.label_data_source_adsb.grid(row=row_num_right, column=3)
+        self.label_data_source_adsb.grid(row=row_num_right, column=2)
         self.label_data_source_adsb_res = Label(self.root, text="not loaded")
         self.label_data_source_adsb_res.configure(fg='red')
-        self.label_data_source_adsb_res.grid(row=row_num_right, column=4)
+        self.label_data_source_adsb_res.grid(row=row_num_right, column=3)
 
         row_num_right += 1
         self.label_data_source_weather = Label(self.root, text="Weather:")
-        self.label_data_source_weather.grid(row=row_num_right, column=3)
+        self.label_data_source_weather.grid(row=row_num_right, column=2)
         self.label_data_source_weather_res = Label(self.root, text="not loaded")
         self.label_data_source_weather_res.configure(fg='red')
-        self.label_data_source_weather_res.grid(row=row_num_right, column=4)
+        self.label_data_source_weather_res.grid(row=row_num_right, column=3)
+
+        # Both sides
+        row_num_left += 1
+        self.label_global_path = Label(self.root, text="Global path:")
+        self.label_global_path.grid(row=row_num_left, column=0)
+        self.scrolledtext_global_path = tkst.ScrolledText(self.root,height=10)
+        self.scrolledtext_global_path.grid(row=row_num_left, column=1, columnspan=3)
 
 
         # Configure the queue callback

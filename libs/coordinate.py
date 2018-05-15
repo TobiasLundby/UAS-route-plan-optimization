@@ -240,7 +240,7 @@ class coordinate_transform():
         Output: 4 value 1 element DICT of lat, lon, alt_rel (relative to start height), time_rel
         """
         (back_conv_lat, back_conv_lon) = self.uc.utm_to_geodetic (pos4dDICT_UTM['hemisphere'], pos4dDICT_UTM['zone'], pos4dDICT_UTM['y'], pos4dDICT_UTM['x'])
-        return {'lat':back_conv_lat,'lon':back_conv_lon,'alt_rel':pos4dDICT_UTM['z_rel'],'time_rel':pos4dDICT_UTM['time_rel']}
+        return {'lat':round(back_conv_lat,5),'lon':round(back_conv_lon,5),'alt_rel':round(pos4dDICT_UTM['z_rel'],1),'time_rel':round(pos4dDICT_UTM['time_rel'],2)}
 
     def pos4d2pos4dDICT_geodetic(self, pos4d):
         """ Converts pos4d to pos4dDICT, geodetic
