@@ -55,6 +55,8 @@ class ibm_weather_csv():
         self.WindSpeedMpsS = []
         self.SurfaceWindGustsMpsS = []
 
+        self.WindDirectionDegreesS = []
+
         self.SurfaceTempCS = []
         self.ApparentTemperatureCS = []
         self.WindChillTemperatureCS = []
@@ -116,6 +118,9 @@ class ibm_weather_csv():
                 SurfaceWindGustsKph = float(row['SurfaceWindGustsKph'])
                 self.SurfaceWindGustsKphS.append(SurfaceWindGustsKph)
 
+                WindDirectionDegrees = float(row['WindDirectionDegrees'])
+                self.WindDirectionDegreesS.append(WindDirectionDegrees)
+
                 # Temperature load
                 SurfaceTempC = float(row['SurfaceTemperatureCelsius'])
                 self.SurfaceTempCS.append(SurfaceTempC)
@@ -152,6 +157,30 @@ class ibm_weather_csv():
         self.SurfaceWindGustsMpsS = np.divide(self.SurfaceWindGustsKphS, 3.6)
         #WindSpeedMpsS = [x / 3.6 for x in WindSpeedKphS] #note that the list contains floats, use calc above
         #print(WindSpeedMpsS)
+
+    def convert_time_to_index(self, year, month, date, hour):
+        # Since I only have data from 2016 the year is just ignored
+        date_obj = datetime.strptime('%02d/%02d/%04d %02d' % (date, month, year, hour), '%m/%d/%Y %H')
+        for i in range(len(self.DateSGMT)):
+            if self.DateSGMT[i] == date_obj:
+                return i
+        return None
+
+    def get_wind_speed(self, index):
+        return self.WindSpeedMpsS[index]
+    def get_wind_gust(self, index):
+        return self.SurfaceWindGustsMpsS[index]
+    def get_wind_direction(self, index):
+        return self.WindDirectionDegreesS[index]
+    def get_temp(self, index):
+        return self.SurfaceTempCS[index]
+    def get_precipitation(self, index):
+        return self.PrecipitationPreviousHourCmS[index]
+    def get_snowfall(self, index):
+        return self.SnowfallCmS[index]
+
+
+
     ## Check condition methods
     def check_conditions_wind(self, sample_nr):
         # true = sattisfies wind conditions

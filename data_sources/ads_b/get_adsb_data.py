@@ -73,6 +73,7 @@ class adsb_data():
                     sys.exit()
             else:
                 break
+
     def download_data(self):
         self.aircraft_count = 0
         self.ADSBdataRaw = []
@@ -85,9 +86,11 @@ class adsb_data():
         except HTTPError, e:
             print 'The server couldn\'t fulfill the request.'
             print 'Error code: ', e.code
+            return False
         except URLError, e:
             print 'Failed to reach server.'
             print 'Reason: ', e.reason
+            return False
         except IOError, e:
             if hasattr(e, 'reason'):
                 print 'Failed to reach server.'
@@ -95,6 +98,7 @@ class adsb_data():
             elif hasattr(e, 'code'):
                 print 'The server couldn\'t fulfill the request.'
                 print 'Error code: ', e.code
+            return False
         else:
             if self.debug:
                 print 'No errors encountered during download, attempting to read result'
@@ -135,10 +139,12 @@ class adsb_data():
             response.close()
             if self.debug:
                 print "Result read successfully"
+            return True
 
             # Make JSON Data
             # for row in self.ADSBdataStructured:
             #     print row
+
     def update_data(self, max_history_data = inf):
         if self.debug:
             print '\nUpdate begun'
@@ -152,9 +158,11 @@ class adsb_data():
         except HTTPError, e:
             print 'The server couldn\'t fulfill the request.'
             print 'Error code: ', e.code
+            return False
         except URLError, e:
             print 'Failed to reach server.'
             print 'Reason: ', e.reason
+            return False
         except IOError, e:
             if hasattr(e, 'reason'):
                 print 'Failed to reach server.'
@@ -162,6 +170,7 @@ class adsb_data():
             elif hasattr(e, 'code'):
                 print 'The server couldn\'t fulfill the request.'
                 print 'Error code: ', e.code
+            return False
         else:
             if self.debug:
                 print 'No errors encountered during download, attempting to read result'
@@ -240,6 +249,8 @@ class adsb_data():
                             self.aircraft_count = self.aircraft_count + 1
             if self.debug:
                 print 'Update done\n'
+            return True
+
     def print_data(self, print_line_by_line = False):
         if self.aircraft_count > 0:
             if print_line_by_line == True:
@@ -247,14 +258,17 @@ class adsb_data():
                     print line
             else:
                 print self.ADSBdataStructured
+
     def print_raw(self):
         if self.aircraft_count > 0:
             print self.ADSBdataRaw
+
     def print_CSV(self):
         if self.aircraft_count > 0:
             print ",".join(self.ADSBdataFields)
             for line in self.ADSBdataRaw:
                 print line
+
     def print_aircraft_pretty(self, aircraft_index):
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             print "Name:       ", self.get_name(aircraft_index)
@@ -268,9 +282,11 @@ class adsb_data():
             print "Speed:      ", self.get_speed_kts(aircraft_index), "kts -", self.get_speed_mps(aircraft_index), "m/s -", self.get_speed_kph(aircraft_index), "k/h -", self.get_speed_mph(aircraft_index), "miles/h"
             print "Altitude:   ", self.get_alt_m(aircraft_index), "m -", self.get_alt_ft(aircraft_index), "ft"
             print "Track:      ", self.get_track_deg(aircraft_index), "° -", self.get_track_rad(aircraft_index), "rad\n"
+
     def print_format(self):
         #Format is $time_stamp,$time_since_epoch,$icao,$flight,$lat,$lon,$alt,$track,$speed\n
         print "time_stamp,time_since_epoch,icao,flight,lat,lon,alt,track,speed"
+
     def print_description(self):
         print """\nField description:
         time_stamp: Formatted time stamp
@@ -282,88 +298,124 @@ class adsb_data():
         alt: [m]
         trk: Track [degrees]
         hsp: Horizontal speed [m/s]"""
+
     def get_time_stamp(self, aircraft_index):
         # GMT+1
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             return self.ADSBdataStructured[aircraft_index][0]
         else: return None
+
     def get_time_since_epoch(self, aircraft_index):
         # https://www.epochconverter.com/
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             return self.ADSBdataStructured[aircraft_index][1]
         else: return None
+
     def get_time_since_epoch_formatted_UTC(self, aircraft_index):
         # https://www.epochconverter.com/
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             return datetime.datetime.fromtimestamp(self.ADSBdataStructured[aircraft_index][1], pytz.UTC).strftime('%Y-%m-%d %H:%M:%S')
         else: return None
+
     def get_time_since_epoch_formatted_local(self, aircraft_index):
         # https://www.epochconverter.com/
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             return datetime.datetime.fromtimestamp(self.ADSBdataStructured[aircraft_index][1]).strftime('%Y-%m-%d %H:%M:%S')
         else: return None
+
     def get_icao_addr(self, aircraft_index):
         # Use ex. World Aircraft Database to decode: https://junzisun.com/adb/
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             return self.ADSBdataStructured[aircraft_index][2]
         else: return None
+
     def get_name(self, aircraft_index):
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             return self.ADSBdataStructured[aircraft_index][3]
         else: return None
+
     def get_lat(self, aircraft_index):
         # unit: dot decimal
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             return self.ADSBdataStructured[aircraft_index][4]
         else: return None
+
     def get_lng(self, aircraft_index):
         # unit: dot decimal
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             return self.ADSBdataStructured[aircraft_index][5]
         else: return None
+
     def get_lon(self, aircraft_index): #same as get_lng
         # unit: dot decimal
         return self.get_lng(aircraft_index)
+
     def get_alt_m(self, aircraft_index):
         # unit: m
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             return self.ADSBdataStructured[aircraft_index][6]
         else: return None
+
     def get_alt_ft(self, aircraft_index):
         # unit: feet
         return self.get_alt_m(aircraft_index)*m_to_feet
+
     def get_track_deg(self, aircraft_index):
         # unit: degrees from north positive clockwise
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             return self.ADSBdataStructured[aircraft_index][7]
         else: return None
+
     def get_track_rad(self, aircraft_index):
         # unit: radians
         return self.get_track_deg(aircraft_index)*deg_to_rad
+
     def get_speed_mps(self, aircraft_index):
         # unit: m/s
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             return self.ADSBdataStructured[aircraft_index][8]
         else: return None
+
     def get_speed_kts(self, aircraft_index):
         # unit: knots, kts
         return self.get_speed_mps(aircraft_index)*mps_to_kts
+
     def get_speed_kph(self, aircraft_index):
         # unit: m/s
         return self.get_speed_kts(aircraft_index)*mps_to_kph
+
     def get_speed_mph(self, aircraft_index):
         # unit: m/s
         return self.get_speed_mps(aircraft_index)*mps_to_mph
+
     def get_aircraft_all(self, aircraft_index):
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             return self.ADSBdataStructured
         return None
+
+    def get_all_aircrafts(self):
+        return self.ADSBdataStructured
+
+    def get_all_aircrafts_limited(self):
+        """
+        Returns the real aircrafts downloaded in a specific limited format
+        Input: none
+        Output: downloaded aircrafts in a specific limited format (ICAO, lat, lon, alt)
+        """
+        return_arr = []
+        if self.aircraft_count > 0:
+            for line in self.ADSBdataStructured:
+                return_arr.append([line[2], line[4], line[5], line[6]])
+        return return_arr
+
     def get_no_aircrafts(self):
         return self.aircraft_count
+
     def get_aircraft_data(self, aircraft_index):
         if self.aircraft_count > aircraft_index and type(aircraft_index)==int:
             return self.ADSBdataStructured[aircraft_index]
         else: return None
+
     def get_aircraft_data_from_name(self, aircraft):
         if self.aircraft_count > 0:
             if aircraft != "" and type(aircraft)==str:
@@ -373,6 +425,7 @@ class adsb_data():
                 return []
             else: return None
         else: return None
+
     def get_aircraft_index(self, aircraft):
         if aircraft != "" and type(aircraft)==str:
             itr = 0
@@ -382,6 +435,7 @@ class adsb_data():
                 itr = itr+1
             return None
         else: return None
+
     def get_aircraft_index_from_icao(self, icao):
         if icao != "" and type(icao)==str:
             itr = 0
@@ -391,6 +445,7 @@ class adsb_data():
                 itr = itr+1
             return None
         else: return None
+
     def check_input_aircraft_index(self, aircraft_index):
         # Checks if the aircraft_index has been defined
         # Currently not used.
@@ -401,6 +456,7 @@ class adsb_data():
             sys.exit()
         else:
             return
+
     def save_CSV_file(self, file_in_subfolder = "", include_history = False):
         now = datetime.datetime.now()
         if file_in_subfolder == "":

@@ -136,7 +136,7 @@ class droneid_data():
             #print itr
             self.drone_count = itr
             if self.drone_count == 0:
-                self.logger.info('No DroneIDs seems to be online"')
+                self.logger.info('No DroneIDs seems to be online')
             if self.debug:
                 print "Entries:",self.drone_count
             response.close()

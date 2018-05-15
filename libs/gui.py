@@ -17,6 +17,7 @@ import ScrolledText as tkst
 import threading
 from Queue import Queue, Empty
 import logging
+import webbrowser
 
 class StoppableThread(threading.Thread):
     def __init__(self):
@@ -35,6 +36,10 @@ class path_planner_gui(StoppableThread):
     DEFAULT_START_LON = 10.410862 #10.420436
     DEFAULT_GOAL_LAT  = 55.424736 #55.427203
     DEFAULT_GOAL_LON  = 10.419749 #10.419043
+
+    DEFAULT_STEP_SIZE_HORZ = 75
+    DEFAULT_STEP_SIZE_VERT = 10
+    DEFAULT_SEARCH_TIME_MAX = 120 # unit: s
     def __init__(self, parent_class, auto_start = False):
         # self.__class__ = type(self.__class__.__name__, (base_class, object), dict(self.__class__.__dict__))
         # super(self.__class__, self).__init__()
@@ -107,35 +112,80 @@ class path_planner_gui(StoppableThread):
     def set_global_plan_nodes_explored(self, val, color = 'black'):
         self.label_global_plan_nodes_explored_res.configure(text='%i' % val)
         self.label_global_plan_nodes_explored_res.configure(fg=color)
-
+    def set_label_gpe_fitness(self, val, color = 'black'):
+        self.label_gpe_fitness_res.configure(text='%f'%val)
+        self.label_gpe_fitness_res.configure(fg=color)
+    def set_label_gpe_dist_tot(self, val, color = 'black'):
+        self.label_gpe_dist_tot_res.configure(text='%.02f [m]'%val)
+        self.label_gpe_dist_tot_res.configure(fg=color)
+    def set_label_gpe_dist_horz(self, val, color = 'black'):
+        self.label_gpe_dist_horz_res.configure(text='%.02f [m]'%val)
+        self.label_gpe_dist_horz_res.configure(fg=color)
+    def set_label_gpe_dist_vert(self, val, color = 'black'):
+        self.label_gpe_dist_vert_res.configure(text='%.02f [m]'%val)
+        self.label_gpe_dist_vert_res.configure(fg=color)
+    def set_label_gpe_eta(self, val, color = 'black'):
+        self.label_gpe_eta_res.configure(text='%.02f [s]'%val)
+        self.label_gpe_eta_res.configure(fg=color)
+    def set_label_gpe_wps(self, val, color = 'black'):
+        self.label_gpe_wps_res.configure(text='%i'%val)
+        self.label_gpe_wps_res.configure(fg=color)
+    def set_label_gpe_runtime(self, val, color = 'black'):
+        self.label_gpe_runtime_res.configure(text='%f [s]'%val)
+        self.label_gpe_runtime_res.configure(fg=color)
+    def set_label_gpe_bytes_tot(self, val, color = 'black'):
+        self.label_gpe_bytes_tot_res.configure(text='%i'%val)
+        self.label_gpe_bytes_tot_res.configure(fg=color)
+    def set_label_gpe_objects_tot(self, val, color = 'black'):
+        self.label_gpe_objects_tot_res.configure(text='%i'%val)
+        self.label_gpe_objects_tot_res.configure(fg=color)
+    def set_label_gpe_bytes_planner(self, val, color = 'black'):
+        self.label_gpe_bytes_planner_res.configure(text='%i'%val)
+        self.label_gpe_bytes_planner_res.configure(fg=color)
+    def set_label_gpe_objects_planner(self, val, color = 'black'):
+        self.label_gpe_objects_planner_res.configure(text='%i'%val)
+        self.label_gpe_objects_planner_res.configure(fg=color)
     def set_scrolledtext_global_path(self, txt):
         self.scrolledtext_global_path.delete(1.0,END)
         self.scrolledtext_global_path.insert(INSERT,txt)
+    def enable_button_global_plan(self):
+        self.button_global_plan.configure(state='normal')
+    def diable_button_global_plan(self):
+        self.button_global_plan.configure(state='disabled')
 
-    def global_planner_thread(self, point_start, point_goal, path_planner):
-        if self.parent_class.plan_path_global(point_start, point_goal, path_planner): # Plan path and test the result to update the GUI
+    def global_planner_thread(self, point_start, point_goal, path_planner, step_size_horz, step_size_vert, search_time_max):
+        if self.parent_class.plan_path_global(point_start, point_goal, path_planner, step_size_horz=step_size_horz, step_size_vert=step_size_vert, search_time_max=search_time_max): # Plan path and test the result to update the GUI
             self.button_local_plan.configure(state='normal')
             self.button_global_plan.configure(state='normal')
             self.button_global_plan.configure(text='Start global planning')
             self.button_show_result_webpage.configure(state='normal')
+            self.button_evaluate_path.configure(state='normal')
+            self.button_web_visualize.configure(state='normal')
         else: # The global path planner failed and therefore diable the local path planner and change the option to continue
             self.button_local_plan.configure(state='disabled')
             self.button_global_plan.configure(state='normal')
             self.button_show_result_webpage.configure(state='disabled')
             self.button_global_plan.configure(text='Continue global planning')
+            self.button_evaluate_path.configure(state='disabled')
+            self.button_web_visualize.configure(state='disabled')
 
     def start_global_path_planning(self):
         self.button_global_plan.configure(state='disabled')
         self.button_local_plan.configure(state='disabled')
         self.button_show_result_webpage.configure(state='disabled')
+        self.button_evaluate_path.configure(state='disabled')
+        self.button_web_visualize.configure(state='disabled')
 
         # Get data from the GUI
+        path_planner = self.combo_planner_type.get()
         start_point_3dDICT = {'lat': float(self.input_start_point_lat.get()), 'lon': float(self.input_start_point_lon.get()), 'alt_rel': 0}
         goal_point_3dDICT  = {'lat': float(self.input_goal_point_lat.get()), 'lon': float(self.input_goal_point_lon.get()), 'alt_rel': 0}
-        path_planner = self.combo_planner_type.get()
+        step_size_horz = float(self.input_step_size_horz.get())
+        step_size_vert = float(self.input_step_size_vert.get())
+        search_time_max = float(self.input_search_time_max.get())
 
         # Create and start the thread
-        thread_global_planning = threading.Thread(target=self.global_planner_thread, args=(start_point_3dDICT, goal_point_3dDICT, path_planner))
+        thread_global_planning = threading.Thread(target=self.global_planner_thread, args=(start_point_3dDICT, goal_point_3dDICT, path_planner, step_size_horz, step_size_vert, search_time_max))
         thread_global_planning.start()
         #thread_global_planning.join()
 
@@ -144,6 +194,20 @@ class path_planner_gui(StoppableThread):
 
     def show_result_webpage(self):
         self.parent_class.map_plotter.show_plot()
+
+    def show_web_visualize(self):
+        route_id = self.parent_class.visualize_path()
+        if not None:
+            url = 'http://uas.heltner.net/routes/'+str(route_id)+'/3d'
+            webbrowser.open_new(url)
+
+    def path_evaluation_thread(self):
+        self.parent_class.evaluate_path()
+    def start_evaluation(self):
+        # Create and start the thread
+        thread_evaluate_path = threading.Thread(target=self.path_evaluation_thread)
+        thread_evaluate_path.start()
+
 
     def run(self):
         self.root = Tk()
@@ -196,7 +260,30 @@ class path_planner_gui(StoppableThread):
         self.input_goal_point_lon.grid(row=row_num_left, column=1)
 
         row_num_left += 1
+        self.label_options  = Label(self.root, text="Options", font=("Arial Bold", 10))
+        self.label_options.grid(row=row_num_left, column=0, columnspan = 2)
+        row_num_left += 1
+        self.label_step_size_horz = Label(self.root, text="Horizontal step-size [m]:")
+        self.label_step_size_horz.grid(row=row_num_left, column=0)
+        self.input_step_size_horz = Entry(self.root,width=10)
+        self.input_step_size_horz.insert(0, self.DEFAULT_STEP_SIZE_HORZ)
+        self.input_step_size_horz.grid(row=row_num_left, column=1)
+        row_num_left += 1
+        self.label_step_size_vert = Label(self.root, text="Vertical step-size [m]:")
+        self.label_step_size_vert.grid(row=row_num_left, column=0)
+        self.input_step_size_vert = Entry(self.root,width=10)
+        self.input_step_size_vert.insert(0, self.DEFAULT_STEP_SIZE_VERT)
+        self.input_step_size_vert.grid(row=row_num_left, column=1)
+        row_num_left += 1
+        self.label_search_time_max = Label(self.root, text="Max search time [s]:")
+        self.label_search_time_max.grid(row=row_num_left, column=0)
+        self.input_search_time_max = Entry(self.root,width=10)
+        self.input_search_time_max.insert(0, self.DEFAULT_SEARCH_TIME_MAX)
+        self.input_search_time_max.grid(row=row_num_left, column=1)
+
+        row_num_left += 1
         self.button_global_plan = Button(self.root, text="Start global planning", command=self.start_global_path_planning)
+        self.button_global_plan.configure(state='disabled')
         self.button_global_plan.grid(row=row_num_left, column=0, columnspan = 2)
         row_num_left += 1
         self.label_global_plan_status = Label(self.root, text="Status:")
@@ -245,44 +332,34 @@ class path_planner_gui(StoppableThread):
         self.button_local_plan.configure(state='disabled') # disable the button since it cannot make a local plan before it has made a global plan
         self.button_local_plan.grid(row=row_num_left, column=0, columnspan = 2)
 
-        row_num_left += 1
-        self.button_show_result_webpage = Button(self.root, text="Show result webpage", command=self.show_result_webpage)
-        self.button_show_result_webpage.configure(state='disabled') # Disabled because no global plan has been made
-        self.button_show_result_webpage.grid(row=row_num_left, column=0, columnspan = 2)
-
         # Right side layout
         row_num_right = 0
-        self.label_data_sources = Label(self.root, text="Data data sources", font=("Arial Bold", 10))
+        self.label_data_sources = Label(self.root, text="Data data sources", font=("Arial Bold", 12))
         self.label_data_sources.grid(row=row_num_right, column=2, columnspan = 2)
-
         row_num_right += 1
         self.label_data_source_no_fly_zones = Label(self.root, text="No-fly zones:")
         self.label_data_source_no_fly_zones.grid(row=row_num_right, column=2)
         self.label_data_source_no_fly_zones_res = Label(self.root, text="not loaded")
         self.label_data_source_no_fly_zones_res.configure(fg='red')
         self.label_data_source_no_fly_zones_res.grid(row=row_num_right, column=3)
-
         row_num_right += 1
         self.label_data_source_height_map = Label(self.root, text="Height map:")
         self.label_data_source_height_map.grid(row=row_num_right, column=2)
         self.label_data_source_height_map_res = Label(self.root, text="not loaded")
         self.label_data_source_height_map_res.configure(fg='red')
         self.label_data_source_height_map_res.grid(row=row_num_right, column=3)
-
         row_num_right += 1
         self.label_data_source_droneID = Label(self.root, text="DroneID:")
         self.label_data_source_droneID.grid(row=row_num_right, column=2)
         self.label_data_source_droneID_res = Label(self.root, text="not loaded")
         self.label_data_source_droneID_res.configure(fg='red')
         self.label_data_source_droneID_res.grid(row=row_num_right, column=3)
-
         row_num_right += 1
         self.label_data_source_adsb = Label(self.root, text="ADS-B:")
         self.label_data_source_adsb.grid(row=row_num_right, column=2)
         self.label_data_source_adsb_res = Label(self.root, text="not loaded")
         self.label_data_source_adsb_res.configure(fg='red')
         self.label_data_source_adsb_res.grid(row=row_num_right, column=3)
-
         row_num_right += 1
         self.label_data_source_weather = Label(self.root, text="Weather:")
         self.label_data_source_weather.grid(row=row_num_right, column=2)
@@ -290,12 +367,90 @@ class path_planner_gui(StoppableThread):
         self.label_data_source_weather_res.configure(fg='red')
         self.label_data_source_weather_res.grid(row=row_num_right, column=3)
 
+        row_num_right += 1
+        # gpe = global path evaluator
+        self.label_gpe = Label(self.root, text="Global path evaluator", font=("Arial Bold", 12))
+        self.label_gpe.grid(row=row_num_right, column=2, columnspan = 2)
+        row_num_right += 1
+        self.button_evaluate_path = Button(self.root, text="Evaluate", command=self.start_evaluation)
+        self.button_evaluate_path.configure(state='disabled') # Disabled because no global plan has been made
+        self.button_evaluate_path.grid(row=row_num_right, column=2, columnspan = 2)
+        row_num_right += 1
+        self.label_gpe_fitness = Label(self.root, text="Fitness:")
+        self.label_gpe_fitness.grid(row=row_num_right, column=2)
+        self.label_gpe_fitness_res = Label(self.root, text="N/A")
+        self.label_gpe_fitness_res.grid(row=row_num_right, column=3)
+        row_num_right += 1
+        self.label_gpe_dist_tot = Label(self.root, text="Total distance:")
+        self.label_gpe_dist_tot.grid(row=row_num_right, column=2)
+        self.label_gpe_dist_tot_res = Label(self.root, text="N/A")
+        self.label_gpe_dist_tot_res.grid(row=row_num_right, column=3)
+        row_num_right += 1
+        self.label_gpe_dist_horz = Label(self.root, text="Horizontal distance:")
+        self.label_gpe_dist_horz.grid(row=row_num_right, column=2)
+        self.label_gpe_dist_horz_res = Label(self.root, text="N/A")
+        self.label_gpe_dist_horz_res.grid(row=row_num_right, column=3)
+        row_num_right += 1
+        self.label_gpe_dist_vert = Label(self.root, text="Vertical distance:")
+        self.label_gpe_dist_vert.grid(row=row_num_right, column=2)
+        self.label_gpe_dist_vert_res = Label(self.root, text="N/A")
+        self.label_gpe_dist_vert_res.grid(row=row_num_right, column=3)
+        row_num_right += 1
+        self.label_gpe_eta = Label(self.root, text="Estimated flight time:")
+        self.label_gpe_eta.grid(row=row_num_right, column=2)
+        self.label_gpe_eta_res = Label(self.root, text="N/A")
+        self.label_gpe_eta_res.grid(row=row_num_right, column=3)
+        row_num_right += 1
+        self.label_gpe_wps = Label(self.root, text="Waypoints:")
+        self.label_gpe_wps.grid(row=row_num_right, column=2)
+        self.label_gpe_wps_res = Label(self.root, text="N/A")
+        self.label_gpe_wps_res.grid(row=row_num_right, column=3)
+        row_num_right += 1
+        self.label_gpe_runtime = Label(self.root, text="Runtime:")
+        self.label_gpe_runtime.grid(row=row_num_right, column=2)
+        self.label_gpe_runtime_res = Label(self.root, text="N/A")
+        self.label_gpe_runtime_res.grid(row=row_num_right, column=3)
+        row_num_right += 1
+        self.label_gpe_bytes_tot = Label(self.root, text="Bytes total:")
+        self.label_gpe_bytes_tot.grid(row=row_num_right, column=2)
+        self.label_gpe_bytes_tot_res = Label(self.root, text="N/A")
+        self.label_gpe_bytes_tot_res.grid(row=row_num_right, column=3)
+        row_num_right += 1
+        self.label_gpe_objects_tot = Label(self.root, text="Objects total:")
+        self.label_gpe_objects_tot.grid(row=row_num_right, column=2)
+        self.label_gpe_objects_tot_res = Label(self.root, text="N/A")
+        self.label_gpe_objects_tot_res.grid(row=row_num_right, column=3)
+        row_num_right += 1
+        self.label_gpe_bytes_planner = Label(self.root, text="Bytes planner:")
+        self.label_gpe_bytes_planner.grid(row=row_num_right, column=2)
+        self.label_gpe_bytes_planner_res = Label(self.root, text="N/A")
+        self.label_gpe_bytes_planner_res.grid(row=row_num_right, column=3)
+        row_num_right += 1
+        self.label_gpe_objects_planner = Label(self.root, text="Objects planner:")
+        self.label_gpe_objects_planner.grid(row=row_num_right, column=2)
+        self.label_gpe_objects_planner_res = Label(self.root, text="N/A")
+        self.label_gpe_objects_planner_res.grid(row=row_num_right, column=3)
+
         # Both sides
-        row_num_left += 1
+        if row_num_left > row_num_right:
+            row_num_both = row_num_left
+        else:
+            row_num_both = row_num_right
+        row_num_both += 1
         self.label_global_path = Label(self.root, text="Global path:")
-        self.label_global_path.grid(row=row_num_left, column=0)
+        self.label_global_path.grid(row=row_num_both, column=0)
         self.scrolledtext_global_path = tkst.ScrolledText(self.root,height=10)
-        self.scrolledtext_global_path.grid(row=row_num_left, column=1, columnspan=3)
+        self.scrolledtext_global_path.grid(row=row_num_both, column=1, columnspan=3)
+
+        row_num_both += 1
+        self.button_show_result_webpage = Button(self.root, text="2D path visualization (local)", command=self.show_result_webpage)
+        self.button_show_result_webpage.configure(state='disabled') # Disabled because no global plan has been made
+        self.button_show_result_webpage.grid(row=row_num_both, column=0, columnspan = 2)
+
+        #row_num_both += 1
+        self.button_web_visualize = Button(self.root, text="3D path visualization (online)", command=self.show_web_visualize)
+        self.button_web_visualize.configure(state='disabled') # Disabled because no global plan has been made
+        self.button_web_visualize.grid(row=row_num_both, column=2, columnspan = 2)
 
 
         # Configure the queue callback

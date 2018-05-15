@@ -24,8 +24,11 @@ from libs.memory_usage import memory_usage
 from data_sources.no_fly_zones.kml_reader import kml_no_fly_zones_parser
 from data_sources.drone_id.get_droneid_data import droneid_data
 from data_sources.height.srtm import srtm_lib
+from data_sources.ads_b.get_adsb_data import adsb_data
+from data_sources.weather.ibm_test import ibm_weather_csv
 from libs.various import *
 from libs.gui import path_planner_gui
+from external.path_visualizer import path_visualizer
 from shapely import geometry # used to calculate the distance to polygons
 from rdp import rdp
 import logging
@@ -34,9 +37,19 @@ import time # used for sleeping the main loop
 """ User constants """
 DRONEID_FORCE_ALL_REAL  = True
 
+MaxOperationWindSpeed_def = 12
+MaxOperationWindGusts_def = MaxOperationWindSpeed_def+5.14 # 10kts more than wind speed based on the tower at HCA Airport
+OperationMinTemperature_def = -10
+OperationMaxTemperature_def = 40
+
+WEATHER_HIST_YEAR = 2016
+WEATHER_HIST_MONTH = 1
+WEATHER_HIST_DATE = 1
+WEATHER_HIST_HOUR = 12
+
 class UAV_path_planner():
     """ User constants """
-    PRINT_STATISTICS        = True
+    PRINT_STATISTICS        = False
     SAVE_STATISTICS_TO_FILE = True
     """ UAV constants """
     UAV_NOMINAL_AIRSPEED_HORZ_MPS   = 15 # unit: m/s
@@ -119,10 +132,22 @@ class UAV_path_planner():
         # Instantiate and load droneid data class
         self.droneid = droneid_data(debug = False, force_sim_to_real = DRONEID_FORCE_ALL_REAL)
         self.gui.on_main_thread( lambda: self.gui.set_label_drone_id('loading', 'yellow') )
-        if self.droneid.download_data():
-            self.gui.on_main_thread( lambda: self.gui.set_label_drone_id('loaded', 'green') )
-        else:
-            self.gui.on_main_thread( lambda: self.gui.set_label_drone_id('error', 'red') )
+        if self.droneid.download_data(): self.gui.on_main_thread( lambda: self.gui.set_label_drone_id('loaded', 'green') )
+        else: self.gui.on_main_thread( lambda: self.gui.set_label_drone_id('error', 'red') )
+        self.droneid_data = self.droneid.get_drones_real_limited()
+
+        # Instantiate and load ADS-B data
+        self.adsb_module = adsb_data(False)
+        self.gui.on_main_thread( lambda: self.gui.set_label_adsb('loading', 'yellow') )
+        if self.adsb_module.download_data(): self.gui.on_main_thread( lambda: self.gui.set_label_adsb('loaded', 'green') )
+        else: self.gui.on_main_thread( lambda: self.gui.set_label_adsb('error', 'red') )
+        self.adsb_data = self.adsb_module.get_all_aircrafts_limited()
+
+        # Instantiate and load ADS-B data
+        self.gui.on_main_thread( lambda: self.gui.set_label_weather('loading', 'yellow') )
+        self.weather_module = ibm_weather_csv('data_sources/weather/DronePlanning/CleanedObservationsOdense.csv', 'Odense', 2016, MaxOperationWindSpeed_def, MaxOperationWindGusts_def, OperationMinTemperature_def, OperationMaxTemperature_def)
+        self.weather_module.loadCSV()
+        self.gui.on_main_thread( lambda: self.gui.set_label_weather('loaded', 'green') )
 
         # Set initial values for rally points
         self.rally_points_loaded = False
@@ -135,6 +160,12 @@ class UAV_path_planner():
         self.prev_Astar_g_scores = []
         self.prev_Astar_f_scores = []
         self.prev_Astar_smallest_heuristics = []
+
+        # Instantiate path visualizer class
+        self.path_visualizer_module = path_visualizer(True)
+
+        # Enable the global path plan button on gui
+        self.gui.on_main_thread( lambda: self.gui.enable_button_global_plan() )
 
     def stop_gui(self):
         self.gui.stop_thread()
@@ -382,7 +413,7 @@ class UAV_path_planner():
         return self.is_point_in_no_fly_zone_UTM(test_point_UTM, polygon_index, use_buffer_zone, use_base_buffer_distance_m)
 
     """ Path planning functions """
-    def plan_path_global(self, point_start, point_goal, path_planner = 0):
+    def plan_path_global(self, point_start, point_goal, path_planner = 0, step_size_horz=100, step_size_vert=10, search_time_max=INF):
         """
         Framework for different path planning algorithms
         Input: start and goal/end point (latitude, longitude in EPSG:4326, and relative altitude) as 3 value array or DICT (lat, lon, alt_rel)
@@ -420,9 +451,6 @@ class UAV_path_planner():
         # Update the start heuristic in the GUI
         self.gui.on_main_thread( lambda: self.gui.set_global_plan_start_heuristic(self.heuristic_a_star(point_start_converted_UTM, point_goal_converted_UTM, self.GLOBAL_PLANNING)) )
 
-        step_size_horz = 75
-        step_size_vert = 10
-        search_time_max = 60
         # Pre path planning check
         self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('pre-plan check', 'yellow') )
         if not self.pre_planner_check(point_start_converted_UTM, point_goal_converted_UTM, step_size_horz):
@@ -454,6 +482,7 @@ class UAV_path_planner():
 
         self.send_path_to_gui_geodetic(path_geodetic)
 
+        self.path_planner_used = path_planner
         self.planned_path_global_UTM = path_UTM
         self.planned_path_global_geodetic = path_geodetic
         self.point_start_global_geodetic = point_start
@@ -484,6 +513,23 @@ class UAV_path_planner():
             return False
         # Check if the goal is rechable with the drone specifications - TODO - remember to include the wind speed and direction
         # Check if the weather exceeds limits - TODO
+        weather_index = self.weather_module.convert_time_to_index(2016,1,1,12)
+        wind_speed = self.weather_module.get_wind_speed(weather_index)
+        wind_gust = self.weather_module.get_wind_gust(weather_index)
+        temp = self.weather_module.get_temp(weather_index)
+        precipitation = self.weather_module.get_precipitation(weather_index)
+        snowfall = self.weather_module.get_snowfall(weather_index)
+        if wind_speed > MaxOperationWindSpeed_def:
+            print colored('Wind speed exceeds limit, wind speed %f' % wind_speed, TERM_COLOR_ERROR)
+            return False
+        if wind_gust > MaxOperationWindGusts_def:
+            print colored('Wind gust exceeds limit, wind gust %f' % wind_gust, TERM_COLOR_ERROR)
+            return False
+        if OperationMinTemperature_def > temp > OperationMaxTemperature_def:
+            print colored('Temperature exceeds limit, temperature %f' % temp, TERM_COLOR_ERROR)
+            return False
+        # Still have no data for precipitation and snowfall so these are left out
+
         return True
 
     def plan_planner_Astar(self, point_start, point_goal, step_size_horz, step_size_vert, type_of_planning = 0, max_node_exploration = INF, search_time_max = FOREVER, force_replanning = False):
@@ -619,7 +665,7 @@ class UAV_path_planner():
                 # for element in planned_path:
                 #     print element
 
-                planned_path = self.reduce_path_rdp_UTM(planned_path, 6*step_size_vert)
+                #planned_path = self.reduce_path_rdp_UTM(planned_path, ((step_size_vert+step_size_horz)/2))
 
                 # DRAW
                 self.map_plotter.draw_path_UTM(planned_path)
@@ -946,10 +992,10 @@ class UAV_path_planner():
             avg_waypoint_dist, total3d_waypoint_dist = self.calc_avg_waypoint_dist(path_converted, horz_distances, vert_distances)
 
             fitness = self.HORZ_DISTANCE_FACTOR*horz_distance
-            fitness = fitness + self.VERT_DISTANCE_FACTOR*vert_distance
-            fitness = fitness + self.TRAVEL_TIME_FACTOR*travel_time
-            fitness = fitness + self.WAYPOINTS_FACTOR*waypoints
-            fitness = fitness + self.AVG_WAYPOINT_DIST_FACTOR*avg_waypoint_dist
+            fitness += self.VERT_DISTANCE_FACTOR*vert_distance
+            fitness += self.TRAVEL_TIME_FACTOR*travel_time
+            fitness += self.WAYPOINTS_FACTOR*waypoints
+            fitness += self.AVG_WAYPOINT_DIST_FACTOR*avg_waypoint_dist
             print colored('Path evaluation done', TERM_COLOR_INFO)
             print colored(RES_INDENT+'Path fitness %.02f [unitless]' % fitness, TERM_COLOR_RES)
             self.planned_path_global_fitness = fitness
@@ -959,8 +1005,8 @@ class UAV_path_planner():
             runtime_pp_s = self.time_planning_completed_s - self.time_planning_start_s # Calculate runtime
 
             # Calculate statistics
-            used_path_planner = self.PATH_PLANNER_NAMES[self.PATH_PLANNER]
-            estimated_flight_time = self.planned_path_global_geodetic[len(self.planned_path_global_geodetic)-1]['time'] - self.planned_path_global_geodetic[0]['time']
+            used_path_planner = self.path_planner_used #self.PATH_PLANNER_NAMES[self.PATH_PLANNER]
+            estimated_flight_time = self.planned_path_global_geodetic[len(self.planned_path_global_geodetic)-1]['time_rel'] - self.planned_path_global_geodetic[0]['time_rel']
 
             byte_amount = self.memory_usage_module.get_bytes()
             byte_amount_diff = self.memory_usage_module.get_bytes_diff()
@@ -968,6 +1014,18 @@ class UAV_path_planner():
             object_amount_diff = self.memory_usage_module.get_objects_diff()
 
             no_waypoints = len(self.planned_path_global_geodetic)
+
+            self.gui.on_main_thread( lambda: self.gui.set_label_gpe_fitness(fitness) )
+            self.gui.on_main_thread( lambda: self.gui.set_label_gpe_dist_tot(total3d_waypoint_dist) )
+            self.gui.on_main_thread( lambda: self.gui.set_label_gpe_dist_horz(horz_distance) )
+            self.gui.on_main_thread( lambda: self.gui.set_label_gpe_dist_vert(vert_distance) )
+            self.gui.on_main_thread( lambda: self.gui.set_label_gpe_eta(estimated_flight_time) )
+            self.gui.on_main_thread( lambda: self.gui.set_label_gpe_wps(no_waypoints) )
+            self.gui.on_main_thread( lambda: self.gui.set_label_gpe_runtime(runtime_pp_s) )
+            self.gui.on_main_thread( lambda: self.gui.set_label_gpe_bytes_tot(byte_amount) )
+            self.gui.on_main_thread( lambda: self.gui.set_label_gpe_objects_tot(object_amount) )
+            self.gui.on_main_thread( lambda: self.gui.set_label_gpe_bytes_planner(byte_amount_diff) )
+            self.gui.on_main_thread( lambda: self.gui.set_label_gpe_objects_planner(object_amount_diff) )
 
             # Print statistics
             if self.PRINT_STATISTICS:
@@ -1132,27 +1190,42 @@ class UAV_path_planner():
                         print colored(SUB_RES_INDENT+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, self.planned_path_global_geodetic[i]['lat'], self.planned_path_global_geodetic[i]['lon'], self.planned_path_global_geodetic[i]['alt'], self.planned_path_global_geodetic[i]['time']), TERM_COLOR_SUB_RES)
         else:
             print colored('\nCannot print the geodetic planed path because it is empty', TERM_COLOR_ERROR)
-    def convert_rel2abs_time(self, start_time_epoch = False):
+    def convert_rel2abs_time(self, path, start_time_epoch = False):
         """
         Converts the relative time to absoulte time by adding the current time or provided time of the start point to each point in the path
         Input: path and optional start time (all relative times are relative to the time at the starting point)
         Output: none but changes the input path and changes the key from 'time_rel' to 'time'
         """
-        if len(self.planned_path_global_geodetic) > 0:
+        if len(path) > 0:
             if start_time_epoch == False:
                 start_time_epoch = get_cur_time_epoch_wo_us()
-            for i in range(len(self.planned_path_global_geodetic)):
-                self.planned_path_global_geodetic[i]['time'] =self.planned_path_global_geodetic[i].pop('time_rel')
-                self.planned_path_global_geodetic[i]['time'] = self.planned_path_global_geodetic[i]['time'] + start_time_epoch
-    def convert_rel2abs_alt(self, abs_heigh_start_point):
+            for i in range(len(path)):
+                path[i]['time'] = path[i].pop('time_rel')
+                path[i]['time'] = path[i]['time'] + start_time_epoch
+    def convert_rel2abs_alt(self, abs_heigh_start_point, path):
         """
         Converts the relative heights to absoulte heights by adding the absoulute height of the start point to each point in the path
         Input: path and absoulute height of start point (all relative heights are relative to the height at the starting point)
         Output: none but changes the input path and changes the key from 'alt_rel' to 'alt'
         """
-        if len(self.planned_path_global_geodetic) > 0:
-            for i in range(len(self.planned_path_global_geodetic)):
-                self.planned_path_global_geodetic[i]['alt'] =self.planned_path_global_geodetic[i].pop('alt_rel')
+        if len(path) > 0:
+            for i in range(len(path)):
+                path[i]['alt'] =path[i].pop('alt_rel')
+    def visualize_path(self):
+        if len(self.planned_path_global_geodetic):
+            # Make a deepcopy so the 'time_rel' and 'alt_rel' can be changed to 'time' and 'alt'
+            tmp_planned_path_geodetic = deepcopy(self.planned_path_global_geodetic)
+
+            self.convert_rel2abs_time(tmp_planned_path_geodetic, start_time_epoch = 0) # does not change the values when start_time_epoch=0 but only the labels
+
+            point_start_alt_abs = self.get_altitude_geodetic(tmp_planned_path_geodetic[0])
+            self.convert_rel2abs_alt(point_start_alt_abs, tmp_planned_path_geodetic)
+
+            print tmp_planned_path_geodetic
+
+            route_id = self.path_visualizer_module.visualize_path(tmp_planned_path_geodetic)
+            return route_id
+        else: return None
 
 if __name__ == '__main__':
     # Save the start time before anything else
@@ -1198,6 +1271,8 @@ if __name__ == '__main__':
 
     # Show a plot of the planned path
     #UAV_path_planner_module.map_plotter.show_plot()
+
+    #print "Index is:", self.weather_module.convert_time_to_index(2016,1,1,12)
 
     do_exit = False
     while do_exit == False:
