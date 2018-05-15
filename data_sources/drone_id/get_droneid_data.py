@@ -31,6 +31,7 @@ import json
 import time
 import datetime # datetime.now
 import pytz # timezones in the datetime format
+import logging
 #print 'Import done\n'
 
 forever = 60*60*24*365*100 # 100 years excl. leap year
@@ -41,6 +42,8 @@ run_modes = ['download', 'simulate']
 
 class droneid_data():
     def __init__(self, debug = False, force_sim_to_real = False):
+        self.logger = logging.getLogger(__name__)
+
         self.internet_tester = internet_tools()
         self.url = 'https://droneid.dk/tobias/droneid.php' # API URL
         self.debug = debug
@@ -133,7 +136,7 @@ class droneid_data():
             #print itr
             self.drone_count = itr
             if self.drone_count == 0:
-                print "No DroneIDs seems to be online"
+                self.logger.info('No DroneIDs seems to be online"')
             if self.debug:
                 print "Entries:",self.drone_count
             response.close()

@@ -12,6 +12,7 @@ Tkinter examples: https://dzone.com/articles/python-gui-examples-tkinter-tutoria
 """
 
 from Tkinter import Tk, Label, Button, Entry, LEFT
+from ttk import Combobox
 import threading
 from Queue import Queue, Empty
 import logging
@@ -29,11 +30,15 @@ class StoppableThread(threading.Thread):
             self.join()
 
 class path_planner_gui(StoppableThread):
-    DEFAULT_START_LAT = 55.431122
-    DEFAULT_START_LON = 10.420436
-    DEFAULT_GOAL_LAT  = 55.427203
-    DEFAULT_GOAL_LON  = 10.419043
-    def __init__(self, auto_start = False):
+    DEFAULT_START_LAT = 55.435259 #55.431122
+    DEFAULT_START_LON = 10.410862 #10.420436
+    DEFAULT_GOAL_LAT  = 55.424736 #55.427203
+    DEFAULT_GOAL_LON  = 10.419749 #10.419043
+    def __init__(self, parent_class, auto_start = False):
+        # self.__class__ = type(self.__class__.__name__, (base_class, object), dict(self.__class__.__dict__))
+        # super(self.__class__, self).__init__()
+        self.parent_class = parent_class
+
         StoppableThread.__init__(self)
         self.q = Queue()
 
@@ -62,31 +67,69 @@ class path_planner_gui(StoppableThread):
                 self.root.after_idle(task)
         self.root.after(100, self.check_queue)
 
-    def set_label_no_fly_zones(self, txt):
+    def set_label_no_fly_zones(self, txt, color = 'black'):
         self.label_data_source_no_fly_zones_res.configure(text=txt)
-    def set_label_height_map(self, txt):
+        self.label_data_source_no_fly_zones_res.configure(fg=color)
+    def set_label_height_map(self, txt, color = 'black'):
         self.label_data_source_height_map_res.configure(text=txt)
-    def set_label_drone_id(self, txt):
+        self.label_data_source_height_map_res.configure(fg=color)
+    def set_label_drone_id(self, txt, color = 'black'):
         self.label_data_source_droneID_res.configure(text=txt)
-    def set_global_plan_start_heuristic(self, val):
+        self.label_data_source_droneID_res.configure(fg=color)
+    def set_label_adsb(self, txt, color = 'black'):
+        self.label_data_source_adsb_res.configure(text=txt)
+        self.label_data_source_adsb_res.configure(fg=color)
+    def set_label_weather(self, txt, color = 'black'):
+        self.label_data_source_weather_res.configure(text=txt)
+        self.label_data_source_weather_res.configure(fg=color)
+    def set_global_plan_start_heuristic(self, val, color = 'black'):
         self.label_global_plan_start_heuristic_res.configure(text='%.02f' % val)
-    def set_global_plan_cur_heuristic(self, val):
+        self.label_global_plan_start_heuristic_res.configure(fg=color)
+    def set_global_plan_cur_heuristic(self, val, color = 'black'):
         self.label_global_plan_cur_heuristic_res.configure(text='%.02f' % val)
-    def set_global_plan_horz_step_size(self, val):
+        self.label_global_plan_cur_heuristic_res.configure(fg=color)
+    def set_global_plan_horz_step_size(self, val, color = 'black'):
         self.label_global_plan_horz_step_size_res.configure(text='%.01f [m]' % val)
-    def set_global_plan_vert_step_size(self, val):
+        self.label_global_plan_horz_step_size_res.configure(fg=color)
+    def set_global_plan_vert_step_size(self, val, color = 'black'):
         self.label_global_plan_vert_step_size_res.configure(text='%.01f [m]' % val)
-    def set_global_plan_status(self, txt):
+        self.label_global_plan_vert_step_size_res.configure(fg=color)
+    def set_global_plan_status(self, txt, color = 'black'):
         self.label_global_plan_status_res.configure(text=txt)
-    def set_global_plan_search_time(self, val):
+        self.label_global_plan_status_res.configure(fg=color)
+    def set_global_plan_search_time(self, val, color = 'black'):
         self.label_global_plan_search_time_res.configure(text='%.01f [s]' % val)
-    def set_global_plan_nodes_visited(self, val):
+        self.label_global_plan_search_time_res.configure(fg=color)
+    def set_global_plan_nodes_visited(self, val, color = 'black'):
         self.label_global_plan_nodes_visited_res.configure(text='%i' % val)
+        self.label_global_plan_nodes_visited_res.configure(fg=color)
+    def set_global_plan_nodes_explored(self, val, color = 'black'):
+        self.label_global_plan_nodes_explored_res.configure(text='%i' % val)
+        self.label_global_plan_nodes_explored_res.configure(fg=color)
 
+    def global_planner_thread(self, point_start, point_goal, path_planner):
+        if self.parent_class.plan_path_global(point_start, point_goal, path_planner): # Plan path and test the result to update the GUI
+            self.button_local_plan.configure(state='normal')
+            self.button_global_plan.configure(state='normal')
+            self.button_global_plan.configure(text='Start global planning')
+        else: # The global path planner failed and therefore diable the local path planner and change the option to continue
+            self.button_local_plan.configure(state='disabled')
+            self.button_global_plan.configure(state='normal')
+            self.button_global_plan.configure(text='Continue global planning')
 
     def start_global_path_planning(self):
-        print 'Should call some function to start the global path planner'
-        self.button_local_plan.configure(state='normal') # this is just for test since it has not called anything yet and the global plan therefore isn't calculated
+        self.button_global_plan.configure(state='disabled')
+        self.button_local_plan.configure(state='disabled')
+
+        # Get data from the GUI
+        start_point_3dDICT = {'lat': float(self.input_start_point_lat.get()), 'lon': float(self.input_start_point_lon.get()), 'alt_rel': 0}
+        goal_point_3dDICT  = {'lat': float(self.input_goal_point_lat.get()), 'lon': float(self.input_goal_point_lon.get()), 'alt_rel': 0}
+        path_planner = self.combo_planner_type.get()
+
+        # Create and start the thread
+        thread_global_planning = threading.Thread(target=self.global_planner_thread, args=(start_point_3dDICT, goal_point_3dDICT, path_planner))
+        thread_global_planning.start()
+        #thread_global_planning.join()
 
     def start_local_path_planning(self):
         print 'Should call some function to start the local path planner'
@@ -101,6 +144,13 @@ class path_planner_gui(StoppableThread):
         row_num_left = 0
         self.label_start_point = Label(self.root, text="Path Planning", font=("Arial Bold", 12))
         self.label_start_point.grid(row=row_num_left, column=0, columnspan = 2)
+        row_num_left += 1
+        self.label_planner_type = Label(self.root, text="Type:")
+        self.label_planner_type.grid(row=row_num_left, column=0)
+        self.combo_planner_type = Combobox(self.root)
+        self.combo_planner_type['values'] = self.parent_class.PATH_PLANNER_NAMES
+        self.combo_planner_type.current(0)
+        self.combo_planner_type.grid(row=row_num_left, column=1)
 
         row_num_left += 1
         self.label_start_point = Label(self.root, text="Start point (geodetic)", font=("Arial Bold", 10))
@@ -172,6 +222,12 @@ class path_planner_gui(StoppableThread):
         self.label_global_plan_nodes_visited.grid(row=row_num_left, column=0)
         self.label_global_plan_nodes_visited_res = Label(self.root, text="N/A")
         self.label_global_plan_nodes_visited_res.grid(row=row_num_left, column=1)
+        row_num_left += 1
+        self.label_global_plan_nodes_explored = Label(self.root, text="Nodes explored:")
+        self.label_global_plan_nodes_explored.grid(row=row_num_left, column=0)
+        self.label_global_plan_nodes_explored_res = Label(self.root, text="N/A")
+        self.label_global_plan_nodes_explored_res.grid(row=row_num_left, column=1)
+
 
         row_num_left += 1
         self.button_local_plan = Button(self.root, text="Start local planning", command=self.start_local_path_planning)
@@ -187,23 +243,40 @@ class path_planner_gui(StoppableThread):
         self.label_data_source_no_fly_zones = Label(self.root, text="No-fly zones:")
         self.label_data_source_no_fly_zones.grid(row=row_num_right, column=3)
         self.label_data_source_no_fly_zones_res = Label(self.root, text="not loaded")
+        self.label_data_source_no_fly_zones_res.configure(fg='red')
         self.label_data_source_no_fly_zones_res.grid(row=row_num_right, column=4)
 
         row_num_right += 1
         self.label_data_source_height_map = Label(self.root, text="Height map:")
         self.label_data_source_height_map.grid(row=row_num_right, column=3)
         self.label_data_source_height_map_res = Label(self.root, text="not loaded")
+        self.label_data_source_height_map_res.configure(fg='red')
         self.label_data_source_height_map_res.grid(row=row_num_right, column=4)
 
         row_num_right += 1
         self.label_data_source_droneID = Label(self.root, text="DroneID:")
         self.label_data_source_droneID.grid(row=row_num_right, column=3)
         self.label_data_source_droneID_res = Label(self.root, text="not loaded")
+        self.label_data_source_droneID_res.configure(fg='red')
         self.label_data_source_droneID_res.grid(row=row_num_right, column=4)
+
+        row_num_right += 1
+        self.label_data_source_adsb = Label(self.root, text="ADS-B:")
+        self.label_data_source_adsb.grid(row=row_num_right, column=3)
+        self.label_data_source_adsb_res = Label(self.root, text="not loaded")
+        self.label_data_source_adsb_res.configure(fg='red')
+        self.label_data_source_adsb_res.grid(row=row_num_right, column=4)
+
+        row_num_right += 1
+        self.label_data_source_weather = Label(self.root, text="Weather:")
+        self.label_data_source_weather.grid(row=row_num_right, column=3)
+        self.label_data_source_weather_res = Label(self.root, text="not loaded")
+        self.label_data_source_weather_res.configure(fg='red')
+        self.label_data_source_weather_res.grid(row=row_num_right, column=4)
 
 
         # Configure the queue callback
-        self.root.after(100, self.check_queue)
+        self.root.after(250, self.check_queue)
 
         # Start the main loop
         self.root.mainloop()

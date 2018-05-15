@@ -29,13 +29,15 @@ from libs.gui import path_planner_gui
 from shapely import geometry # used to calculate the distance to polygons
 from rdp import rdp
 import logging
+import time # used for sleeping the main loop
 
 """ User constants """
-PRINT_STATISTICS        = True
-SAVE_STATISTICS_TO_FILE = True
 DRONEID_FORCE_ALL_REAL  = True
 
 class UAV_path_planner():
+    """ User constants """
+    PRINT_STATISTICS        = True
+    SAVE_STATISTICS_TO_FILE = True
     """ UAV constants """
     UAV_NOMINAL_AIRSPEED_HORZ_MPS   = 15 # unit: m/s
     UAV_NOMINAL_AIRSPEED_VERT_MPS   = 5  # unit: m/s
@@ -46,8 +48,8 @@ class UAV_path_planner():
     """ Path planning constants """
     IDEAL_FLIGHT_ALTITUDE           = 30 # unit: m
     PATH_PLANNER_ASTAR              = 0 # just an internal number to recognize the path planner
-    PATH_PLANNER_NAMES              = ['A star algorithm']
-    PATH_PLANNER                    = PATH_PLANNER_ASTAR # the name of the chosen path path planner; NOTE the user can set this
+    PATH_PLANNER_NAMES              = ['A star algorithm', 'RRT']
+    #PATH_PLANNER                    = PATH_PLANNER_ASTAR # the name of the chosen path path planner; NOTE the user can set this
     PATH_PLANNER_SPACE_DIMENSIONS   = 3 # NOTE that this only space dimension and the time dimension is therefore not included
     PP_PRINT_POPPED_NODE            = False
     PP_PRINT_EXPLORE_NODE           = False
@@ -73,6 +75,10 @@ class UAV_path_planner():
         self.debug = debug
         self.debug_test = False
 
+        # Instantiate memory_usage class
+        self.memory_usage_module = memory_usage()
+        self.memory_usage_module.save_heap_start() # Save the heap size before anything else
+
         # Instantiate coordinate transform class
         self.coord_conv = coordinate_transform(debug = False)
 
@@ -80,7 +86,7 @@ class UAV_path_planner():
         self.map_plotter = map_plotter(self.coord_conv, debug = False)
 
         # Instantiate and start the GUI
-        self.gui = path_planner_gui()
+        self.gui = path_planner_gui(self)
         self.gui.start()
 
         # Set initial values for loading of no-fly zones
@@ -90,33 +96,33 @@ class UAV_path_planner():
         self.no_fly_zone_polygons_reduced = []
         self.no_fly_zones_reduced = False
         # Instantiate and load no-fly zone class
-        self.gui.on_main_thread( lambda: self.gui.set_label_no_fly_zones('loading') )
+        self.gui.on_main_thread( lambda: self.gui.set_label_no_fly_zones('loading', 'yellow') )
         no_fly_zone_load_res = False
         if data_path_no_fly_zones == None: no_fly_zone_load_res = self.no_fly_zone_init_and_parse()
         else: no_fly_zone_load_res = self.no_fly_zone_init_and_parse(data_path_no_fly_zones)
-        if no_fly_zone_load_res: self.gui.on_main_thread( lambda: self.gui.set_label_no_fly_zones('loaded') )
-        else: self.gui.on_main_thread( lambda: self.gui.set_label_no_fly_zones('error') )
+        if no_fly_zone_load_res: self.gui.on_main_thread( lambda: self.gui.set_label_no_fly_zones('loaded', 'green') )
+        else: self.gui.on_main_thread( lambda: self.gui.set_label_no_fly_zones('error', 'red') )
         # Reduce no-fly zones
-        if self.reduce_ploygons_geodetic(start_point_3dDICT, goal_point_3dDICT): self.gui.on_main_thread( lambda: self.gui.set_label_no_fly_zones('loaded, reduced') )
-        else: self.gui.on_main_thread( lambda: self.gui.set_label_no_fly_zones('loaded, not reduced') )
+        if self.reduce_ploygons_geodetic(start_point_3dDICT, goal_point_3dDICT): self.gui.on_main_thread( lambda: self.gui.set_label_no_fly_zones('loaded, reduced', 'green') )
+        else: self.gui.on_main_thread( lambda: self.gui.set_label_no_fly_zones('loaded, not reduced', 'yellow') )
 
         # Set initial values for height map
         self.height_map_loaded = False
         # Instantiate and load height map class
         if data_path_height_map == None:
-            self.gui.on_main_thread( lambda: self.gui.set_label_height_map('missing') )
+            self.gui.on_main_thread( lambda: self.gui.set_label_height_map('missing', 'red') )
         else:
-            self.gui.on_main_thread( lambda: self.gui.set_label_height_map('loading') )
+            self.gui.on_main_thread( lambda: self.gui.set_label_height_map('loading', 'yellow') )
             self.height_map_init('data_sources/height/', start_point_3dDICT)
-            self.gui.on_main_thread( lambda: self.gui.set_label_height_map('loaded') )
+            self.gui.on_main_thread( lambda: self.gui.set_label_height_map('loaded', 'green') )
 
         # Instantiate and load droneid data class
         self.droneid = droneid_data(debug = False, force_sim_to_real = DRONEID_FORCE_ALL_REAL)
-        self.gui.on_main_thread( lambda: self.gui.set_label_drone_id('loading') )
+        self.gui.on_main_thread( lambda: self.gui.set_label_drone_id('loading', 'yellow') )
         if self.droneid.download_data():
-            self.gui.on_main_thread( lambda: self.gui.set_label_drone_id('loaded') )
+            self.gui.on_main_thread( lambda: self.gui.set_label_drone_id('loaded', 'green') )
         else:
-            self.gui.on_main_thread( lambda: self.gui.set_label_drone_id('error') )
+            self.gui.on_main_thread( lambda: self.gui.set_label_drone_id('error', 'red') )
 
         # Set initial values for rally points
         self.rally_points_loaded = False
@@ -376,14 +382,15 @@ class UAV_path_planner():
         return self.is_point_in_no_fly_zone_UTM(test_point_UTM, polygon_index, use_buffer_zone, use_base_buffer_distance_m)
 
     """ Path planning functions """
-    def plan_path(self, point_start, point_goal):
+    def plan_path_global(self, point_start, point_goal, path_planner = 0):
         """
         Framework for different path planning algorithms
         Input: start and goal/end point (latitude, longitude in EPSG:4326, and relative altitude) as 3 value array or DICT (lat, lon, alt_rel)
-        Output: planned path of geodetic points (latitude, longitude in EPSG:4326, relative altitude, and relative time)
+        Output: bool but the path is saved as internal object (planned path of geodetic points (latitude, longitude in EPSG:4326, relative altitude, and relative time))
         """
+        self.time_planning_start_s = get_cur_time_epoch() # Save start timestamp
         print colored('\nPath planning started', TERM_COLOR_INFO)
-        self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('started') )
+        self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('started', 'yellow') )
 
         # Convert to pos3dDICT
         try:
@@ -402,7 +409,7 @@ class UAV_path_planner():
             print colored(INFO_ALT_INDENT+'Start point: lat: %.03f, lon: %.03f' % (point_start_converted_geodetic['lat'], point_start_converted_geodetic['lon']), TERM_COLOR_INFO_ALT)
             print colored(INFO_ALT_INDENT+' Goal point: lat: %.03f, lon: %.03f' % (point_goal_converted_geodetic['lat'], point_goal_converted_geodetic['lon']), TERM_COLOR_INFO_ALT)
 
-        self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('converting points') )
+        self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('converting points', 'yellow') )
         # Convert to UTM for path planning
         point_start_converted_UTM = self.coord_conv.pos3dDICT_geodetic2pos4dDICT_UTM(point_start_converted_geodetic)
         point_goal_converted_UTM = self.coord_conv.pos3dDICT_geodetic2pos4dDICT_UTM(point_goal_converted_geodetic)
@@ -413,18 +420,18 @@ class UAV_path_planner():
         # Update the start heuristic in the GUI
         self.gui.on_main_thread( lambda: self.gui.set_global_plan_start_heuristic(self.heuristic_a_star(point_start_converted_UTM, point_goal_converted_UTM, self.GLOBAL_PLANNING)) )
 
-        step_size_horz = 50
-        step_size_vert = 5
-        search_time_max = 300
+        step_size_horz = 75
+        step_size_vert = 10
+        search_time_max = 40
         # Pre path planning check
-        self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('pre-plan check') )
+        self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('pre-plan check', 'yellow') )
         if not self.pre_planner_check(point_start_converted_UTM, point_goal_converted_UTM, step_size_horz):
-            self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('pre-plan check failed') )
+            self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('pre-plan check failed', 'red') )
             print colored('Error: did not pass pre path planning check', TERM_COLOR_ERROR)
             return []
 
         # Go to selected path planner
-        if self.PATH_PLANNER == self.PATH_PLANNER_ASTAR:
+        if path_planner == self.PATH_PLANNER_NAMES[0]: # A star path planning algorithm
             #print colored('Planning using A start', TERM_COLOR_INFO)
             #path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 16, 15, type_of_planning = self.GLOBAL_PLANNING, search_time_max = FOREVER)
             #path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 8, 10, type_of_planning = self.GLOBAL_PLANNING, search_time_max = 16)
@@ -432,18 +439,24 @@ class UAV_path_planner():
             #path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 2, 2.5, type_of_planning = self.GLOBAL_PLANNING, search_time_max = 180)
         else:
             print colored('Path planner type not defined', TERM_COLOR_ERROR)
-            self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('planner not defined') )
+            self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('planner not defined', 'red') )
             return []
 
         # Check if the path planner produced a result
         if len(path_UTM) <= 1:
             print colored('The chosen path planner could not find a solution to the problem', TERM_COLOR_ERROR)
-            return []
+            return False
         # Convert path from UTM to geodetic
         path_geodetic = []
         for i in range(len(path_UTM)):
             path_geodetic.append( self.coord_conv.pos4dDICT_UTM2pos4dDICT_geodetic( path_UTM[i] ) )
-        return path_geodetic
+        self.time_planning_completed_s = get_cur_time_epoch() # Save completed timestamp
+
+        self.planned_path_global_UTM = path_UTM
+        self.planned_path_global_geodetic = path_geodetic
+        self.point_start_global_geodetic = point_start
+        self.point_goal_global_geodetic  = point_goal
+        return True
 
     def pre_planner_check(self, point_start_UTM, point_goal_UTM, step_size_horz = 0):
         """
@@ -477,7 +490,7 @@ class UAV_path_planner():
             Christian Careaga: http://code.activestate.com/recipes/578919-python-a-pathfinding-with-binary-heap/
             Python docs: https://docs.python.org/2/library/heapq.html
         """
-        self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('initializing A *') )
+        self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('initializing A *', 'yellow') )
         #print colored('Entered A star path planner with horizontal step-size %.02f [m] and horizontal step-size %.02f [m]' % (step_size_horz, step_size_vert), TERM_COLOR_INFO)
         # Set start time of start point to 0 (relative)
         point_start['time_rel'] = 0
@@ -519,6 +532,7 @@ class UAV_path_planner():
                 open_list = self.prev_Astar_open_lists[i]
                 smallest_heuristic = self.prev_Astar_smallest_heuristics[i]
                 # Delete the old data
+                del self.prev_Astar_step_size_and_points[i]
                 del self.prev_Astar_closed_lists[i]
                 del self.prev_Astar_came_froms[i]
                 del self.prev_Astar_g_scores[i]
@@ -568,7 +582,7 @@ class UAV_path_planner():
         time_cur = time_start
         time_last = time_start
 
-        self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('searching') )
+        self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('searching', 'orange') )
         # Start searching
         while open_list and open_list_popped_ctr < max_node_exploration and time_cur-time_start < search_time_max: # Continue searching until the open_list is empty = all nodes discovered and evaluated; or max tries exceeded
             #time.sleep(10)
@@ -587,13 +601,13 @@ class UAV_path_planner():
             is_goal, dist_to_goal = self.is_goal_UTM(current, point_goal_tuple, step_size_horz)
             if is_goal:
                 time_cur = get_cur_time_epoch()
-                self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('backtracing') )
+                self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('backtracing', 'green') )
                 print colored('Path found in %.02f [s]' % (time_cur-time_start), TERM_COLOR_RES)
                 planned_path = self.backtrace_path(came_from, current, point_start_tuple, point_goal_tuple)
                 print colored('Path has %i waypoints\n' % (len(planned_path)), TERM_COLOR_RES)
 
-                for element in planned_path:
-                    print element
+                # for element in planned_path:
+                #     print element
 
                 planned_path = self.reduce_path_rdp_UTM(planned_path, 6*step_size_vert)
 
@@ -625,6 +639,14 @@ class UAV_path_planner():
                     #print 'INSIDE GEOFENCE'
                     continue
 
+                if neighbor[2] <= self.get_altitude_UTM(neighbor)-point_start_alt_abs: # note that <= is to include points on the surface (it is a drone, not a car)
+                    #print 'Below the earths surface, neighbor rel altitude %.02f, neighbor abs altitude %.02f, start abs altitude %.02f' % (neighbor[2], self.get_altitude_UTM(neighbor), point_start_alt_abs)
+                    continue
+
+                if neighbor[2] > self.MAX_FLYING_ALTITUDE:
+                    print 'Violates the %.01f altitude legislated limit'
+                    continue
+
                 # Ignore the neighbor which is already evaluated and test if a better path is found to the neighbor node (tentative_g_score is smaller than the g_score stored in the g_score dict (the 0 is the default value if the element does not exist) = better path)
                 if neighbor in closed_list and tentative_g_score >= g_score.get(neighbor, 0):
                     #print colored('Node already visited', 'yellow')
@@ -646,14 +668,15 @@ class UAV_path_planner():
             if (round(time_cur,1) - round(time_start,1)) % 0.5 == 0:
                 self.gui.on_main_thread( lambda: self.gui.set_global_plan_search_time( time_cur - time_start ) )
                 self.gui.on_main_thread( lambda: self.gui.set_global_plan_nodes_visited( len(closed_list) ) )
+                self.gui.on_main_thread( lambda: self.gui.set_global_plan_nodes_explored( len(open_list) ) )
 
         # No solution found
         if time_cur-time_start >= search_time_max:
-            self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('time limit reached') )
+            self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('time limit reached', 'red') )
         elif open_list_popped_ctr >= max_node_exploration:
-            self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('node limit reached') )
+            self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('node limit reached', 'red') )
         else:
-            self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('no solution exists') )
+            self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('no solution exists', 'red') )
         print colored('A star path planner stopped, visited %i nodes (max %i) in %.02f [s] (max %.02f [s]), open list size %i, closed list size %i\n' % (open_list_popped_ctr, max_node_exploration, time_cur-time_start, search_time_max, len(open_list), len(closed_list)), TERM_COLOR_SUB_RES)
 
         # Save the planning data so it can be resumed
@@ -882,25 +905,25 @@ class UAV_path_planner():
 
 
     """ Path planner evaluator functions """
-    def evaluate_path(self, path):
+    def evaluate_path(self):
         """
         Calculates the fitness score of a path by evaluating the different path elements
-        Input: path of geodetic corrdinates
-        Output: fitness score
+        Input: none but uses self.planned_path_global_geodetic
+        Output: none
         """
         # Check if the path is a path (more than 2 waypoints)
-        if len(path) >= 2:
+        if len(self.planned_path_global_geodetic) >= 2:
             print colored('\nEvaluating path', TERM_COLOR_INFO)
             # Convert to / ensure pos4dDICT object
             path_converted = []
             try:
-                tmp_var = path[0]['lat']
+                tmp_var = self.planned_path_global_geodetic[0]['lat']
             except TypeError:
                 print 'converting'
-                for i in range(len(path)):
-                    path_converted.append( self.coord_conv.pos4d2pos4dDICT_geodetic( path[i] ) )
+                for i in range(len(self.planned_path_global_geodetic)):
+                    path_converted.append( self.coord_conv.pos4d2pos4dDICT_geodetic( self.planned_path_global_geodetic[i] ) )
             else:
-                path_converted = path
+                path_converted = self.planned_path_global_geodetic
 
             horz_distance, horz_distances = self.calc_horz_dist_geodetic_total(path_converted)
             vert_distance, vert_distance_ascend, vert_distance_descend, vert_distances = self.calc_vert_dist(path_converted)
@@ -919,10 +942,54 @@ class UAV_path_planner():
             fitness = fitness + self.AVG_WAYPOINT_DIST_FACTOR*avg_waypoint_dist
             print colored('Path evaluation done', TERM_COLOR_INFO)
             print colored(RES_INDENT+'Path fitness %.02f [unitless]' % fitness, TERM_COLOR_RES)
-            return fitness, total3d_waypoint_dist, horz_distance, vert_distance
+            self.planned_path_global_fitness = fitness
+
+            self.memory_usage_module.save_heap() # Save the heap size before calculating and outputting statistics
+
+            runtime_pp_s = self.time_planning_completed_s - self.time_planning_start_s # Calculate runtime
+
+            # Calculate statistics
+            used_path_planner = self.PATH_PLANNER_NAMES[self.PATH_PLANNER]
+            estimated_flight_time = self.planned_path_global_geodetic[len(self.planned_path_global_geodetic)-1]['time'] - self.planned_path_global_geodetic[0]['time']
+
+            byte_amount = self.memory_usage_module.get_bytes()
+            byte_amount_diff = self.memory_usage_module.get_bytes_diff()
+            object_amount = self.memory_usage_module.get_objects()
+            object_amount_diff = self.memory_usage_module.get_objects_diff()
+
+            no_waypoints = len(self.planned_path_global_geodetic)
+
+            # Print statistics
+            if self.PRINT_STATISTICS:
+                print colored('\n                              Path planner: %s' % used_path_planner, 'yellow')
+                print colored('                              Path fitness: %f' % fitness, 'yellow')
+                print colored('                            Total distance: %.02f [m]' % total3d_waypoint_dist, 'yellow')
+                print colored('                       Horizontal distance: %.02f [m]' % horz_distance, 'yellow')
+                print colored('                         Vertical distance: %.02f [m]' % vert_distance, 'yellow')
+                print colored('                      Runtime path planner: %f [s] (%s)' % (runtime_pp_s, str(convert_time_delta2human(runtime_pp_s))), 'yellow')
+                print colored('                      Number of bytes used: %i' % byte_amount, 'yellow')
+                print colored('  Number of bytes used by the path planner: %i' % byte_amount_diff, 'yellow')
+                print colored('                    Number of objects used: %i' % object_amount, 'yellow')
+                print colored('Number of objects used by the path planner: %i' % object_amount_diff, 'yellow')
+                print colored('                     Estimated flight time: %.02f [s] (%s)' % (estimated_flight_time, str(convert_time_delta2human(estimated_flight_time))), 'yellow') # TODO
+                print colored('                       Number of waypoints: %i' % (no_waypoints), 'yellow')
+                print colored('                                      Path: %s' % (str(self.planned_path_global_geodetic)), 'yellow')
+
+            # Save statistics to file
+            if self.SAVE_STATISTICS_TO_FILE:
+                now = get_cur_time_datetime()
+                file_name = ('PP_%d-%02d-%02d-%02d-%02d.csv' % (now.year, now.month, now.day, now.hour, now.minute))
+                sub_folder = 'results'
+                file_name = sub_folder+'/'+file_name
+                output_file_CSV = open(file_name, 'w')
+                output_writer_CSV = csv.writer(output_file_CSV,quoting=csv.QUOTE_MINIMAL)
+                fields = ['path planner', 'path fitness [unitless]', 'total distance [m]', 'horizontal distance [m]', 'vertical distance [m]', 'runtime path planner [s]', 'bytes used', 'bytes used by the path planner', 'objects used', 'objects used by the path planner', 'flight time [s]', 'waypoints', 'start point', 'goal point', 'path']
+                output_writer_CSV.writerow(fields)
+                data = [used_path_planner, fitness, total3d_waypoint_dist, horz_distance, vert_distance, runtime_pp_s, byte_amount, byte_amount_diff, object_amount, object_amount_diff, estimated_flight_time, no_waypoints, self.point_start_global_geodetic, self.point_goal_global_geodetic, self.planned_path_global_geodetic]
+                output_writer_CSV.writerow(data)
+                output_file_CSV.close()
         else:
             print colored('\nCannot evaluate path because it has fewer than 2 waypoints', TERM_COLOR_ERROR)
-            return None, None, None, None
 
     def calc_horz_dist_geodetic_total(self, path):
         """
@@ -1023,59 +1090,59 @@ class UAV_path_planner():
         return avg_waypoint_dist, total3d_waypoint_dist
 
     """ Other helper functions """
-    def print_path_raw(self, path):
-        """ Prints the input path in a raw format """
-        if len(path) >= 1:
-            print colored('\n'+SUB_RES_INDENT+str(path), TERM_COLOR_SUB_RES)
+    def print_path_raw(self):
+        """ Prints the planned geodetic path in a raw format """
+        if len(self.planned_path_global_geodetic) >= 1:
+            print colored('\n'+SUB_RES_INDENT+str(self.planned_path_global_geodetic), TERM_COLOR_SUB_RES)
         else:
             print colored('\nCannot print path because it is empty', TERM_COLOR_ERROR)
-    def print_path_nice(self, path):
-        """ Prints the input path in a human readable format """
-        if len(path) >= 1:
-            print colored('\nPlanned path:', TERM_COLOR_RES)
+    def print_path_nice(self):
+        """ Prints the input self.planned_path_global_geodetic in a human readable format """
+        if len(self.planned_path_global_geodetic) >= 1:
+            print colored('\nPlanned self.planned_path_global_geodetic:', TERM_COLOR_RES)
             try:
-                tmp_var = path[0]['time']
+                tmp_var = self.planned_path_global_geodetic[0]['time']
             except KeyError:
                 try:
-                    tmp_var = path[0]['alt']
+                    tmp_var = self.planned_path_global_geodetic[0]['alt']
                 except KeyError:
-                    for i in range(len(path)):
-                        print colored(SUB_RES_INDENT+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt_rel'], path[i]['time_rel']), TERM_COLOR_SUB_RES)
+                    for i in range(len(self.planned_path_global_geodetic)):
+                        print colored(SUB_RES_INDENT+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, self.planned_path_global_geodetic[i]['lat'], self.planned_path_global_geodetic[i]['lon'], self.planned_path_global_geodetic[i]['alt_rel'], self.planned_path_global_geodetic[i]['time_rel']), TERM_COLOR_SUB_RES)
                 else:
-                    for i in range(len(path)):
-                        print colored(SUB_RES_INDENT+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt'], path[i]['time_rel']), TERM_COLOR_SUB_RES)
+                    for i in range(len(self.planned_path_global_geodetic)):
+                        print colored(SUB_RES_INDENT+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, self.planned_path_global_geodetic[i]['lat'], self.planned_path_global_geodetic[i]['lon'], self.planned_path_global_geodetic[i]['alt'], self.planned_path_global_geodetic[i]['time_rel']), TERM_COLOR_SUB_RES)
             else:
                 try:
-                    tmp_var = path[0]['alt']
+                    tmp_var = self.planned_path_global_geodetic[0]['alt']
                 except KeyError:
-                    for i in range(len(path)):
-                        print colored(SUB_RES_INDENT+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt_rel'], path[i]['time']), TERM_COLOR_SUB_RES)
+                    for i in range(len(self.planned_path_global_geodetic)):
+                        print colored(SUB_RES_INDENT+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, self.planned_path_global_geodetic[i]['lat'], self.planned_path_global_geodetic[i]['lon'], self.planned_path_global_geodetic[i]['alt_rel'], self.planned_path_global_geodetic[i]['time']), TERM_COLOR_SUB_RES)
                 else:
-                    for i in range(len(path)):
-                        print colored(SUB_RES_INDENT+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, path[i]['lat'], path[i]['lon'], path[i]['alt'], path[i]['time']), TERM_COLOR_SUB_RES)
+                    for i in range(len(self.planned_path_global_geodetic)):
+                        print colored(SUB_RES_INDENT+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, self.planned_path_global_geodetic[i]['lat'], self.planned_path_global_geodetic[i]['lon'], self.planned_path_global_geodetic[i]['alt'], self.planned_path_global_geodetic[i]['time']), TERM_COLOR_SUB_RES)
         else:
-            print colored('\nCannot print path because it is empty', TERM_COLOR_ERROR)
-    def convert_rel2abs_time(self, path, start_time_epoch = False):
+            print colored('\nCannot print the geodetic planed path because it is empty', TERM_COLOR_ERROR)
+    def convert_rel2abs_time(self, start_time_epoch = False):
         """
         Converts the relative time to absoulte time by adding the current time or provided time of the start point to each point in the path
         Input: path and optional start time (all relative times are relative to the time at the starting point)
         Output: none but changes the input path and changes the key from 'time_rel' to 'time'
         """
-        if len(path) > 0:
+        if len(self.planned_path_global_geodetic) > 0:
             if start_time_epoch == False:
                 start_time_epoch = get_cur_time_epoch_wo_us()
-            for i in range(len(path)):
-                path[i]['time'] =path[i].pop('time_rel')
-                path[i]['time'] = path[i]['time'] + start_time_epoch
-    def convert_rel2abs_alt(self, path, abs_heigh_start_point):
+            for i in range(len(self.planned_path_global_geodetic)):
+                self.planned_path_global_geodetic[i]['time'] =self.planned_path_global_geodetic[i].pop('time_rel')
+                self.planned_path_global_geodetic[i]['time'] = self.planned_path_global_geodetic[i]['time'] + start_time_epoch
+    def convert_rel2abs_alt(self, abs_heigh_start_point):
         """
         Converts the relative heights to absoulte heights by adding the absoulute height of the start point to each point in the path
         Input: path and absoulute height of start point (all relative heights are relative to the height at the starting point)
         Output: none but changes the input path and changes the key from 'alt_rel' to 'alt'
         """
-        if len(path) > 0:
-            for i in range(len(path)):
-                path[i]['alt'] =path[i].pop('alt_rel')
+        if len(self.planned_path_global_geodetic) > 0:
+            for i in range(len(self.planned_path_global_geodetic)):
+                self.planned_path_global_geodetic[i]['alt'] =self.planned_path_global_geodetic[i].pop('alt_rel')
 
 if __name__ == '__main__':
     # Save the start time before anything else
@@ -1110,70 +1177,24 @@ if __name__ == '__main__':
 
     """ Path planning start """
     # Plan path
-    time_planning_start_s = get_cur_time_epoch()
-    path_planned = UAV_path_planner_module.plan_path(start_point_3dDICT, goal_point_3dDICT)
-    time_planning_completed_s = get_cur_time_epoch()
+    #UAV_path_planner_module.plan_path_global(start_point_3dDICT, goal_point_3dDICT)
     # Print planned path
-    UAV_path_planner_module.print_path_nice(path_planned)
-    #UAV_path_planner_module.print_path_raw(path_planned)
+    #UAV_path_planner_module.print_path_nice()
+    #UAV_path_planner_module.print_path_raw()
     # Convert the time from relative to absolute
-    UAV_path_planner_module.convert_rel2abs_time(path_planned)
+    #UAV_path_planner_module.convert_rel2abs_time()
     # Evaluate path and also note the total distance, horizontal distance, and vertical distance for the statistics
-    path_planned_fitness, total_dist, horz_dist, vert_dist = UAV_path_planner_module.evaluate_path(path_planned)
+    #UAV_path_planner_module.evaluate_path()
 
     # Show a plot of the planned path
-    UAV_path_planner_module.map_plotter.show_plot()
+    #UAV_path_planner_module.map_plotter.show_plot()
 
-    """ Path planning done, finalize with statistics """
-    if len(path_planned) >= 1:
-        time_task_completed_s = get_cur_time_epoch() # Save the end time
-        memory_usage_module.save_heap() # Save the heap size before calculating and outputting statistics
-
-        # Calculate runtimes
-        runtime_total_s = time_task_completed_s - time_task_start_s
-        runtime_pp_s = time_planning_completed_s - time_planning_start_s
-
-        # Calculate statistics
-        used_path_planner = UAV_path_planner_module.PATH_PLANNER_NAMES[UAV_path_planner_module.PATH_PLANNER]
-        estimated_flight_time = path_planned[len(path_planned)-1]['time'] - path_planned[0]['time']
-
-        byte_amount = memory_usage_module.get_bytes()
-        byte_amount_diff = memory_usage_module.get_bytes_diff()
-        object_amount = memory_usage_module.get_objects()
-        object_amount_diff = memory_usage_module.get_objects_diff()
-
-        no_waypoints = len(path_planned)
-
-        # Print statistics
-        if PRINT_STATISTICS:
-            print colored('\n                              Path planner: %s' % used_path_planner, 'yellow')
-            print colored('                              Path fitness: %f' % path_planned_fitness, 'yellow')
-            print colored('                            Total distance: %.02f [m]' % total_dist, 'yellow')
-            print colored('                       Horizontal distance: %.02f [m]' % horz_dist, 'yellow')
-            print colored('                         Vertical distance: %.02f [m]' % vert_dist, 'yellow')
-            print colored('                             Runtime total: %f [s] (%s)' % (runtime_total_s, str(convert_time_delta2human(runtime_total_s))), 'yellow')
-            print colored('                      Runtime path planner: %f [s] (%s)' % (runtime_pp_s, str(convert_time_delta2human(runtime_pp_s))), 'yellow')
-            print colored('                      Number of bytes used: %i' % byte_amount, 'yellow')
-            print colored('  Number of bytes used by the path planner: %i' % byte_amount_diff, 'yellow')
-            print colored('                    Number of objects used: %i' % object_amount, 'yellow')
-            print colored('Number of objects used by the path planner: %i' % object_amount_diff, 'yellow')
-            print colored('                     Estimated flight time: %.02f [s] (%s)' % (estimated_flight_time, str(convert_time_delta2human(estimated_flight_time))), 'yellow') # TODO
-            print colored('                       Number of waypoints: %i' % (no_waypoints), 'yellow')
-            print colored('                                      Path: %s' % (str(path_planned)), 'yellow')
-
-        # Save statistics to file
-        if SAVE_STATISTICS_TO_FILE:
-            now = get_cur_time_datetime()
-            file_name = ('PP_%d-%02d-%02d-%02d-%02d.csv' % (now.year, now.month, now.day, now.hour, now.minute))
-            sub_folder = 'results'
-            file_name = sub_folder+'/'+file_name
-            output_file_CSV = open(file_name, 'w')
-            output_writer_CSV = csv.writer(output_file_CSV,quoting=csv.QUOTE_MINIMAL)
-            fields = ['path planner', 'path fitness [unitless]', 'total distance [m]', 'horizontal distance [m]', 'vertical distance [m]', 'runtime total [s]', 'runtime path planner [s]', 'bytes used', 'bytes used by the path planner', 'objects used', 'objects used by the path planner', 'flight time [s]', 'waypoints', 'start point', 'goal point', 'path']
-            output_writer_CSV.writerow(fields)
-            data = [used_path_planner, path_planned_fitness, total_dist, horz_dist, vert_dist, runtime_total_s, runtime_pp_s, byte_amount, byte_amount_diff, object_amount, object_amount_diff, estimated_flight_time, no_waypoints, start_point_3dDICT, goal_point_3dDICT, path_planned]
-            output_writer_CSV.writerow(data)
-            output_file_CSV.close()
-
+    do_exit = False
+    while do_exit == False:
+        try:
+            time.sleep(0.1)
+        except KeyboardInterrupt:
+            # Ctrl+C was hit - exit program
+            do_exit = True
     # Stop the GUI thread
-    #UAV_path_planner_module.stop_gui()
+    UAV_path_planner_module.stop_gui()
