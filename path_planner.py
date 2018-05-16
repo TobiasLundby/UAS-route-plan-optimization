@@ -12,7 +12,7 @@ License: BSD 3-Clause
 """
 
 """ Import libraries """
-from math import pow, sqrt, pi, cos, sin, atan2, atan
+from math import pow, sqrt, pi, cos, sin, atan2, atan, floor
 from termcolor import colored
 from pyproj import Geod
 from copy import copy, deepcopy
@@ -413,14 +413,78 @@ class UAV_path_planner():
         return self.is_point_in_no_fly_zone_UTM(test_point_UTM, polygon_index, use_buffer_zone, use_base_buffer_distance_m)
 
     """ Path planning functions """
+    def plan_path_local(self, path_planner = 0):
+        """
+        Framework for different global path planning algorithms
+        Input: start and goal/end point (latitude, longitude in EPSG:4326, and relative altitude) as 3 value array or DICT (lat, lon, alt_rel)
+        Output: bool but the path is saved as internal object (planned path of geodetic points (latitude, longitude in EPSG:4326, relative altitude, and relative time))
+        """
+        if len(self.planned_path_global_UTM) >= 2 and len(self.planned_path_global_geodetic) >= 2: # Check if the global path plan actually made a path
+            print colored('\nLocal path planning started', TERM_COLOR_INFO)
+
+            # Get wind data
+            weather_index = self.weather_module.convert_time_to_index(WEATHER_HIST_YEAR,WEATHER_HIST_MONTH,WEATHER_HIST_DATE,WEATHER_HIST_HOUR)  # Should be live data when running live
+            wind_velocity = self.weather_module.get_wind_speed(weather_index)
+            wind_gust = self.weather_module.get_wind_gust(weather_index)
+            wind_dir_deg = self.weather_module.get_wind_direction(weather_index)
+            temp = self.weather_module.get_temp(weather_index)
+            precipitation = self.weather_module.get_precipitation(weather_index)
+            snowfall = self.weather_module.get_snowfall(weather_index)
+
+            # Init simualtion variables
+            uav = {'y':self.planned_path_global_UTM[0]['y'], 'x':self.planned_path_global_UTM[0]['x'], 'z_rel':self.planned_path_global_UTM[0]['z_rel'],'status':0}
+            acceleration_factor = 2
+            time_step = 1 # unit: s
+            time_ctr = 0
+            waypoint_ctr = 0
+            waypoint_last = len(self.planned_path_global_UTM)-1
+            stop_simulation = False
+
+            for i in range(waypoint_last):
+                print '\nCurrent waypoints %d and %d' % (i, i+1)
+                # Calculate the direction vector scaled based on time and the step size
+                travel_dir = [
+                    (self.planned_path_global_UTM[i+1]['y']-self.planned_path_global_UTM[i]['y']) / ( (self.planned_path_global_UTM[i+1]['time_rel']-self.planned_path_global_UTM[i]['time_rel']) / time_step ),
+                    (self.planned_path_global_UTM[i+1]['x']-self.planned_path_global_UTM[i]['x']) / ( (self.planned_path_global_UTM[i+1]['time_rel']-self.planned_path_global_UTM[i]['time_rel']) / time_step ),
+                    (self.planned_path_global_UTM[i+1]['z_rel']-self.planned_path_global_UTM[i]['z_rel']) / ( (self.planned_path_global_UTM[i+1]['time_rel']-self.planned_path_global_UTM[i]['time_rel']) / time_step )
+                    ]
+                steps_on_current_line = int(floor( ( self.planned_path_global_UTM[i+1]['time_rel']-self.planned_path_global_UTM[i]['time_rel'] )/time_step ))
+                for k in range(steps_on_current_line):
+                    uav['y'] += travel_dir[0]
+                    uav['x'] += travel_dir[1]
+                    uav['z_rel'] += travel_dir[2]
+                    # TODO make some check
+                    if not self.local_planner_uav_check(uav):
+                        if uav['status'] == 1:
+                            exit(1)
+
+                    print 'UAV:', uav
+                    time.sleep(time_step/acceleration_factor)
+                last_time_step = ((self.planned_path_global_UTM[i+1]['time_rel']-self.planned_path_global_UTM[i]['time_rel']) / time_step) - steps_on_current_line
+                if last_time_step != 0.0:
+                    uav['y'] += travel_dir[0]*last_time_step
+                    uav['x'] += travel_dir[1]*last_time_step
+                    uav['z_rel'] += travel_dir[2]*last_time_step
+                    # TODO make some check
+                    print 'UAV:', uav
+                    time.sleep(time_step/acceleration_factor)
+
+            print colored('\nSimulated until end or stop', TERM_COLOR_INFO)
+
+    def local_planner_uav_check(self, uav):
+        print 'do some check'
+        uav['status'] = 1
+        return False
+
+
     def plan_path_global(self, point_start, point_goal, path_planner = 0, step_size_horz=100, step_size_vert=10, search_time_max=INF):
         """
-        Framework for different path planning algorithms
+        Framework for different global path planning algorithms
         Input: start and goal/end point (latitude, longitude in EPSG:4326, and relative altitude) as 3 value array or DICT (lat, lon, alt_rel)
         Output: bool but the path is saved as internal object (planned path of geodetic points (latitude, longitude in EPSG:4326, relative altitude, and relative time))
         """
         self.time_planning_start_s = get_cur_time_epoch() # Save start timestamp
-        print colored('\nPath planning started', TERM_COLOR_INFO)
+        print colored('\nGlobal path planning started', TERM_COLOR_INFO)
         self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('started', 'yellow') )
 
         # Convert to pos3dDICT
@@ -458,12 +522,17 @@ class UAV_path_planner():
             print colored('Error: did not pass pre path planning check', TERM_COLOR_ERROR)
             return []
 
+        # Get and save the wind direction and velocity
+        weather_index = self.weather_module.convert_time_to_index(WEATHER_HIST_YEAR,WEATHER_HIST_MONTH,WEATHER_HIST_DATE,WEATHER_HIST_HOUR) # Should be live data when running live
+        self.wind_dir_deg = self.weather_module.get_wind_direction(weather_index)
+        self.wind_velocity = self.weather_module.get_wind_speed(weather_index)
+
         # Go to selected path planner
         if path_planner == self.PATH_PLANNER_NAMES[0]: # A star path planning algorithm
             #print colored('Planning using A start', TERM_COLOR_INFO)
             #path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 16, 15, type_of_planning = self.GLOBAL_PLANNING, search_time_max = FOREVER)
             #path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 8, 10, type_of_planning = self.GLOBAL_PLANNING, search_time_max = 16)
-            path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, step_size_horz, step_size_vert, type_of_planning = self.GLOBAL_PLANNING, search_time_max = search_time_max)
+            path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, step_size_horz, step_size_vert, type_of_planning = self.GLOBAL_PLANNING, search_time_max = search_time_max, use_start_elevation_m = self.IDEAL_FLIGHT_ALTITUDE)
             #path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 2, 2.5, type_of_planning = self.GLOBAL_PLANNING, search_time_max = 180)
         else:
             print colored('Path planner type not defined', TERM_COLOR_ERROR)
@@ -489,14 +558,6 @@ class UAV_path_planner():
         self.point_goal_global_geodetic  = point_goal
         return True
 
-    def send_path_to_gui_geodetic(self, path):
-        out_str = ''
-        for i in range(len(path)):
-            out_str += 'Waypoint %d: ' % i
-            out_str += str(path[i])
-            out_str += '\n'
-        self.gui.on_main_thread( lambda: self.gui.set_scrolledtext_global_path(out_str) )
-
     def pre_planner_check(self, point_start_UTM, point_goal_UTM, step_size_horz = 0):
         """
         Pre path planning check
@@ -505,42 +566,43 @@ class UAV_path_planner():
         Input: start and goal point in UTM format
         Output: bool (True = passed, False = Failed)
         """
+        # Check start and goal point to see if they are within a no-fly zone
         if self.is_point_in_no_fly_zones_UTM(point_start_UTM, step_size_horz)[0]:
             print colored('Start point is inside geofence', TERM_COLOR_ERROR)
             return False
         elif self.is_point_in_no_fly_zones_UTM(point_goal_UTM, step_size_horz)[0]:
             print colored('Goal point is inside geofence', TERM_COLOR_ERROR)
             return False
-        # Check if the goal is rechable with the drone specifications - TODO - remember to include the wind speed and direction
-        # Check if the weather exceeds limits - TODO
-        weather_index = self.weather_module.convert_time_to_index(2016,1,1,12)
+
+        # Check the weather to see if it exceeds the UAV limit
+        weather_index = self.weather_module.convert_time_to_index(WEATHER_HIST_YEAR,WEATHER_HIST_MONTH,WEATHER_HIST_DATE,WEATHER_HIST_HOUR)
         wind_velocity = self.weather_module.get_wind_speed(weather_index)
         wind_gust = self.weather_module.get_wind_gust(weather_index)
         wind_dir_deg = self.weather_module.get_wind_direction(weather_index)
         temp = self.weather_module.get_temp(weather_index)
         precipitation = self.weather_module.get_precipitation(weather_index)
         snowfall = self.weather_module.get_snowfall(weather_index)
-        if wind_velocity > MaxOperationWindSpeed_def:
+        if wind_velocity > MaxOperationWindSpeed_def: # Check wind speed/velocity
             print colored('Wind velocity exceeds limit, wind speed %f' % wind_velocity, TERM_COLOR_ERROR)
             return False
-        if wind_gust > MaxOperationWindGusts_def:
+        if wind_gust > MaxOperationWindGusts_def: # Check wind gusts
             print colored('Wind gust exceeds limit, wind gust %f' % wind_gust, TERM_COLOR_ERROR)
             return False
-        if OperationMinTemperature_def > temp > OperationMaxTemperature_def:
+        if OperationMinTemperature_def > temp > OperationMaxTemperature_def: # Check temperature (double bounded)
             print colored('Temperature exceeds limit, temperature %f' % temp, TERM_COLOR_ERROR)
             return False
         # Still have no data for precipitation and snowfall so these are left out
 
         # Check if the goal is rechable in a straight line path
-        uav_max_range_incl_wind = self.calc_max_range_incl_wind_UTM(point_start_UTM, point_goal_UTM, wind_dir_deg, wind_velocity)
-        start_goal_distance = self.calc_euclidian_dist_UTM(point_start_UTM, point_goal_UTM)[0]
-        if uav_max_range_incl_wind < start_goal_distance:
+        uav_max_range_incl_wind = self.calc_max_range_incl_wind_UTM(point_start_UTM, point_goal_UTM, wind_dir_deg, wind_velocity) # Calculate the max range considering wind
+        start_goal_distance = self.calc_euclidian_dist_UTM(point_start_UTM, point_goal_UTM)[0] # Calculate the distance to goal
+        if uav_max_range_incl_wind < start_goal_distance: # Test if rechable
             print colored('UAV cannot reach goal with the wind taken into account, UAV max dist %f, distance to goal %f' % (uav_max_range_incl_wind, start_goal_distance), TERM_COLOR_ERROR)
             return False
 
         return True
 
-    def plan_planner_Astar(self, point_start, point_goal, step_size_horz, step_size_vert, type_of_planning = 0, max_node_exploration = INF, search_time_max = FOREVER, force_replanning = False):
+    def plan_planner_Astar(self, point_start, point_goal, step_size_horz, step_size_vert, type_of_planning = 0, max_node_exploration = INF, search_time_max = FOREVER, force_replanning = False, use_start_elevation_m = 0):
         """
         A star algorithm path planner
         Input: start and goal point in UTM format
@@ -562,6 +624,10 @@ class UAV_path_planner():
         point_start_alt_abs = self.get_altitude_UTM(point_start)
         point_goal_alt_abs  = self.get_altitude_UTM(point_goal)
         point_goal['z_rel'] = point_goal_alt_abs-point_start_alt_abs
+
+        if use_start_elevation_m != 0:
+            point_start_original = deepcopy(point_start)
+            point_start['z_rel'] = use_start_elevation_m
         # Convert points to tuples
         point_start_tuple = self.coord_conv.pos4dDICT2pos4dTUPLE_UTM(point_start)
         point_goal_tuple  = self.coord_conv.pos4dDICT2pos4dTUPLE_UTM(point_goal)
@@ -664,15 +730,24 @@ class UAV_path_planner():
             # Test if current point is close enough to the goal point
             is_goal, dist_to_goal = self.is_goal_UTM(current, point_goal_tuple, step_size_horz, step_size_vert)
             if is_goal:
+                """ Solution has been found """
                 time_cur = get_cur_time_epoch()
                 self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('backtracing', 'green') )
                 print colored('Path found in %.02f [s]' % (time_cur-time_start), TERM_COLOR_RES)
                 planned_path = self.backtrace_path(came_from, current, point_start_tuple, point_goal_tuple, type_of_planning = type_of_planning)
                 print colored('Path has %i waypoints\n' % (len(planned_path)), TERM_COLOR_RES)
 
+                if use_start_elevation_m != 0: # add the original start point
+                    planned_path = [point_start_original] + planned_path
+                    planned_path[1]['time_rel'] = self.calc_travel_time_from_UTMpoints_w_wind(point_start_original, planned_path[1])
+                    for i in range(len(planned_path)):
+                        if i != 0 and i != 1:
+                            planned_path[i]['time_rel'] += planned_path[1]['time_rel']
+
                 # for element in planned_path:
                 #     print element
 
+                self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('backtracing', 'green') )
                 #planned_path = self.reduce_path_rdp_UTM(planned_path, ((step_size_vert+step_size_horz)/2))
 
                 # DRAW
@@ -688,7 +763,7 @@ class UAV_path_planner():
             # Add current node to the evaluated nodes / closed list
             closed_list.add(current)
 
-
+            """ Explore neighbors """
             for y, x, z in neighbors_scaled: # Explore the neighbors
                 neighbor = self.pos4dTUPLE_UTM_copy_and_move_point(current, y, x, z, type_of_planning) # Construct the neighbor node; the function calculates the 4 dimension by the time required to travel between the nodes
 
@@ -784,7 +859,7 @@ class UAV_path_planner():
         if type_of_planning == self.GLOBAL_PLANNING:
             # Calculate the travel time from the already present info (computed in copy_and_move)
             #travel_time = child_point4dUTM[3]-parent_point4dUTM[3] # The global planner does not use time!
-            travel_time = self.calc_travel_time_from_UTMpoints(child_point4dUTM, parent_point4dUTM)
+            travel_time = self.calc_travel_time_from_UTMpoints_w_wind(child_point4dUTM, parent_point4dUTM)
             total_dist_seg, seg_horz_distance_seg, seg_vert_distance_seg = self.calc_euclidian_dist_UTM(parent_point4dUTM, child_point4dUTM)
 
             # Calculate the distance to the start and goal node to see if the altutide whould be affected
@@ -823,7 +898,6 @@ class UAV_path_planner():
                 print colored('Type of planning; node cost defaulted to 0', TERM_COLOR_ERROR)
             return 0
 
-
     def print_a_star_open_list_nice(self, list_in):
         print colored('\nPrinting the open list; contains %i elements' % len(list_in), TERM_COLOR_INFO)
         for i in range(len(list_in)):
@@ -850,11 +924,11 @@ class UAV_path_planner():
         # Correct the timestamps since the global planner does not plan in the time dimension
         if type_of_planning == self.GLOBAL_PLANNING:
             for i in range(len(path)-1):
-                path[i+1]['time_rel'] =  path[i]['time_rel'] + self.calc_travel_time_from_UTMpoints(path[i], path[i+1])
-                #print path[i]['time_rel'], path[i+1]['time_rel'], self.calc_travel_time_from_UTMpoints(path[i], path[i+1])
+                path[i+1]['time_rel'] =  path[i]['time_rel'] + self.calc_travel_time_from_UTMpoints_w_wind(path[i], path[i+1])
+                #print path[i]['time_rel'], path[i+1]['time_rel'], self.calc_travel_time_from_UTMpoints_w_wind(path[i], path[i+1])
         # Since the last point is within the acceptance radius of the goal point, the x, y, and z_rel of the last point is replaced with the data from the goal point and the added travel time is calculated and added
         tmp_second_last_point_arr = [path[-2]['y'], path[-2]['x'], path[-2]['z_rel']]
-        path[-1]['time_rel'] = path[-2]['time_rel'] + self.calc_travel_time_from_UTMpoints(tmp_second_last_point_arr, goal_node)
+        path[-1]['time_rel'] = path[-2]['time_rel'] + self.calc_travel_time_from_UTMpoints_w_wind(tmp_second_last_point_arr, goal_node)
         path[-1]['y'] = goal_node[0] # element 0 = y
         path[-1]['x'] = goal_node[1] # element 1 = x
         path[-1]['z_rel'] = goal_node[2] # element 2 = z_rel
@@ -886,7 +960,7 @@ class UAV_path_planner():
             if i == 0:
                 planned_path.append({'hemisphere':hemisphere,'zone':zone,'letter':letter,'y':planned_path_yxz[i][0],'x':planned_path_yxz[i][1],'z_rel':planned_path_yxz[i][2],'time_rel':0})
             else:
-                travel_time_abs = planned_path[i-1]['time_rel'] + self.calc_travel_time_from_UTMpoints(planned_path_yxz[i-1], planned_path_yxz[i])
+                travel_time_abs = planned_path[i-1]['time_rel'] + self.calc_travel_time_from_UTMpoints_w_wind(planned_path_yxz[i-1], planned_path_yxz[i])
                 planned_path.append({'hemisphere':hemisphere,'zone':zone,'letter':letter,'y':planned_path_yxz[i][0],'x':planned_path_yxz[i][1],'z_rel':planned_path_yxz[i][2],'time_rel':travel_time_abs})
 
         return planned_path
@@ -902,7 +976,7 @@ class UAV_path_planner():
         if type_of_planning == self.GLOBAL_PLANNING:
             travel_time_delta = 0
         else:
-            travel_time_delta = self.calc_travel_time_from_UTMpoints(point4dUTM, tmp_point_tuple)
+            travel_time_delta = self.calc_travel_time_from_UTMpoints_w_wind(point4dUTM, tmp_point_tuple)
         tmp_point_arr[3] = tmp_point_arr[3] + travel_time_delta
         return (tmp_point_arr[0], tmp_point_arr[1], tmp_point_arr[2], tmp_point_arr[3], tmp_point_arr[4], tmp_point_arr[5], tmp_point_arr[6])
 
@@ -939,6 +1013,19 @@ class UAV_path_planner():
             print colored('Cannot calculate euclidian horizontal distance because formats do not match', TERM_COLOR_ERROR)
             return INF
 
+    def calc_travel_time_from_UTMpoints_w_wind(self, point4dUTM1, point4dUTM2):
+        """
+        Calculates the travel time by combining the horizontal and vertical travel times using pythagoras
+        It also takes the wind direction into account.
+        Note that self.wind_dir_deg and self.wind_velocity should be defined
+        Input: 2 4d UTM points
+        Output: travel time [s]
+        """
+        uav_azimuth12 = self.calc_angle_deg_between_UTM_points(point4dUTM1, point4dUTM2)
+        uav_gs = self.calc_gs_from_tas_and_wind(uav_azimuth12, self.UAV_NOMINAL_AIRSPEED_HORZ_MPS, self.wind_dir_deg, self.wind_velocity)
+        dist, horz_dist, vert_dist = self.calc_euclidian_dist_UTM(point4dUTM1, point4dUTM2)
+        return ( (horz_dist / uav_gs) + ( vert_dist / self.UAV_NOMINAL_AIRSPEED_VERT_MPS) )
+
     def calc_travel_time_from_UTMpoints(self, point4dUTM1, point4dUTM2):
         """
         Calculates the travel time by combining the horizontal and vertical travel times using pythagoras
@@ -971,13 +1058,30 @@ class UAV_path_planner():
                 print colored(RES_INDENT+'Node is within goal acceptance radius; distance between node and goal: %.02f [m], acceptance radius: %.02f [m]' % (dist, in_goal_acceptance_radius_m), TERM_COLOR_RES)
             return True, dist
 
+    def send_path_to_gui_geodetic(self, path):
+        out_str = ''
+        for i in range(len(path)):
+            out_str += 'Waypoint %d: ' % i
+            out_str += str(path[i])
+            out_str += '\n'
+        self.gui.on_main_thread( lambda: self.gui.set_scrolledtext_global_path(out_str) )
+
     def calc_angle_deg_between_UTM_points(self, point4dUTM1, point4dUTM2):
         if isinstance(point4dUTM1, dict) and isinstance(point4dUTM2, dict):
-            return (atan((point4dUTM2['y']-point4dUTM1['y']) / (point4dUTM2['x']-point4dUTM1['x'])) * 180 / pi) + 180
+            numerator = point4dUTM2['y']-point4dUTM1['y']
+            denominator = point4dUTM2['x']-point4dUTM1['x']
         elif ( isinstance(point4dUTM1, tuple) or isinstance(point4dUTM1, list) ) and ( isinstance(point4dUTM2, tuple) or isinstance(point4dUTM2, list) ):
-            return (atan((point4dUTM2[0]-point4dUTM1[0]) / (point4dUTM2[1]-point4dUTM1[1])) * 180 / pi) + 180
+            numerator = point4dUTM2[0]-point4dUTM1[0]
+            denominator = point4dUTM2[1]-point4dUTM1[1]
         else:
             return False
+        if denominator == 0:
+            if numerator > 0:
+                return 270 # pi/2 rad = 90 deg, 90 deg + 180 deg = 270 deg
+            else: # numerator < 0
+                return 90 # 3pi/2 rad = 270 deg, 270 deg + 180 deg = 90 deg (overflow)
+        else:
+            return (atan(numerator / denominator) * 180 / pi) + 180
 
     def calc_gs_from_tas_and_wind(self, uav_azi_deg, uav_velocity, wind_direction_deg, wind_velocity):
         """

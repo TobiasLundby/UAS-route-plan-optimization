@@ -168,7 +168,6 @@ class path_planner_gui(StoppableThread):
             self.button_global_plan.configure(text='Continue global planning')
             self.button_evaluate_path.configure(state='disabled')
             self.button_web_visualize.configure(state='disabled')
-
     def start_global_path_planning(self):
         self.button_global_plan.configure(state='disabled')
         self.button_local_plan.configure(state='disabled')
@@ -189,8 +188,18 @@ class path_planner_gui(StoppableThread):
         thread_global_planning.start()
         #thread_global_planning.join()
 
+    def local_planner_thread(self, path_planner):
+        self.parent_class.plan_path_local(path_planner)
+        self.button_global_plan.configure(state='normal')
+        self.button_local_plan.configure(state='normal')
     def start_local_path_planning(self):
-        print 'Should call some function to start the local path planner'
+        self.button_global_plan.configure(state='disabled')
+        self.button_local_plan.configure(state='disabled')
+        # Get data from the GUI
+        path_planner = str(self.combo_planner_type.get())
+        # Create and start the thread
+        thread_local_planning = threading.Thread(target=self.local_planner_thread, args=(path_planner,))
+        thread_local_planning.start()
 
     def show_result_webpage(self):
         self.parent_class.map_plotter.show_plot()
