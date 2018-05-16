@@ -129,7 +129,8 @@ class path_visualizer():
         """
         if isinstance(routeid, (int, long)):
             try:
-                r = requests.delete("http://uas.heltner.net/routes", json={'routeid': routeid}, timeout=2)
+                #r = requests.delete("http://uas.heltner.net/routes", json={'routeid': routeid}, timeout=2) # old way of putting the route ID as json data
+                r = requests.delete("http://uas.heltner.net/routes/%d" % routeid, timeout=2)
             except requests.exceptions.Timeout:
                 # Maybe set up for a retry, or continue in a retry loop
                 print colored('Request has timed out', 'red')
