@@ -56,6 +56,9 @@ class UAV_path_planner():
     UAV_NOMINAL_AIRSPEED_VERT_MPS   = 5  # unit: m/s
     UAV_NOMINAL_BATTERY_TIME_MIN    = 20 # unit: min
     UAV_NOMINAL_BATTERY_TIME_S      = UAV_NOMINAL_BATTERY_TIME_MIN*60 # unit: s
+    UAV_STATUS_NORMAL               = 0
+    UAV_STATUS_IN_NO_FLY_ZONE       = 1
+    UAV_STATUS_WEATHER_LIMIT        = 2
     """ Legislation constants """
     MAX_FLYING_ALTITUDE             = 100 # unit: m; max flying altitude for rural areas
     """ Path planning constants """
@@ -108,6 +111,8 @@ class UAV_path_planner():
         self.no_fly_zone_polygons = []
         self.no_fly_zone_polygons_reduced = []
         self.no_fly_zones_reduced = False
+        self.no_fly_zone_polygons_dynamic = []
+        self.load_dynamic_no_fly_zones()
         # Instantiate and load no-fly zone class
         self.gui.on_main_thread( lambda: self.gui.set_label_no_fly_zones('loading', 'yellow') )
         no_fly_zone_load_res = False
@@ -336,25 +341,33 @@ class UAV_path_planner():
             return True
         return False
 
-    def is_point_in_no_fly_zones_UTM(self, point3dUTM, buffer_distance_m = 0, use_base_buffer_distance_m = True):
+    def load_dynamic_no_fly_zones(self):
+        no_fly_zone = [[55.431397, 10.411145, 0.0], [55.432968, 10.414696, 0.0], [55.430588, 10.416380, 0.0], [55.429997, 10.411573, 0.0]]
+        no_fly_zone_coordinates_UTM = self.coord_conv.pos3d_geodetic2pos3d_UTM_multiple(no_fly_zone) # convert coordinates to UTM
+        no_fly_zone_coordinates_UTM_y_x = [[x[0],x[1]] for x in no_fly_zone_coordinates_UTM] # extract y and x
+        self.no_fly_zone_polygons_dynamic.append(geometry.Polygon(no_fly_zone_coordinates_UTM_y_x)) # append the polygon to the combined polygons
+
+    def is_point_in_no_fly_zones_UTM(self, point3dUTM, buffer_distance_m = 0, use_base_buffer_distance_m = True, use_dynamic = False):
         """
         Tests if an UTM point is within any of the no-fly zone polygons
         Input: UTM point3d as array (y, x, alt_rel ...) along with an optional buffer distance [m] and use of base buffer distance (define)
         Ouput: bool (True: point is inside) and distance to nearest polygon [m]
         """
         smallest_dist = INF
-        if self.no_fly_zones_reduced:
+        if use_dynamic:
+            no_fly_zone_polygons_to_use = self.no_fly_zone_polygons_dynamic
+        elif self.no_fly_zones_reduced:
             no_fly_zone_polygons_to_use = self.no_fly_zone_polygons_reduced
         else:
             no_fly_zone_polygons_to_use = self.no_fly_zone_polygons
         for i in range(len(no_fly_zone_polygons_to_use)):
-            within, dist = self.is_point_in_no_fly_zone_UTM(point3dUTM, i, buffer_distance_m, use_base_buffer_distance_m)
+            within, dist = self.is_point_in_no_fly_zone_UTM(point3dUTM, i, buffer_distance_m, use_base_buffer_distance_m, use_dynamic)
             if dist < smallest_dist:
                 smallest_dist = dist
             if within:
                 return True, dist
         return False, smallest_dist
-    def is_point_in_no_fly_zone_UTM(self, point3dUTM, polygon_index, buffer_distance_m = 0, use_base_buffer_distance_m = True):
+    def is_point_in_no_fly_zone_UTM(self, point3dUTM, polygon_index, buffer_distance_m = 0, use_base_buffer_distance_m = True, use_dynamic = False):
         """
         Tests if an UTM point is within a specified polygon
         Input: UTM point3d as array (y, x, alt_rel ...) and polygon index along with an optional buffer distance [m] and use of base buffer distance (define)
@@ -365,7 +378,9 @@ class UAV_path_planner():
         else:
             test_point3dUTM = point3dUTM
 
-        if self.no_fly_zones_reduced:
+        if use_dynamic:
+            dist = self.no_fly_zone_polygons_dynamic[polygon_index].distance(geometry.Point(test_point3dUTM))
+        elif self.no_fly_zones_reduced:
             dist = self.no_fly_zone_polygons_reduced[polygon_index].distance(geometry.Point(test_point3dUTM))
         else:
             dist = self.no_fly_zone_polygons[polygon_index].distance(geometry.Point(test_point3dUTM))
@@ -413,12 +428,14 @@ class UAV_path_planner():
         return self.is_point_in_no_fly_zone_UTM(test_point_UTM, polygon_index, use_buffer_zone, use_base_buffer_distance_m)
 
     """ Path planning functions """
-    def plan_path_local(self, path_planner = 0):
+    def plan_path_local(self, step_size_horz = 2, step_size_vert = 1, path_planner = 0):
         """
         Framework for different global path planning algorithms
         Input: start and goal/end point (latitude, longitude in EPSG:4326, and relative altitude) as 3 value array or DICT (lat, lon, alt_rel)
         Output: bool but the path is saved as internal object (planned path of geodetic points (latitude, longitude in EPSG:4326, relative altitude, and relative time))
         """
+        step_size_horz = 50
+        step_size_vert = 10
         if len(self.planned_path_global_UTM) >= 2 and len(self.planned_path_global_geodetic) >= 2: # Check if the global path plan actually made a path
             print colored('\nLocal path planning started', TERM_COLOR_INFO)
 
@@ -432,7 +449,7 @@ class UAV_path_planner():
             snowfall = self.weather_module.get_snowfall(weather_index)
 
             # Init simualtion variables
-            uav = {'y':self.planned_path_global_UTM[0]['y'], 'x':self.planned_path_global_UTM[0]['x'], 'z_rel':self.planned_path_global_UTM[0]['z_rel'],'status':0}
+            uav = {'y':self.planned_path_global_UTM[0]['y'], 'x':self.planned_path_global_UTM[0]['x'], 'z_rel':self.planned_path_global_UTM[0]['z_rel'],'status':self.UAV_STATUS_NORMAL}
             acceleration_factor = 2
             time_step = 1 # unit: s
             time_ctr = 0
@@ -454,12 +471,32 @@ class UAV_path_planner():
                     uav['x'] += travel_dir[1]
                     uav['z_rel'] += travel_dir[2]
                     # TODO make some check
-                    if not self.local_planner_uav_check(uav):
-                        if uav['status'] == 1:
+                    if not self.local_planner_uav_check(uav, time_ctr, time_step, step_size_horz):
+                        if uav['status'] == self.UAV_STATUS_IN_NO_FLY_ZONE:
+                            print 'UAV is close to a dynamic no-fly zone, replanning'
+                            waypoint_to_plan_to = i+1
+                            while True:
+                                colission, smallest_dist = self.is_point_in_no_fly_zones_UTM(self.planned_path_global_UTM[waypoint_to_plan_to], buffer_distance_m = 2*step_size_horz, use_dynamic = True)
+                                if not colission:
+                                    break
+                                waypoint_to_plan_to += 1
+                            print 'Planning towards waypoint ', waypoint_to_plan_to
+                            new_start_point = deepcopy(self.planned_path_global_UTM[waypoint_to_plan_to])
+                            new_start_point['y'] = uav['y']
+                            new_start_point['x'] = uav['x']
+                            new_start_point['z_rel'] = uav['z_rel']
+                            print self.planned_path_global_UTM[waypoint_to_plan_to]
+                            print new_start_point
+                            # Update the start heuristic in the GUI
+                            self.gui.on_main_thread( lambda: self.gui.set_global_plan_start_heuristic(self.heuristic_a_star(new_start_point, self.planned_path_global_UTM[waypoint_to_plan_to], self.LOCAL_PLANNING)) )
+                            path_UTM = self.plan_planner_Astar(new_start_point, self.planned_path_global_UTM[waypoint_to_plan_to], step_size_horz = step_size_horz, step_size_vert = step_size_vert, type_of_planning = self.LOCAL_PLANNING)
+                            for element in path_UTM:
+                                print element
                             exit(1)
 
                     print 'UAV:', uav
                     time.sleep(time_step/acceleration_factor)
+                    time_ctr += time_step
                 last_time_step = ((self.planned_path_global_UTM[i+1]['time_rel']-self.planned_path_global_UTM[i]['time_rel']) / time_step) - steps_on_current_line
                 if last_time_step != 0.0:
                     uav['y'] += travel_dir[0]*last_time_step
@@ -468,13 +505,29 @@ class UAV_path_planner():
                     # TODO make some check
                     print 'UAV:', uav
                     time.sleep(time_step/acceleration_factor)
+                    time_ctr += time_step
 
             print colored('\nSimulated until end or stop', TERM_COLOR_INFO)
 
-    def local_planner_uav_check(self, uav):
-        print 'do some check'
-        uav['status'] = 1
-        return False
+    def local_planner_uav_check(self, uav, time_current, time_step, step_size_horz, wind_velocity = 0, wind_gust = 0, temp = 0):
+        # Check for new no-fly zones
+        colission, smallest_dist = self.is_point_in_no_fly_zones_UTM(uav,buffer_distance_m = 2*step_size_horz, use_dynamic = True)
+        print colission, smallest_dist
+        if colission:
+            uav['status'] = self.UAV_STATUS_IN_NO_FLY_ZONE
+            return False
+
+        # Check for ads-b data TODO
+        # Check for droneID dat TODO
+
+        # Check for weather
+        if wind_velocity > MaxOperationWindSpeed_def or wind_gust > MaxOperationWindGusts_def or OperationMinTemperature_def > temp > OperationMaxTemperature_def: # Check wind speed/velocity
+            uav['status'] = self.UAV_STATUS_WEATHER_LIMIT
+            print colored('Weather has changed for the worse', TERM_COLOR_ERROR)
+            return False
+
+        # Passed the check, return
+        return True
 
 
     def plan_path_global(self, point_start, point_goal, path_planner = 0, step_size_horz=100, step_size_vert=10, search_time_max=INF):
@@ -620,10 +673,12 @@ class UAV_path_planner():
         #print colored('Entered A star path planner with horizontal step-size %.02f [m] and horizontal step-size %.02f [m]' % (step_size_horz, step_size_vert), TERM_COLOR_INFO)
         # Set start time of start point to 0 (relative)
         point_start['time_rel'] = 0
+        point_goal['time_rel'] = 0
         # Get start altitude and calc and set relative goal altitude
         point_start_alt_abs = self.get_altitude_UTM(point_start)
         point_goal_alt_abs  = self.get_altitude_UTM(point_goal)
-        point_goal['z_rel'] = point_goal_alt_abs-point_start_alt_abs
+        if type_of_planning == self.GLOBAL_PLANNING:
+            point_goal['z_rel'] = point_goal_alt_abs-point_start_alt_abs
 
         if use_start_elevation_m != 0:
             point_start_original = deepcopy(point_start)
@@ -632,7 +687,7 @@ class UAV_path_planner():
         point_start_tuple = self.coord_conv.pos4dDICT2pos4dTUPLE_UTM(point_start)
         point_goal_tuple  = self.coord_conv.pos4dDICT2pos4dTUPLE_UTM(point_goal)
 
-        if type_of_planning == self.GLOBAL_PLANNING:
+        if type_of_planning == self.GLOBAL_PLANNING or type_of_planning == self.LOCAL_PLANNING:
             self.gui.on_main_thread( lambda: self.gui.set_global_plan_horz_step_size(step_size_horz) )
             self.gui.on_main_thread( lambda: self.gui.set_global_plan_vert_step_size(step_size_vert) )
 
@@ -773,17 +828,21 @@ class UAV_path_planner():
                 if self.PP_PRINT_EXPLORE_NODE:
                     print colored(INFO_ALT_INDENT+'Exploring node (%.02f [m], %.02f [m], %.02f [m], %.02f [s]) with tentative G score %.02f, prevoius G score %.02f (0 = node not visited)' % (neighbor[0], neighbor[1], neighbor[2], neighbor[3], tentative_g_score, g_score.get(neighbor, 0)), TERM_COLOR_INFO_ALT)
 
-                # Maybe test here if inside no-fly zones or violate aircrafts and skip if needed NOTE TODO see a-star-test.py
                 if self.is_point_in_no_fly_zones_UTM(neighbor, step_size_horz)[0]:
                     #print 'INSIDE GEOFENCE'
                     continue
+
+                if type_of_planning == 1:
+                    if self.is_point_in_no_fly_zones_UTM(neighbor, step_size_horz, use_dynamic = True)[0]:
+                        #print 'INSIDE GEOFENCE'
+                        continue
 
                 if neighbor[2]+step_size_vert <= self.get_altitude_UTM(neighbor)-point_start_alt_abs: # note that <= is to include points on the surface (it is a drone, not a car)
                     #print 'Below the earths surface, neighbor rel altitude %.02f, neighbor abs altitude %.02f, start abs altitude %.02f' % (neighbor[2], self.get_altitude_UTM(neighbor), point_start_alt_abs)
                     continue
 
                 if neighbor[2] > self.MAX_FLYING_ALTITUDE:
-                    print 'Violates the %.01f altitude legislated limit'
+                    print 'Violates the %.01f altitude legislated limit' % neighbor[2]
                     continue
 
                 # Ignore the neighbor which is already evaluated and test if a better path is found to the neighbor node (tentative_g_score is smaller than the g_score stored in the g_score dict (the 0 is the default value if the element does not exist) = better path)
@@ -856,21 +915,22 @@ class UAV_path_planner():
         Output: scalar node cost [unitless]
         """
         node_cost = 0
+
+        # Calculate the travel time from the already present info (computed in copy_and_move)
+        #travel_time = child_point4dUTM[3]-parent_point4dUTM[3] # The global planner does not use time!
+        travel_time = self.calc_travel_time_from_UTMpoints_w_wind(child_point4dUTM, parent_point4dUTM)
+        total_dist_seg, seg_horz_distance_seg, seg_vert_distance_seg = self.calc_euclidian_dist_UTM(parent_point4dUTM, child_point4dUTM)
+
+        # Calculate the distance to the start and goal node to see if the altutide whould be affected
+        #total_dist_start, horz_distance_start, vert_distance_start = self.calc_euclidian_dist_UTM(start_point4dUTM, child_point4dUTM)
+        total_dist_goal, horz_distance_goal, vert_distance_goal = self.calc_euclidian_dist_UTM(goal_point4dUTM, child_point4dUTM)
+
+        # Calculate the height of the child point
+        point_child_alt_abs = self.get_altitude_UTM(child_point4dUTM)
+        point_child_et_start_alt_diff = point_child_alt_abs - point_start_alt_abs
+        #print point_start_alt_abs, point_child_alt_abs, point_child_et_start_alt_diff, self.IDEAL_FLIGHT_ALTITUDE+point_child_et_start_alt_diff, child_point4dUTM[2], abs(self.IDEAL_FLIGHT_ALTITUDE+point_child_et_start_alt_diff - child_point4dUTM[2])
+
         if type_of_planning == self.GLOBAL_PLANNING:
-            # Calculate the travel time from the already present info (computed in copy_and_move)
-            #travel_time = child_point4dUTM[3]-parent_point4dUTM[3] # The global planner does not use time!
-            travel_time = self.calc_travel_time_from_UTMpoints_w_wind(child_point4dUTM, parent_point4dUTM)
-            total_dist_seg, seg_horz_distance_seg, seg_vert_distance_seg = self.calc_euclidian_dist_UTM(parent_point4dUTM, child_point4dUTM)
-
-            # Calculate the distance to the start and goal node to see if the altutide whould be affected
-            #total_dist_start, horz_distance_start, vert_distance_start = self.calc_euclidian_dist_UTM(start_point4dUTM, child_point4dUTM)
-            total_dist_goal, horz_distance_goal, vert_distance_goal = self.calc_euclidian_dist_UTM(goal_point4dUTM, child_point4dUTM)
-
-            # Calculate the height of the child point
-            point_child_alt_abs = self.get_altitude_UTM(child_point4dUTM)
-            point_child_et_start_alt_diff = point_child_alt_abs - point_start_alt_abs
-            #print point_start_alt_abs, point_child_alt_abs, point_child_et_start_alt_diff, self.IDEAL_FLIGHT_ALTITUDE+point_child_et_start_alt_diff, child_point4dUTM[2], abs(self.IDEAL_FLIGHT_ALTITUDE+point_child_et_start_alt_diff - child_point4dUTM[2])
-
             # Penalize for flight altitude
             if horz_distance_goal > step_size_horz: # Not close to the goal - keep ideal altitude
                 node_cost += abs(self.IDEAL_FLIGHT_ALTITUDE+point_child_et_start_alt_diff - child_point4dUTM[2])
@@ -886,8 +946,18 @@ class UAV_path_planner():
             return node_cost
 
         elif type_of_planning == self.LOCAL_PLANNING:
+            # Penalize for flight altitude
+            if horz_distance_goal > step_size_horz: # Not close to the goal - keep ideal altitude
+                node_cost += abs(self.IDEAL_FLIGHT_ALTITUDE+point_child_et_start_alt_diff - child_point4dUTM[2])
+            else: # Close to the goal - move towards goal altitude
+                node_cost += abs(goal_point4dUTM[2]-child_point4dUTM[2])
 
-            return 0
+            # Penalize for travel time
+            node_cost += travel_time #0.1*total_dist + 0.1*travel_time
+
+            # Penalize for flight distance
+            node_cost += total_dist_seg
+            return node_cost
 
         elif type_of_planning == self.EMERGENCY_PLANNING:
             # Move towards rally points - linear function to closest
@@ -971,9 +1041,9 @@ class UAV_path_planner():
         Input: 1 4d UTM point along with 3 dimensional offset given as individual arguments
         Output: pos4dTUPLE
         """
-        tmp_point_arr   = [point4dUTM[0]+y_offset, point4dUTM[1]+x_offset, point4dUTM[2]+z_offset, point4dUTM[3], point4dUTM[4], point4dUTM[5], point4dUTM[6]] # make tmp arr because it is a mutable container
+        tmp_point_arr   = [point4dUTM[0]+float(y_offset), point4dUTM[1]+float(x_offset), point4dUTM[2]+float(z_offset), point4dUTM[3], point4dUTM[4], point4dUTM[5], point4dUTM[6]] # make tmp arr because it is a mutable container
         tmp_point_tuple = (tmp_point_arr[0], tmp_point_arr[1], tmp_point_arr[2], tmp_point_arr[3], tmp_point_arr[4], tmp_point_arr[5], tmp_point_arr[6]) # make tmp tuple for calculating the travel time
-        if type_of_planning == self.GLOBAL_PLANNING:
+        if type_of_planning == self.GLOBAL_PLANNING or type_of_planning == self.LOCAL_PLANNING:
             travel_time_delta = 0
         else:
             travel_time_delta = self.calc_travel_time_from_UTMpoints_w_wind(point4dUTM, tmp_point_tuple)
