@@ -38,7 +38,7 @@ use_icing_test = True # for the condition checking
 
 ### Class start
 class ibm_weather_csv():
-    def __init__(self, inFileName, inCity, inYear, inMaxOperationWindSpeed, inMaxOperationWindGusts, inOperationMinTemperature, inOperationMaxTemperature):
+    def __init__(self, inFileName, inCity, inYear, inMaxOperationWindSpeed, inMaxOperationWindGusts, inOperationMinTemperature, inOperationMaxTemperature, debug = False):
         self.fileName = inFileName;
         self.city = inCity
         self.year = inYear
@@ -70,7 +70,7 @@ class ibm_weather_csv():
         self.plotWidth = 800
         self.plotHeight = 400
 
-        self.debugText = True
+        self.debugText = debug
 
         self.days = 0
 
@@ -482,7 +482,7 @@ class ibm_weather_csv():
 
 if __name__ == '__main__':
     # Initialize and load data
-    reader = ibm_weather_csv('DronePlanning/CleanedObservationsOdense.csv', 'Odense', 2016, MaxOperationWindSpeed_def, MaxOperationWindGusts_def, OperationMinTemperature_def, OperationMaxTemperature_def)
+    reader = ibm_weather_csv('DronePlanning/CleanedObservationsOdense.csv', 'Odense', 2016, MaxOperationWindSpeed_def, MaxOperationWindGusts_def, OperationMinTemperature_def, OperationMaxTemperature_def, debug = True)
     reader.loadCSV()
 
 

@@ -131,7 +131,7 @@ class path_planner_gui(StoppableThread):
         self.label_gpe_wps_res.configure(text='%i'%val)
         self.label_gpe_wps_res.configure(fg=color)
     def set_label_gpe_runtime(self, val, color = 'black'):
-        self.label_gpe_runtime_res.configure(text='%f [s]'%val)
+        self.label_gpe_runtime_res.configure(text='%.02f [s]'%val)
         self.label_gpe_runtime_res.configure(fg=color)
     def set_label_gpe_bytes_tot(self, val, color = 'black'):
         self.label_gpe_bytes_tot_res.configure(text='%i'%val)
@@ -237,7 +237,7 @@ class path_planner_gui(StoppableThread):
         self.input_start_point_lat.insert(0, self.DEFAULT_START_LAT)
         self.input_start_point_lat.grid(row=row_num_left, column=1)
         row_num_left += 1
-        self.label_start_point_lon = Label(self.root, text="Latitude [dd]:")
+        self.label_start_point_lon = Label(self.root, text="Longitude [dd]:")
         self.label_start_point_lon.grid(row=row_num_left, column=0)
         self.input_start_point_lon = Entry(self.root,width=10)
         self.input_start_point_lon.insert(0, self.DEFAULT_START_LON)
@@ -253,7 +253,7 @@ class path_planner_gui(StoppableThread):
         self.input_goal_point_lat.insert(0, self.DEFAULT_GOAL_LAT)
         self.input_goal_point_lat.grid(row=row_num_left, column=1)
         row_num_left += 1
-        self.label_goal_point_lon = Label(self.root, text="Latitude [dd]:")
+        self.label_goal_point_lon = Label(self.root, text="Longitude [dd]:")
         self.label_goal_point_lon.grid(row=row_num_left, column=0)
         self.input_goal_point_lon = Entry(self.root,width=10)
         self.input_goal_point_lon.insert(0, self.DEFAULT_GOAL_LON)

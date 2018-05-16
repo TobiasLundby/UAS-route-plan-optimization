@@ -12,7 +12,7 @@ License: BSD 3-Clause
 """
 
 """ Import libraries """
-from math import pow, sqrt, pi, cos
+from math import pow, sqrt, pi, cos, sin, atan2, atan
 from termcolor import colored
 from pyproj import Geod
 from copy import copy, deepcopy
@@ -162,7 +162,7 @@ class UAV_path_planner():
         self.prev_Astar_smallest_heuristics = []
 
         # Instantiate path visualizer class
-        self.path_visualizer_module = path_visualizer(True)
+        self.path_visualizer_module = path_visualizer(debug = False)
 
         # Enable the global path plan button on gui
         self.gui.on_main_thread( lambda: self.gui.enable_button_global_plan() )
@@ -514,13 +514,14 @@ class UAV_path_planner():
         # Check if the goal is rechable with the drone specifications - TODO - remember to include the wind speed and direction
         # Check if the weather exceeds limits - TODO
         weather_index = self.weather_module.convert_time_to_index(2016,1,1,12)
-        wind_speed = self.weather_module.get_wind_speed(weather_index)
+        wind_velocity = self.weather_module.get_wind_speed(weather_index)
         wind_gust = self.weather_module.get_wind_gust(weather_index)
+        wind_dir_deg = self.weather_module.get_wind_direction(weather_index)
         temp = self.weather_module.get_temp(weather_index)
         precipitation = self.weather_module.get_precipitation(weather_index)
         snowfall = self.weather_module.get_snowfall(weather_index)
-        if wind_speed > MaxOperationWindSpeed_def:
-            print colored('Wind speed exceeds limit, wind speed %f' % wind_speed, TERM_COLOR_ERROR)
+        if wind_velocity > MaxOperationWindSpeed_def:
+            print colored('Wind velocity exceeds limit, wind speed %f' % wind_velocity, TERM_COLOR_ERROR)
             return False
         if wind_gust > MaxOperationWindGusts_def:
             print colored('Wind gust exceeds limit, wind gust %f' % wind_gust, TERM_COLOR_ERROR)
@@ -529,6 +530,13 @@ class UAV_path_planner():
             print colored('Temperature exceeds limit, temperature %f' % temp, TERM_COLOR_ERROR)
             return False
         # Still have no data for precipitation and snowfall so these are left out
+
+        # Check if the goal is rechable in a straight line path
+        uav_max_range_incl_wind = self.calc_max_range_incl_wind_UTM(point_start_UTM, point_goal_UTM, wind_dir_deg, wind_velocity)
+        start_goal_distance = self.calc_euclidian_dist_UTM(point_start_UTM, point_goal_UTM)[0]
+        if uav_max_range_incl_wind < start_goal_distance:
+            print colored('UAV cannot reach goal with the wind taken into account, UAV max dist %f, distance to goal %f' % (uav_max_range_incl_wind, start_goal_distance), TERM_COLOR_ERROR)
+            return False
 
         return True
 
@@ -654,12 +662,12 @@ class UAV_path_planner():
                 print colored('\n'+INFO_ALT_INDENT+'Working on node (y: %.02f [m], x: %.02f [m], z_rel: %.02f [m], %.02f [s]) with F score %.02f, G score %.02f, and heuristic %.02f' % (current[0], current[1], current[2], current[3], tmp_f_score, tmp_g_score, tmp_f_score-tmp_g_score), TERM_COLOR_INFO)
 
             # Test if current point is close enough to the goal point
-            is_goal, dist_to_goal = self.is_goal_UTM(current, point_goal_tuple, step_size_horz)
+            is_goal, dist_to_goal = self.is_goal_UTM(current, point_goal_tuple, step_size_horz, step_size_vert)
             if is_goal:
                 time_cur = get_cur_time_epoch()
                 self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('backtracing', 'green') )
                 print colored('Path found in %.02f [s]' % (time_cur-time_start), TERM_COLOR_RES)
-                planned_path = self.backtrace_path(came_from, current, point_start_tuple, point_goal_tuple)
+                planned_path = self.backtrace_path(came_from, current, point_start_tuple, point_goal_tuple, type_of_planning = type_of_planning)
                 print colored('Path has %i waypoints\n' % (len(planned_path)), TERM_COLOR_RES)
 
                 # for element in planned_path:
@@ -827,7 +835,7 @@ class UAV_path_planner():
             print colored(INFO_ALT_INDENT+'Element %i: y %.02f [m], x %.02f [m], z_rel %.02f [m], time_rel %.02f ' % (itr, element[0], element[1], element[2], element[3]), TERM_COLOR_INFO_ALT)
             itr += 1
 
-    def backtrace_path(self, came_from, current_node, start_node, goal_node):
+    def backtrace_path(self, came_from, current_node, start_node, goal_node, type_of_planning = 0):
         """
         Backtraces from the goal node (or node near goal node) given by current node to the start node using the came_from data
         Input: came_from list, current_node to backtrace from, and start node to trace to
@@ -839,6 +847,11 @@ class UAV_path_planner():
             current_node = came_from[current_node] # get the parent node
         path.append(self.coord_conv.pos4dTUPLE2pos4dDICT_UTM(start_node))
         path.reverse()
+        # Correct the timestamps since the global planner does not plan in the time dimension
+        if type_of_planning == self.GLOBAL_PLANNING:
+            for i in range(len(path)-1):
+                path[i+1]['time_rel'] =  path[i]['time_rel'] + self.calc_travel_time_from_UTMpoints(path[i], path[i+1])
+                #print path[i]['time_rel'], path[i+1]['time_rel'], self.calc_travel_time_from_UTMpoints(path[i], path[i+1])
         # Since the last point is within the acceptance radius of the goal point, the x, y, and z_rel of the last point is replaced with the data from the goal point and the added travel time is calculated and added
         tmp_second_last_point_arr = [path[-2]['y'], path[-2]['x'], path[-2]['z_rel']]
         path[-1]['time_rel'] = path[-2]['time_rel'] + self.calc_travel_time_from_UTMpoints(tmp_second_last_point_arr, goal_node)
@@ -941,7 +954,7 @@ class UAV_path_planner():
         Output: travel time [s]
         """
         return ( (horz_dist / self.UAV_NOMINAL_AIRSPEED_HORZ_MPS) + ( vert_dist / self.UAV_NOMINAL_AIRSPEED_VERT_MPS) )
-    def is_goal_UTM(self, point4dUTM_test, point4dUTM_goal, in_goal_acceptance_radius_m):
+    def is_goal_UTM(self, point4dUTM_test, point4dUTM_goal, in_goal_acceptance_radius_m, in_goal_acceptance_altitude_m):
         """
         Checks if the distance between the test point and the gaol points are within the allowed acceptance radius
         Input: 2 4d UTM points
@@ -949,7 +962,7 @@ class UAV_path_planner():
         """
         # dist = self.calc_euclidian_horz_dist_UTM(point4dUTM_test, point4dUTM_goal)
         dist, horz_dist, vert_dist = self.calc_euclidian_dist_UTM(point4dUTM_test, point4dUTM_goal)
-        if dist > in_goal_acceptance_radius_m:
+        if horz_dist > in_goal_acceptance_radius_m or vert_dist > in_goal_acceptance_altitude_m:
             # if self.debug:
             #     print colored(error_indent+'Points are NOT within goal acceptance radius; distance between points: %.02f [m], acceptance radius: %.02f [m]' % (dist, self.goal_acceptance_radius), TERM_COLOR_INFO_ALT)
             return False, dist
@@ -958,6 +971,49 @@ class UAV_path_planner():
                 print colored(RES_INDENT+'Node is within goal acceptance radius; distance between node and goal: %.02f [m], acceptance radius: %.02f [m]' % (dist, in_goal_acceptance_radius_m), TERM_COLOR_RES)
             return True, dist
 
+    def calc_angle_deg_between_UTM_points(self, point4dUTM1, point4dUTM2):
+        if isinstance(point4dUTM1, dict) and isinstance(point4dUTM2, dict):
+            return (atan((point4dUTM2['y']-point4dUTM1['y']) / (point4dUTM2['x']-point4dUTM1['x'])) * 180 / pi) + 180
+        elif ( isinstance(point4dUTM1, tuple) or isinstance(point4dUTM1, list) ) and ( isinstance(point4dUTM2, tuple) or isinstance(point4dUTM2, list) ):
+            return (atan((point4dUTM2[0]-point4dUTM1[0]) / (point4dUTM2[1]-point4dUTM1[1])) * 180 / pi) + 180
+        else:
+            return False
+
+    def calc_gs_from_tas_and_wind(self, uav_azi_deg, uav_velocity, wind_direction_deg, wind_velocity):
+        """
+        Calculates the actual GS in the procided UAV azimuth/heading but calculating the wind component in the flying direction and perpendicular to the flying direction
+        Input: UAV azimuth/heading [deg], UAV velocity, wind direction [deg], and the wind velocity
+        Output: UAV ground speed
+        """
+        uav_azi_rad = uav_azi_deg*pi / 180 # convert to rad
+        wind_heading_deg = 180-wind_direction_deg # where the wind is blowing, not coming from
+        wind_heading_rad = wind_heading_deg*pi / 180 # convert to rad
+        dir_diff_rad = wind_heading_rad-uav_azi_deg
+        wind_normal_on_uav = wind_velocity*sin(dir_diff_rad) # calculate the wind velicoty transformed to a normal (perpendicular) to the uav direction
+        wind_tangent_on_uav = wind_velocity*cos(dir_diff_rad) # calculate the wind velicoty transformed to a tangent (parallel) to the uav direction
+        return uav_velocity-wind_normal_on_uav-wind_tangent_on_uav # calculate the resuting ground speed by subtracting the wind components (remember the uav velocity is the max velocity of the uav in any direction)
+
+    def calc_max_range_incl_wind_UTM(self, point_start_UTM, point_goal_UTM, wind_dir_deg, wind_velocity):
+        """
+        Calculate the maximum range of the UAV if it is flying between the coordinates (giving an angle) including wind
+        Input: 2 UTM points, wind direction (coming/blowing from), and the wind velocity
+        Output: max UAV range in meters
+        """
+        uav_azimuth12 = self.calc_angle_deg_between_UTM_points(point_start_UTM, point_goal_UTM)
+        uav_gs = self.calc_gs_from_tas_and_wind(uav_azimuth12, self.UAV_NOMINAL_AIRSPEED_HORZ_MPS, wind_dir_deg, wind_velocity)
+        return self.UAV_NOMINAL_BATTERY_TIME_S*uav_gs
+
+    def calc_max_range_incl_wind_geodetic(self, point_start_geodetic, point_goal_geodetic, wind_dir_deg, wind_velocity):
+        """
+        Calculate the maximum range of the UAV if it is flying between the coordinates (giving an angle) including wind
+        Input: 2 UTM points, wind direction (coming/blowing from), and the wind velocity
+        Output: max UAV range in meters
+        """
+        uav_azimuth12 = self.calc_horz_dist_geodetic(point_start_geodetic['lat'], point_start_geodetic['lon'], point_goal_geodetic['lat'], point_goal_geodetic['lon'])[0]
+        if uav_azimuth12 < 0:
+            uav_azimuth12 += 360
+        uav_gs = self.calc_gs_from_tas_and_wind(uav_azimuth12, self.UAV_NOMINAL_AIRSPEED_HORZ_MPS, wind_dir_deg, wind_velocity)
+        return self.UAV_NOMINAL_BATTERY_TIME_S*uav_gs
 
 
     """ Path planner evaluator functions """
@@ -1070,7 +1126,7 @@ class UAV_path_planner():
         horz_distances = []
         total_horz_distance = 0 # unit: m
         for i in range(len(path)-1):
-            tmp_horz_distance = self.calc_horz_dist_geodetic(path[i]['lat'], path[i]['lon'], path[i+1]['lat'], path[i+1]['lon'])
+            tmp_horz_distance = self.calc_horz_dist_geodetic(path[i]['lat'], path[i]['lon'], path[i+1]['lat'], path[i+1]['lon'])[2]
             total_horz_distance = total_horz_distance + tmp_horz_distance
             horz_distances.append(tmp_horz_distance)
         if self.debug:
@@ -1084,7 +1140,7 @@ class UAV_path_planner():
         """
         # https://jswhit.github.io/pyproj/pyproj.Geod-class.html
         az12, az21, dist = self.GEOID_WGS84.inv(lon1,lat1,lon2,lat2)
-        return dist
+        return az12, az21, dist
 
     def calc_vert_dist(self, path):
         """
@@ -1132,7 +1188,7 @@ class UAV_path_planner():
             print colored(SUB_RES_INDENT+'Travel time %.0f [s] (%s)' % (travel_time, str(convert_time_delta2human(travel_time))), TERM_COLOR_SUB_RES)
         return travel_time
 
-    def calc_avg_waypoint_dist(self, path, horz_distances=False, vert_distances=False):
+    def calc_avg_waypoint_dist(self, path, horz_distances=None, vert_distances=None):
         """
         Calculates the average distance between waypoints in a geodetic path
         Input: path of geodetic corrdinates along with optional list of horizontal and vertical distances (optimization not to calculate the great circle distances more than once)
@@ -1141,7 +1197,7 @@ class UAV_path_planner():
         if self.debug:
             print colored('Calculating average waypoint distance', TERM_COLOR_INFO)
         # Check if the required distances have already been calculated, otherwise calculate
-        if ((horz_distances != False and isinstance(horz_distances, list)) and (vert_distances != False and isinstance(vert_distances, list))) == False:
+        if ((horz_distances != None and isinstance(horz_distances, list)) and (vert_distances != None and isinstance(vert_distances, list))) == False:
             horz_distances = self.calc_horz_dist_geodetic_total(path)[1]
             vert_distances = self.calc_vert_dist(path)[3]
         avg_waypoint_dist = 0 # unit: m
@@ -1190,19 +1246,19 @@ class UAV_path_planner():
                         print colored(SUB_RES_INDENT+'Waypoint %d: lat: %.04f [deg], lon: %.04f [deg], alt: %.01f [m], time: %.02f [s]' %(i, self.planned_path_global_geodetic[i]['lat'], self.planned_path_global_geodetic[i]['lon'], self.planned_path_global_geodetic[i]['alt'], self.planned_path_global_geodetic[i]['time']), TERM_COLOR_SUB_RES)
         else:
             print colored('\nCannot print the geodetic planed path because it is empty', TERM_COLOR_ERROR)
-    def convert_rel2abs_time(self, path, start_time_epoch = False):
+    def convert_rel2abs_time(self, path, start_time_epoch = None):
         """
         Converts the relative time to absoulte time by adding the current time or provided time of the start point to each point in the path
         Input: path and optional start time (all relative times are relative to the time at the starting point)
         Output: none but changes the input path and changes the key from 'time_rel' to 'time'
         """
         if len(path) > 0:
-            if start_time_epoch == False:
+            if start_time_epoch == None:
                 start_time_epoch = get_cur_time_epoch_wo_us()
             for i in range(len(path)):
                 path[i]['time'] = path[i].pop('time_rel')
                 path[i]['time'] = path[i]['time'] + start_time_epoch
-    def convert_rel2abs_alt(self, abs_heigh_start_point, path):
+    def convert_rel2abs_alt(self, path, abs_heigh_start_point = 0):
         """
         Converts the relative heights to absoulte heights by adding the absoulute height of the start point to each point in the path
         Input: path and absoulute height of start point (all relative heights are relative to the height at the starting point)
@@ -1210,18 +1266,21 @@ class UAV_path_planner():
         """
         if len(path) > 0:
             for i in range(len(path)):
-                path[i]['alt'] =path[i].pop('alt_rel')
+                path[i]['alt'] = path[i].pop('alt_rel') + abs_heigh_start_point
     def visualize_path(self):
+        """
+        Visualized the path on http://uas.heltner.net/routes using the path visualizer module
+        Input: none but uses the internal planned_path_global_geodetic (should have correct timestamps ect.)
+        Output: route ID if upload was successful and None if not
+        """
         if len(self.planned_path_global_geodetic):
             # Make a deepcopy so the 'time_rel' and 'alt_rel' can be changed to 'time' and 'alt'
             tmp_planned_path_geodetic = deepcopy(self.planned_path_global_geodetic)
 
             self.convert_rel2abs_time(tmp_planned_path_geodetic, start_time_epoch = 0) # does not change the values when start_time_epoch=0 but only the labels
 
-            point_start_alt_abs = self.get_altitude_geodetic(tmp_planned_path_geodetic[0])
-            self.convert_rel2abs_alt(point_start_alt_abs, tmp_planned_path_geodetic)
-
-            print tmp_planned_path_geodetic
+            #point_start_alt_abs = self.get_altitude_geodetic(tmp_planned_path_geodetic[0])
+            self.convert_rel2abs_alt(tmp_planned_path_geodetic, abs_heigh_start_point = 0) # the altitude is still relative otherwise replace 0 with point_start_alt_abs
 
             route_id = self.path_visualizer_module.visualize_path(tmp_planned_path_geodetic)
             return route_id
