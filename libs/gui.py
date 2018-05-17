@@ -391,6 +391,7 @@ class path_planner_gui(StoppableThread):
         self.label_local_plan_status = Label(self.root, text="Status:")
         self.label_local_plan_status.grid(row=row_num_left, column=0)
         self.label_local_plan_status_res = Label(self.root, text="idle")
+        self.label_local_plan_status_res.configure(fg='green')
         self.label_local_plan_status_res.grid(row=row_num_left, column=1)
         row_num_left += 1
         self.label_local_plan_time = Label(self.root, text="Time:")
@@ -530,6 +531,7 @@ class path_planner_gui(StoppableThread):
         self.label_global_plan_status = Label(self.root, text="Status:")
         self.label_global_plan_status.grid(row=row_num_right, column=2)
         self.label_global_plan_status_res = Label(self.root, text="idle")
+        self.label_global_plan_status_res.configure(fg='green')
         self.label_global_plan_status_res.grid(row=row_num_right, column=3)
         row_num_right += 1
         self.label_global_plan_start_heuristic = Label(self.root, text="Start heuristic:")

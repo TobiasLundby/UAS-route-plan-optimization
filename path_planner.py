@@ -47,6 +47,14 @@ INVOKE_TEMP_CHANGE = True
 INVOKE_TEMP_CHANGE_AT = 30 # unit: s
 INVOKE_TEMP_CHANGED_TO = -20 # unit: degrees C
 
+USE_DYNAMIC_NO_FLY_ZONE = False
+DYNAMIC_NO_FLY_ZONE = [
+    [55.431397, 10.411145, 0.0],
+    [55.432968, 10.414696, 0.0],
+    [55.430588, 10.416380, 0.0],
+    [55.429997, 10.411573, 0.0]
+    ]
+
 WEATHER_HIST_YEAR = 2016
 WEATHER_HIST_MONTH = 1
 WEATHER_HIST_DATE = 1
@@ -357,10 +365,11 @@ class UAV_path_planner():
         return False
 
     def load_dynamic_no_fly_zones(self):
-        no_fly_zone = [[55.431397, 10.411145, 0.0], [55.432968, 10.414696, 0.0], [55.430588, 10.416380, 0.0], [55.429997, 10.411573, 0.0]]
-        no_fly_zone_coordinates_UTM = self.coord_conv.pos3d_geodetic2pos3d_UTM_multiple(no_fly_zone) # convert coordinates to UTM
-        no_fly_zone_coordinates_UTM_y_x = [[x[0],x[1]] for x in no_fly_zone_coordinates_UTM] # extract y and x
-        self.no_fly_zone_polygons_dynamic.append(geometry.Polygon(no_fly_zone_coordinates_UTM_y_x)) # append the polygon to the combined polygons
+        if USE_DYNAMIC_NO_FLY_ZONE:
+            no_fly_zone = DYNAMIC_NO_FLY_ZONE
+            no_fly_zone_coordinates_UTM = self.coord_conv.pos3d_geodetic2pos3d_UTM_multiple(no_fly_zone) # convert coordinates to UTM
+            no_fly_zone_coordinates_UTM_y_x = [[x[0],x[1]] for x in no_fly_zone_coordinates_UTM] # extract y and x
+            self.no_fly_zone_polygons_dynamic.append(geometry.Polygon(no_fly_zone_coordinates_UTM_y_x)) # append the polygon to the combined polygons
 
     def is_point_in_no_fly_zones_UTM(self, point3dUTM, buffer_distance_m = 0, use_base_buffer_distance_m = True, use_dynamic = False):
         """
@@ -474,6 +483,7 @@ class UAV_path_planner():
             time_ctr = 0.0
             waypoint_ctr = 0
             waypoint_last = len(planned_path_UTM)-1
+            navigating_to_rally_point = False
             i = 0
             self.gui.on_main_thread( lambda: self.gui.set_label_local_plan_status('simulating', 'orange') )
             while i < waypoint_last:
@@ -519,11 +529,7 @@ class UAV_path_planner():
                                 if not colission:
                                     break
                                 waypoint_to_plan_to += 1
-                            # Make UAV into planning point
-                            new_start_point = deepcopy(planned_path_UTM[waypoint_to_plan_to])
-                            new_start_point['y'] = uav['y']
-                            new_start_point['x'] = uav['x']
-                            new_start_point['z_rel'] = uav['z_rel']
+                            new_start_point = self.coord_conv.generate_pos4d_UTM_dict(uav['y'], uav['x'], uav['z_rel']) # Make UAV into planning point
 
                             # Update the start heuristic in the GUI
                             self.gui.on_main_thread( lambda: self.gui.set_global_plan_start_heuristic(self.heuristic_a_star(new_start_point, planned_path_UTM[waypoint_to_plan_to], self.LOCAL_PLANNING)) )
@@ -548,21 +554,49 @@ class UAV_path_planner():
                             else:
                                 print colored('Cannot replan for some reason', TERM_COLOR_ERROR)
                                 exit(1)
+                            break # Break out of the loop that loops over the path subpart
 
-                        elif uav['status'] == self.UAV_STATUS_LAND_AT_RALLY_POINT:
-                            self.gui.on_main_thread( lambda: self.gui.set_label_local_plan_status('Replanning to rally point', 'red') )
+                        elif uav['status'] == self.UAV_STATUS_LAND_AT_RALLY_POINT and not navigating_to_rally_point:
+                            self.gui.on_main_thread( lambda: self.gui.set_label_local_plan_status('replanning to a land spot', 'red') )
                             print colored('Replanning to rally point', TERM_COLOR_ERROR)
                             # Make points in proper format for testing
                             uav_pos3d_UTM_dict = self.coord_conv.generate_pos3d_UTM_dict(uav['y'], uav['x'], uav['z_rel'])
                             uav_pos3d_UTM_list = self.coord_conv.generate_pos3d_UTM_list(uav['y'], uav['x'], uav['z_rel'])
-                            print 'Dist to goal', self.calc_euclidian_dist_UTM(uav_pos3d_UTM_dict, planned_path_UTM[-1])
-                            print self.find_nearest_rally_point(uav_pos3d_UTM_list)
-                            exit(1)
+                            dist_goal_current = self.calc_euclidian_dist_UTM(uav_pos3d_UTM_dict, planned_path_UTM[-1])
+                            index_nearest_rally_point, dist_nearest_rally_point = self.find_nearest_rally_point(uav_pos3d_UTM_list, step_size_horz)
+                            if dist_nearest_rally_point <= dist_goal_current:
+                                self.gui.on_main_thread( lambda: self.gui.set_label_local_plan_status('rally point closer than goal', 'orange') )
+                                # Generate new start and goal points in proper format for the path planning
+                                new_start_point = self.coord_conv.generate_pos4d_UTM_dict(uav['y'], uav['x'], uav['z_rel'])
+                                goal_point_new = self.coord_conv.generate_pos4d_UTM_dict(self.rally_points_UTM[index_nearest_rally_point][0], self.rally_points_UTM[index_nearest_rally_point][1], self.rally_points_UTM[index_nearest_rally_point][2])
+                                print new_start_point
+                                print goal_point_new
 
+                                # Update the start heuristic in the GUI
+                                self.gui.on_main_thread( lambda: self.gui.set_global_plan_start_heuristic(self.heuristic_a_star(new_start_point, goal_point_new, self.LOCAL_PLANNING)) )
+                                # Compute the new path
+                                path_new_UTM = self.plan_planner_Astar(new_start_point, goal_point_new, step_size_horz = step_size_horz, step_size_vert = step_size_vert, type_of_planning = self.LOCAL_PLANNING, search_time_max = max_search_time, calc_goal_height = True)
+                                if len(path_new_UTM) > 1: # Check if the planner produced a path
+                                    self.gui.on_main_thread( lambda: self.gui.set_label_local_plan_status('found path to rally point, continuing simulation', 'green') )
 
-                        break # Break out of the loop that loops over the path subpart
+                                    planned_path_UTM = planned_path_UTM[:i+1]+path_new_UTM
 
-                    if k != steps_on_current_line:
+                                    for j in range(len(planned_path_UTM)-1): # fix the time
+                                        planned_path_UTM[j+1]['time_rel'] = planned_path_UTM[j]['time_rel'] + self.calc_travel_time_from_UTMpoints_w_wind(planned_path_UTM[j], planned_path_UTM[j+1])
+
+                                    # Convert path from UTM to geodetic
+                                    path_geodetic = []
+                                    for ii in range(len(planned_path_UTM)):
+                                        path_geodetic.append( self.coord_conv.pos4dDICT_UTM2pos4dDICT_geodetic( planned_path_UTM[ii] ) )
+                                    self.send_local_path_to_gui_geodetic(path_geodetic)
+
+                                    waypoint_last = len(planned_path_UTM)-1 # Save new waypoint data to continue simulation
+                                    navigating_to_rally_point = True # Tell the local planner that it is on the way to the rally point therefore do not react on the UAV status
+                                break # Break out of the loop that loops over the path subpart
+                            else:
+                                self.gui.on_main_thread( lambda: self.gui.set_label_local_plan_status('goal closer than rally point, continuing', 'orange') )
+
+                    if k != steps_on_current_line: # When there is something rest in the path not corresponding to the exact time steps
                         time.sleep(time_step/acceleration_factor)
                         time_ctr += time_step
                     else:
@@ -584,16 +618,16 @@ class UAV_path_planner():
                 self.planned_path_local_geodetic = path_geodetic
                 self.send_local_path_to_gui_geodetic(path_geodetic)
             self.planned_path_local_UTM = planned_path_UTM
-            self.gui.on_main_thread( lambda: self.gui.set_label_local_plan_status('simulation successful, idle') )
+            self.gui.on_main_thread( lambda: self.gui.set_label_local_plan_status('simulation successful, idle', 'green') )
             print colored('\nSimulated until end or stop', TERM_COLOR_INFO)
 
     def local_planner_uav_check(self, uav, time_current, time_step, step_size_horz, wind_velocity = 0, wind_gust = 0, temp = 0):
         # Check for new no-fly zones - replan around if violated
         colission, smallest_dist = self.is_point_in_no_fly_zones_UTM(uav, buffer_distance_m = step_size_horz, use_dynamic = True)
         #print colission, smallest_dist
-        # if colission:
-        #     uav['status'] = self.UAV_STATUS_IN_NO_FLY_ZONE
-        #     return False
+        if colission:
+            uav['status'] = self.UAV_STATUS_IN_NO_FLY_ZONE
+            return False
 
         # Check for ads-b data TODO
         # Check for droneID data TODO
@@ -605,26 +639,26 @@ class UAV_path_planner():
         # Check for weather - if it violates land at a rally point if there is any that are closer than the goal point
         if wind_velocity > MaxOperationWindSpeed_def or wind_gust > MaxOperationWindGusts_def or OperationMinTemperature_def > temp or temp > OperationMaxTemperature_def: # Check wind speed/velocity
             uav['status'] = self.UAV_STATUS_LAND_AT_RALLY_POINT
-            print colored('Weather has changed for the worse, land at rally point', TERM_COLOR_ERROR)
+            #print colored('Weather has changed for the worse, land at rally point', TERM_COLOR_ERROR)
             return False
 
         # Passed the check, return
         return True
 
-    def find_nearest_rally_point(self, uav_pos3d_UTM):
+    def find_nearest_rally_point(self, uav_pos3d_UTM, step_size_horz):
         """
-        Finds the nearest rally point
+        Finds the nearest rally point and also checks if it is in a no-fly zone (both static and dynamic)
         Input: UAV in post3d UTM format
         Output: rally point index and distance to rally point
         """
         smallest_dist = INF
         rally_point_index = -1
         for iii in range(len(self.rally_points_UTM)):
-            print iii
             #tmp_rally_point_pos3d_UTM = self.coord_conv.generate_pos3d_UTM_dict(self.rally_points_UTM[iii][0], self.rally_points_UTM[iii][1], 0)
-            dist_to_current_rally = self.calc_euclidian_dist_UTM(uav_pos3d_UTM, self.rally_points_UTM[iii])
-            print dist_to_current_rally
-            if dist_to_current_rally < smallest_dist:
+            dist_to_current_rally = self.calc_euclidian_dist_UTM(uav_pos3d_UTM, self.rally_points_UTM[iii])[0] # use the 3d dist
+            colission_static, smallest_dist_static = self.is_point_in_no_fly_zones_UTM(self.rally_points_UTM[iii], buffer_distance_m = step_size_horz)
+            colission_dynamic, smallest_dist_dynamic = self.is_point_in_no_fly_zones_UTM(self.rally_points_UTM[iii], buffer_distance_m = step_size_horz, use_dynamic = True)
+            if dist_to_current_rally < smallest_dist and not colission_static and not colission_dynamic:
                 rally_point_index = iii
                 smallest_dist = dist_to_current_rally
         return rally_point_index, smallest_dist
@@ -754,7 +788,7 @@ class UAV_path_planner():
 
         return True
 
-    def plan_planner_Astar(self, point_start, point_goal, step_size_horz, step_size_vert, type_of_planning = 0, max_node_exploration = INF, search_time_max = FOREVER, force_replanning = False, use_start_elevation_m = 0):
+    def plan_planner_Astar(self, point_start, point_goal, step_size_horz, step_size_vert, type_of_planning = 0, max_node_exploration = INF, search_time_max = FOREVER, force_replanning = False, use_start_elevation_m = 0, calc_goal_height = False):
         """
         A star algorithm path planner
         Input: start and goal point in UTM format
@@ -776,7 +810,7 @@ class UAV_path_planner():
         # Get start altitude and calc and set relative goal altitude
         point_start_alt_abs = self.get_altitude_UTM(point_start)
         point_goal_alt_abs  = self.get_altitude_UTM(point_goal)
-        if type_of_planning == self.GLOBAL_PLANNING:
+        if type_of_planning == self.GLOBAL_PLANNING or calc_goal_height:
             point_goal['z_rel'] = point_goal_alt_abs-point_start_alt_abs
 
         if use_start_elevation_m != 0:
@@ -901,7 +935,7 @@ class UAV_path_planner():
                 if self.DRAW_CLOSED_LIST:
                     self.map_plotter_global.draw_points_UTM(closed_list, 1, 'grey', 5)
 
-                self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('idle') )
+                self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('idle', 'green') )
                 return planned_path # return the path
 
             # Add current node to the evaluated nodes / closed list
@@ -1036,7 +1070,10 @@ class UAV_path_planner():
 
         elif type_of_planning == self.LOCAL_PLANNING:
             # Penalize for flight altitude
-            node_cost += abs(goal_point4dUTM[2]-child_point4dUTM[2]) #move towards goal altitude
+            if horz_distance_goal > step_size_horz: # Not close to the goal - keep ideal altitude
+                node_cost += abs(self.IDEAL_FLIGHT_ALTITUDE+point_child_et_start_alt_diff - child_point4dUTM[2])
+            else: # Close to the goal - move towards goal altitude
+                node_cost += abs(goal_point4dUTM[2]-child_point4dUTM[2])
 
             # Penalize for travel time
             node_cost += travel_time #0.1*total_dist + 0.1*travel_time
@@ -1583,7 +1620,7 @@ if __name__ == '__main__':
     # Save the start time before anything else
     time_task_start_s = get_cur_time_epoch()
 
-    # Set up the logger for the bokeh lib
+    # Set up the logger for the bokeh lib etc.
     logging.basicConfig(level=logging.DEBUG)
     logger = logging.getLogger(__name__)
 

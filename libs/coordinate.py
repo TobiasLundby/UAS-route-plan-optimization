@@ -209,6 +209,10 @@ class coordinate_transform():
         Output: 6 value 1 element dict of y/easting, x/norting, alt_rel, hemisphere, zone, and letter
         """
         return {'y':float(easting), 'x': float(northing), 'z_rel':float(z_rel), 'hemisphere': hemisphere, 'zone': zone, 'letter': letter}
+    def generate_pos4d_UTM_list(self, easting, northing, z_rel, time_rel = 0.0, hemisphere = 'N', zone=32, letter='U'):
+        return [float(easting), float(northing), float(z_rel), float(time_rel), hemisphere, zone, letter]
+    def generate_pos4d_UTM_dict(self, easting, northing, z_rel, time_rel = 0.0, hemisphere = 'N', zone=32, letter='U'):
+        return {'hemisphere':hemisphere,'zone':zone,'letter':letter,'y':float(easting),'x':float(northing),'z_rel':float(z_rel),'time_rel':float(time_rel)}
 
     def pos3dDICT2pos2dDICT_geodetic(self, pos3dDICT):
         """ Converts pos3dDICT to pos2dDICT, geodetic
