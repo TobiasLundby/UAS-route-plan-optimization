@@ -31,6 +31,7 @@ from libs.various import *
 from libs.gui import path_planner_gui
 from external.path_visualizer import path_visualizer
 from shapely import geometry # used to calculate the distance to polygons
+from random import randint, uniform
 from rdp import rdp
 import logging
 import time # used for sleeping the main loop
@@ -43,11 +44,11 @@ MaxOperationWindGusts_def = MaxOperationWindSpeed_def+5.14 # 10kts more than win
 OperationMinTemperature_def = -10
 OperationMaxTemperature_def = 40
 
-INVOKE_TEMP_CHANGE = True
+INVOKE_TEMP_CHANGE = False
 INVOKE_TEMP_CHANGE_AT = 30 # unit: s
 INVOKE_TEMP_CHANGED_TO = -20 # unit: degrees C
 
-USE_DYNAMIC_NO_FLY_ZONE = False
+USE_DYNAMIC_NO_FLY_ZONE = True
 DYNAMIC_NO_FLY_ZONE = [
     [55.431397, 10.411145, 0.0],
     [55.432968, 10.414696, 0.0],
@@ -531,10 +532,11 @@ class UAV_path_planner():
                                 waypoint_to_plan_to += 1
                             new_start_point = self.coord_conv.generate_pos4d_UTM_dict(uav['y'], uav['x'], uav['z_rel']) # Make UAV into planning point
 
-                            # Update the start heuristic in the GUI
-                            self.gui.on_main_thread( lambda: self.gui.set_global_plan_start_heuristic(self.heuristic_a_star(new_start_point, planned_path_UTM[waypoint_to_plan_to], self.LOCAL_PLANNING)) )
                             # Compute the new path
-                            path_new_UTM = self.plan_planner_Astar(new_start_point, planned_path_UTM[waypoint_to_plan_to], step_size_horz = step_size_horz, step_size_vert = step_size_vert, type_of_planning = self.LOCAL_PLANNING, search_time_max = max_search_time)
+                            if path_planner == self.PATH_PLANNER_NAMES[0]: # A star path planning algorithm
+                                path_new_UTM = self.plan_planner_Astar(new_start_point, planned_path_UTM[waypoint_to_plan_to], step_size_horz = step_size_horz, step_size_vert = step_size_vert, type_of_planning = self.LOCAL_PLANNING, search_time_max = max_search_time)
+                            elif path_planner == self.PATH_PLANNER_NAMES[1]: # Rapidly-exploring random tree
+                                path_new_UTM = self.plan_planner_RRT(new_start_point, planned_path_UTM[waypoint_to_plan_to], step_size_horz, step_size_vert, type_of_planning = self.LOCAL_PLANNING, max_iterations = max_search_time)
 
                             if len(path_new_UTM) > 1: # Check if the planner produced a path
                                 self.gui.on_main_thread( lambda: self.gui.set_label_local_plan_status('found new path, continuing simulation', 'green') )
@@ -572,10 +574,11 @@ class UAV_path_planner():
                                 print new_start_point
                                 print goal_point_new
 
-                                # Update the start heuristic in the GUI
-                                self.gui.on_main_thread( lambda: self.gui.set_global_plan_start_heuristic(self.heuristic_a_star(new_start_point, goal_point_new, self.LOCAL_PLANNING)) )
                                 # Compute the new path
-                                path_new_UTM = self.plan_planner_Astar(new_start_point, goal_point_new, step_size_horz = step_size_horz, step_size_vert = step_size_vert, type_of_planning = self.LOCAL_PLANNING, search_time_max = max_search_time, calc_goal_height = True)
+                                if path_planner == self.PATH_PLANNER_NAMES[0]: # A star path planning algorithm
+                                    path_new_UTM = self.plan_planner_Astar(new_start_point, goal_point_new, step_size_horz = step_size_horz, step_size_vert = step_size_vert, type_of_planning = self.LOCAL_PLANNING, search_time_max = max_search_time, calc_goal_height = True)
+                                elif path_planner == self.PATH_PLANNER_NAMES[1]: # Rapidly-exploring random tree
+                                    path_new_UTM = self.plan_planner_RRT(new_start_point, goal_point_new, step_size_horz, step_size_vert, type_of_planning = self.LOCAL_PLANNING, max_iterations = max_search_time, calc_goal_height = True)
                                 if len(path_new_UTM) > 1: # Check if the planner produced a path
                                     self.gui.on_main_thread( lambda: self.gui.set_label_local_plan_status('found path to rally point, continuing simulation', 'green') )
 
@@ -698,9 +701,6 @@ class UAV_path_planner():
             print colored(RES_INDENT+'Start point: %d %c %.5fe %.5fn' % (point_start_converted_UTM['zone'], point_start_converted_UTM['letter'], point_start_converted_UTM['y'], point_start_converted_UTM['x']), TERM_COLOR_RES)
             print colored(RES_INDENT+' Goal point: %d %c %.5fe %.5fn' % (point_goal_converted_UTM['zone'], point_goal_converted_UTM['letter'], point_goal_converted_UTM['y'], point_goal_converted_UTM['x']), TERM_COLOR_RES)
 
-        # Update the start heuristic in the GUI
-        self.gui.on_main_thread( lambda: self.gui.set_global_plan_start_heuristic(self.heuristic_a_star(point_start_converted_UTM, point_goal_converted_UTM, self.GLOBAL_PLANNING)) )
-
         # Pre path planning check
         self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('pre-plan check', 'yellow') )
         if not self.pre_planner_check(point_start_converted_UTM, point_goal_converted_UTM, step_size_horz):
@@ -720,6 +720,8 @@ class UAV_path_planner():
             #path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 8, 10, type_of_planning = self.GLOBAL_PLANNING, search_time_max = 16)
             path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, step_size_horz, step_size_vert, type_of_planning = self.GLOBAL_PLANNING, search_time_max = search_time_max, use_start_elevation_m = self.IDEAL_FLIGHT_ALTITUDE)
             #path_UTM = self.plan_planner_Astar(point_start_converted_UTM, point_goal_converted_UTM, 2, 2.5, type_of_planning = self.GLOBAL_PLANNING, search_time_max = 180)
+        elif path_planner == self.PATH_PLANNER_NAMES[1]: # Rapidly-exploring random tree
+            path_UTM = self.plan_planner_RRT(point_start_converted_UTM, point_goal_converted_UTM, step_size_horz, step_size_vert, type_of_planning = self.GLOBAL_PLANNING, max_iterations = search_time_max)
         else:
             print colored('Path planner type not defined', TERM_COLOR_ERROR)
             self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('planner not defined', 'red') )
@@ -880,6 +882,8 @@ class UAV_path_planner():
             f_score[point_start_tuple] = self.heuristic_a_star(point_start_tuple, point_goal_tuple, type_of_planning) # For the first node, that value is completely heuristic.
             if self.debug:
                 print colored(INFO_ALT_INDENT+'Start point heuristic: %f' % f_score[point_start_tuple], TERM_COLOR_INFO_ALT)
+            # Update the start heuristic in the GUI
+            self.gui.on_main_thread( lambda: self.gui.set_global_plan_start_heuristic( f_score[point_start_tuple] ) )
 
             open_list = [] # open list: The set of currently discovered nodes that are not evaluated yet.
             heappush(open_list, (f_score[point_start_tuple], point_start_tuple)) # Initially, only the start node is known.
@@ -1127,6 +1131,158 @@ class UAV_path_planner():
         path[-1]['z_rel'] = goal_node[2] # element 2 = z_rel
         return path
 
+    def plan_planner_RRT(self, point_start, point_goal, step_size_horz, step_size_vert, type_of_planning = 0, use_start_elevation_m = 0, calc_goal_height = False, max_iterations = INF, goal_sample_rate = 5):
+        self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('initializing RRT', 'yellow') )
+        # Set start time of start point to 0 (relative)
+        point_start['time_rel'] = 0
+        point_goal['time_rel'] = 0
+        # Get start altitude and calc and set relative goal altitude
+        point_start_alt_abs = self.get_altitude_UTM(point_start)
+        point_goal_alt_abs  = self.get_altitude_UTM(point_goal)
+        point_goal_z_rel_not_elevated = point_goal_alt_abs-point_start_alt_abs
+        if type_of_planning == self.GLOBAL_PLANNING or calc_goal_height:
+            point_goal['z_rel'] = point_goal_alt_abs-point_start_alt_abs
+
+        if use_start_elevation_m != 0:
+            point_start_original = deepcopy(point_start)
+            point_start['z_rel'] = use_start_elevation_m
+        # Convert points to tuples
+        point_start_tuple = self.coord_conv.pos4dDICT2pos4dTUPLE_UTM(point_start)
+        point_goal_tuple  = self.coord_conv.pos4dDICT2pos4dTUPLE_UTM(point_goal)
+
+        # find min and max of the start and goal
+        y_min    = min(point_start_tuple[0], point_goal_tuple[0])
+        x_min    = min(point_start_tuple[1], point_goal_tuple[1])
+        y_max    = max(point_start_tuple[0], point_goal_tuple[0])
+        x_max    = max(point_start_tuple[1], point_goal_tuple[1])
+        z_rel_min = min(0, point_goal_z_rel_not_elevated)
+        z_rel_max = self.MAX_FLYING_ALTITUDE
+        y_min_max_diff = y_max - y_min
+        x_min_max_diff = x_max - x_min
+        x_y_diff_avg = (y_min_max_diff+x_min_max_diff) / 2
+
+        y_range = [y_min-(x_y_diff_avg/2), y_max-(x_y_diff_avg/2)]
+        x_range = [x_min-(x_y_diff_avg/2), x_max-(x_y_diff_avg/2)]
+        z_rel_range = [z_rel_min-10, z_rel_max+10]
+        # print y_range
+        # print x_range
+        # print z_rel_range
+
+        # Create the node list and add the start point
+        node_list = [point_start_tuple]
+        parent_list = [None]
+
+        # Init counter
+        iteration_counter = 0
+        time_start = get_cur_time_epoch()
+        time_cur = time_start
+
+        # Start the search
+        self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('searching', 'orange') )
+        while iteration_counter < max_iterations:
+            # Generate a random point and make it the goal goal_sample_rate % of the time
+            if randint(0, 100) > goal_sample_rate:
+                rnd = [ uniform(y_range[0], y_range[1]), uniform(x_range[0], x_range[1]), uniform(z_rel_range[0], z_rel_range[1]) ]
+            else:
+                rnd = [ point_goal_tuple[0], point_goal_tuple[1], point_goal_tuple[2] ]
+
+            # Generate a proper point from the rand array
+            rnd_pos4d_tuple = self.coord_conv.pos4dDICT2pos4dTUPLE_UTM(self.coord_conv.generate_pos4d_UTM_dict(rnd[0], rnd[1], rnd[2]))
+
+            # Find nearest node
+            nearest_index = self.get_nearest_index_RRT(rnd_pos4d_tuple, node_list)
+            nearest_node = node_list[nearest_index]
+            #print nearest_node
+
+            # Expand the tree
+            theta = atan2(rnd_pos4d_tuple[1] - nearest_node[1], rnd_pos4d_tuple[0] - nearest_node[0])
+            extend_y = step_size_horz*cos(theta)
+            extend_x = step_size_horz*sin(theta)
+            if rnd_pos4d_tuple[2] > nearest_node[2]:
+                extend_z_rel = step_size_vert
+            else:
+                extend_z_rel = -step_size_vert
+
+            horz_distance_goal = self.calc_euclidian_dist_UTM(point_goal_tuple, nearest_node)[1]
+            if horz_distance_goal > step_size_horz: # Not close to the goal - keep ideal altitude
+                if nearest_node[2] == self.IDEAL_FLIGHT_ALTITUDE:
+                    extend_z_rel = 0
+                else:
+                    if nearest_node[2] < self.IDEAL_FLIGHT_ALTITUDE:
+                        extend_z_rel = step_size_vert
+                    else:
+                        extend_z_rel = -step_size_vert
+            else: # Close to the goal - move towards goal altitude
+                if nearest_node[2] == point_goal_tuple[2]:
+                    extend_z_rel = 0
+                else:
+                    if nearest_node[2] < point_goal_tuple[2]:
+                        extend_z_rel = step_size_vert
+                    else:
+                        extend_z_rel = -step_size_vert
+
+            new_node = self.pos4dTUPLE_UTM_copy_and_move_point(nearest_node, extend_y, extend_x, extend_z_rel, type_of_planning, force_time_calc = True) # Construct the new_node node; the function calculates the 4 dimension by the time required to travel between the nodes
+
+            if type_of_planning == self.LOCAL_PLANNING:
+                if self.is_point_in_no_fly_zones_UTM(new_node, buffer_distance_m = step_size_horz, use_dynamic = True)[0]:
+                    #print 'INSIDE dynamic GEOFENCE'
+                    continue
+
+            if new_node[2]+step_size_vert <= self.get_altitude_UTM(new_node)-point_start_alt_abs: # note that <= is to include points on the surface (it is a drone, not a car)
+                #print 'Below the earths surface, new_node rel altitude %.02f, new_node abs altitude %.02f, start abs altitude %.02f' % (new_node[2], self.get_altitude_UTM(new_node), point_start_alt_abs)
+                continue
+
+            if new_node[2] > self.MAX_FLYING_ALTITUDE:
+                #print 'Violates the %.01f altitude legislated limit, UAV at %.01f' % (self.MAX_FLYING_ALTITUDE, new_node[2])
+                continue
+
+            node_list.append(new_node)
+            parent_list.append(nearest_index)
+
+            iteration_counter += 1
+
+            # Test if current point is close enough to the goal point
+            is_goal, dist_to_goal = self.is_goal_UTM(new_node, point_goal_tuple, step_size_horz, step_size_vert)
+            if is_goal:
+                """ Solution has been found """
+                self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('found solution', 'green') )
+                print 'Solution has been found, dist to goal:', dist_to_goal
+                break
+
+            time_cur = get_cur_time_epoch()
+            if (round(time_cur,1) - round(time_start,1)) % 0.5 == 0:
+                self.gui.on_main_thread( lambda: self.gui.set_global_plan_search_time( time_cur - time_start ) )
+                self.gui.on_main_thread( lambda: self.gui.set_global_plan_nodes_visited( len(node_list) ) )
+
+        if iteration_counter >= max_iterations:
+            self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('iteration limit reached', 'red') )
+            return []
+        self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('backtracing', 'orange') )
+        planned_path = []
+        planned_path.append(self.coord_conv.pos4dTUPLE2pos4dDICT_UTM(point_goal_tuple))
+        last_index = len(node_list)-1
+        while parent_list[last_index] is not None:
+            planned_path.append(self.coord_conv.pos4dTUPLE2pos4dDICT_UTM(node_list[last_index]))
+            last_index = parent_list[last_index]
+        planned_path.append(self.coord_conv.pos4dTUPLE2pos4dDICT_UTM(point_start_tuple))
+        planned_path.reverse()
+
+        self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('path backtraced', 'green') )
+        # Return the path = empty
+        return planned_path
+
+    def get_nearest_index_RRT(self, rnd_point, node_list):
+        """
+        Find the node in the node_list that has the smallest distance to the random node/point
+        Input: random point and node list
+        Output: index of the node with the smallest distance to the random node
+        """
+        dist_list = []
+        for element in node_list:
+            dist_list.append(self.calc_euclidian_dist_UTM(rnd_point, element)[0])
+        return dist_list.index(min(dist_list))
+
+
     def reduce_path_rdp_UTM(self, planned_path, tolerance=-1):
         """
         Removes waypoints according to the Ramer-Douglas-Peucker algorithm
@@ -1158,7 +1314,7 @@ class UAV_path_planner():
 
         return planned_path
 
-    def pos4dTUPLE_UTM_copy_and_move_point(self, point4dUTM, y_offset, x_offset, z_offset, type_of_planning = 0):
+    def pos4dTUPLE_UTM_copy_and_move_point(self, point4dUTM, y_offset, x_offset, z_offset, type_of_planning = 0, force_time_calc = False):
         """
         Takes a pos4d tuple and modifies it to a new pos4d tuple using the provided offsets
         Input: 1 4d UTM point along with 3 dimensional offset given as individual arguments
@@ -1166,7 +1322,7 @@ class UAV_path_planner():
         """
         tmp_point_arr   = [point4dUTM[0]+float(y_offset), point4dUTM[1]+float(x_offset), point4dUTM[2]+float(z_offset), point4dUTM[3], point4dUTM[4], point4dUTM[5], point4dUTM[6]] # make tmp arr because it is a mutable container
         tmp_point_tuple = (tmp_point_arr[0], tmp_point_arr[1], tmp_point_arr[2], tmp_point_arr[3], tmp_point_arr[4], tmp_point_arr[5], tmp_point_arr[6]) # make tmp tuple for calculating the travel time
-        if type_of_planning == self.GLOBAL_PLANNING or type_of_planning == self.LOCAL_PLANNING:
+        if (type_of_planning == self.GLOBAL_PLANNING or type_of_planning == self.LOCAL_PLANNING) and not force_time_calc:
             travel_time_delta = 0
         else:
             travel_time_delta = self.calc_travel_time_from_UTMpoints_w_wind(point4dUTM, tmp_point_tuple)

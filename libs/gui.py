@@ -285,7 +285,7 @@ class path_planner_gui(StoppableThread):
         self.label_planner_type.grid(row=row_num_left, column=0)
         self.combo_planner_type = Combobox(self.root)
         self.combo_planner_type['values'] = self.parent_class.PATH_PLANNER_NAMES
-        self.combo_planner_type.current(0)
+        self.combo_planner_type.current(1)
         self.combo_planner_type.grid(row=row_num_left, column=1)
 
         row_num_left += 1
@@ -336,7 +336,7 @@ class path_planner_gui(StoppableThread):
         self.input_step_size_vert.insert(0, self.DEFAULT_STEP_SIZE_VERT)
         self.input_step_size_vert.grid(row=row_num_left, column=1)
         row_num_left += 1
-        self.label_search_time_max = Label(self.root, text="Max search time [s]:")
+        self.label_search_time_max = Label(self.root, text="Max search time [s] (A*) or iterations (RRT):")
         self.label_search_time_max.grid(row=row_num_left, column=0)
         self.input_search_time_max = Entry(self.root,width=10)
         self.input_search_time_max.insert(0, self.DEFAULT_SEARCH_TIME_MAX)
