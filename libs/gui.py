@@ -32,10 +32,10 @@ class StoppableThread(threading.Thread):
             self.join()
 
 class path_planner_gui(StoppableThread):
-    DEFAULT_START_LAT = 55.435259 #55.431122
-    DEFAULT_START_LON = 10.410862 #10.420436
-    DEFAULT_GOAL_LAT  = 55.424736 #55.427203
-    DEFAULT_GOAL_LON  = 10.419749 #10.419043
+    DEFAULT_START_LAT = 55.43526 #55.431122
+    DEFAULT_START_LON = 10.41086 #10.420436
+    DEFAULT_GOAL_LAT  = 55.42474 #55.427203
+    DEFAULT_GOAL_LON  = 10.41975 #10.419043
 
     DEFAULT_STEP_SIZE_HORZ = 75
     DEFAULT_STEP_SIZE_VERT = 10
@@ -95,6 +95,9 @@ class path_planner_gui(StoppableThread):
     def set_label_weather(self, txt, color = 'black'):
         self.label_data_source_weather_res.configure(text=txt)
         self.label_data_source_weather_res.configure(fg=color)
+    def set_label_rally_points(self, txt, color = 'black'):
+        self.label_data_rally_point_res.configure(text=txt)
+        self.label_data_rally_point_res.configure(fg=color)
     def set_global_plan_start_heuristic(self, val, color = 'black'):
         self.label_global_plan_start_heuristic_res.configure(text='%.02f' % val)
         self.label_global_plan_start_heuristic_res.configure(fg=color)
@@ -155,6 +158,9 @@ class path_planner_gui(StoppableThread):
     def set_scrolledtext_global_path(self, txt):
         self.scrolledtext_global_path.delete(1.0,END)
         self.scrolledtext_global_path.insert(INSERT,txt)
+    def set_scrolledtext_local_path(self, txt):
+        self.scrolledtext_local_path.delete(1.0,END)
+        self.scrolledtext_local_path.insert(INSERT,txt)
 
     def enable_button_global_plan(self):
         self.button_global_plan.configure(state='normal')
@@ -185,22 +191,22 @@ class path_planner_gui(StoppableThread):
             self.button_local_plan.configure(state='normal')
             self.button_global_plan.configure(state='normal')
             self.button_global_plan.configure(text='Start global planning')
-            self.button_show_result_webpage.configure(state='normal')
+            self.button_show_result_webpage_global.configure(state='normal')
             self.button_evaluate_path.configure(state='normal')
-            self.button_web_visualize.configure(state='normal')
+            self.button_web_visualize_global.configure(state='normal')
         else: # The global path planner failed and therefore diable the local path planner and change the option to continue
             self.button_local_plan.configure(state='disabled')
             self.button_global_plan.configure(state='normal')
-            self.button_show_result_webpage.configure(state='disabled')
+            self.button_show_result_webpage_global.configure(state='disabled')
             self.button_global_plan.configure(text='Continue global planning')
             self.button_evaluate_path.configure(state='disabled')
-            self.button_web_visualize.configure(state='disabled')
+            self.button_web_visualize_global.configure(state='disabled')
     def start_global_path_planning(self):
         self.button_global_plan.configure(state='disabled')
         self.button_local_plan.configure(state='disabled')
-        self.button_show_result_webpage.configure(state='disabled')
+        self.button_show_result_webpage_global.configure(state='disabled')
         self.button_evaluate_path.configure(state='disabled')
-        self.button_web_visualize.configure(state='disabled')
+        self.button_web_visualize_global.configure(state='disabled')
 
         # Get data from the GUI
         path_planner = self.combo_planner_type.get()
@@ -219,9 +225,13 @@ class path_planner_gui(StoppableThread):
         self.parent_class.plan_path_local(path_planner = path_planner, step_size_horz = step_size_horz, step_size_vert = step_size_vert, time_step = time_step, acceleration_factor = acceleration_factor)
         self.button_global_plan.configure(state='normal')
         self.button_local_plan.configure(state='normal')
+        self.button_web_visualize_local.configure(state='normal')
+        self.button_show_result_webpage_local.configure(state='normal')
     def start_local_path_planning(self):
         self.button_global_plan.configure(state='disabled')
         self.button_local_plan.configure(state='disabled')
+        self.button_web_visualize_local.configure(state='disabled')
+        self.button_show_result_webpage_local.configure(state='disabled')
         # Get data from the GUI
         path_planner = str(self.combo_planner_type.get())
         time_step = float(self.input_time_step.get())
@@ -233,11 +243,21 @@ class path_planner_gui(StoppableThread):
         thread_local_planning = threading.Thread(target=self.local_planner_thread, args=(path_planner, step_size_horz, step_size_vert, search_time_max, time_step, acceleration_factor))
         thread_local_planning.start()
 
-    def show_result_webpage(self):
-        self.parent_class.map_plotter.show_plot()
+    def show_result_webpage_global(self):
+        self.parent_class.draw_planned_path_global()
+        self.parent_class.map_plotter_global.show_plot()
 
-    def show_web_visualize(self):
-        route_id = self.parent_class.visualize_path()
+    def show_result_webpage_local(self):
+        self.parent_class.draw_planned_path_local()
+        self.parent_class.map_plotter_local.show_plot()
+
+    def show_web_visualize_global(self):
+        route_id = self.parent_class.visualize_path_3d_global()
+        if not None:
+            url = 'http://uas.heltner.net/routes/'+str(route_id)+'/3d'
+            webbrowser.open_new(url)
+    def show_web_visualize_local(self):
+        route_id = self.parent_class.visualize_path_3d_local()
         if not None:
             url = 'http://uas.heltner.net/routes/'+str(route_id)+'/3d'
             webbrowser.open_new(url)
@@ -337,7 +357,7 @@ class path_planner_gui(StoppableThread):
         self.input_time_step.insert(0, self.DEFAULT_TIME_STEP)
         self.input_time_step.grid(row=row_num_left, column=1)
         row_num_left += 1
-        self.label_acceleration_factor = Label(self.root, text="Acceleration factor:")
+        self.label_acceleration_factor = Label(self.root, text="Playback speed:")
         self.label_acceleration_factor.grid(row=row_num_left, column=0)
         self.input_acceleration_factor = Entry(self.root,width=10)
         self.input_acceleration_factor.insert(0, self.DEFAULT_ACCELERATION_FACTOR)
@@ -365,7 +385,7 @@ class path_planner_gui(StoppableThread):
         self.button_local_plan.configure(state='disabled') # disable the button since it cannot make a local plan before it has made a global plan
         self.button_local_plan.grid(row=row_num_left, column=0, columnspan = 2)
         row_num_left += 1
-        self.label_sim_info = Label(self.root, text="Simulation information", font=("Arial Bold", 10))
+        self.label_sim_info = Label(self.root, text="Simulation information", font=("Arial Bold", 12))
         self.label_sim_info.grid(row=row_num_left, column=0, columnspan = 2)
         row_num_left += 1
         self.label_local_plan_status = Label(self.root, text="Status:")
@@ -432,6 +452,12 @@ class path_planner_gui(StoppableThread):
         self.label_data_source_weather_res = Label(self.root, text="not loaded")
         self.label_data_source_weather_res.configure(fg='red')
         self.label_data_source_weather_res.grid(row=row_num_right, column=3)
+        row_num_right += 1
+        self.label_data_rally_point = Label(self.root, text="Rally points:")
+        self.label_data_rally_point.grid(row=row_num_right, column=2)
+        self.label_data_rally_point_res = Label(self.root, text="not loaded")
+        self.label_data_rally_point_res.configure(fg='red')
+        self.label_data_rally_point_res.grid(row=row_num_right, column=3)
 
         row_num_right += 1
         # gpe = global path evaluator
@@ -498,7 +524,7 @@ class path_planner_gui(StoppableThread):
         self.label_gpe_objects_planner_res.grid(row=row_num_right, column=3)
 
         row_num_right += 1
-        self.label_planning_info = Label(self.root, text="Planning information", font=("Arial Bold", 10))
+        self.label_planning_info = Label(self.root, text="Planning information", font=("Arial Bold", 12))
         self.label_planning_info.grid(row=row_num_right, column=2, columnspan = 2)
         row_num_right += 1
         self.label_global_plan_status = Label(self.root, text="Status:")
@@ -553,14 +579,30 @@ class path_planner_gui(StoppableThread):
         self.scrolledtext_global_path.grid(row=row_num_both, column=1, columnspan=3)
 
         row_num_both += 1
-        self.button_show_result_webpage = Button(self.root, text="2D path visualization (local)", command=self.show_result_webpage)
-        self.button_show_result_webpage.configure(state='disabled') # Disabled because no global plan has been made
-        self.button_show_result_webpage.grid(row=row_num_both, column=0, columnspan = 2)
+        self.label_local_path = Label(self.root, text="Local path:")
+        self.label_local_path.grid(row=row_num_both, column=0)
+        self.scrolledtext_local_path = tkst.ScrolledText(self.root,height=10)
+        self.scrolledtext_local_path.grid(row=row_num_both, column=1, columnspan=3)
 
+        row_num_both += 1
+        self.button_show_result_webpage_global = Button(self.root, text="2D global path visualization (local)", command=self.show_result_webpage_global)
+        self.button_show_result_webpage_global.configure(state='disabled') # Disabled because no global plan has been made
+        self.button_show_result_webpage_global.grid(row=row_num_both, column=0, columnspan = 2)
         #row_num_both += 1
-        self.button_web_visualize = Button(self.root, text="3D path visualization (online)", command=self.show_web_visualize)
-        self.button_web_visualize.configure(state='disabled') # Disabled because no global plan has been made
-        self.button_web_visualize.grid(row=row_num_both, column=2, columnspan = 2)
+        self.button_web_visualize_global = Button(self.root, text="3D global path visualization (online)", command=self.show_web_visualize_global)
+        self.button_web_visualize_global.configure(state='disabled') # Disabled because no global plan has been made
+        self.button_web_visualize_global.grid(row=row_num_both, column=2, columnspan = 2)
+
+        row_num_both += 1
+        self.button_show_result_webpage_local = Button(self.root, text="2D local path visualization (local)", command=self.show_result_webpage_local)
+        self.button_show_result_webpage_local.configure(state='disabled') # Disabled because no global plan has been made
+        self.button_show_result_webpage_local.grid(row=row_num_both, column=0, columnspan = 2)
+        #row_num_both += 1
+        self.button_web_visualize_local = Button(self.root, text="3D local path visualization (online)", command=self.show_web_visualize_local)
+        self.button_web_visualize_local.configure(state='disabled') # Disabled because no global plan has been made
+        self.button_web_visualize_local.grid(row=row_num_both, column=2, columnspan = 2)
+
+
 
 
         # Configure the queue callback

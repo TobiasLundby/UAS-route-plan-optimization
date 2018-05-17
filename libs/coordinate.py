@@ -197,6 +197,19 @@ class coordinate_transform():
         (back_conv_lat, back_conv_lon) = self.uc.utm_to_geodetic (pos3d_UTM[3], pos3d_UTM[4], pos3d_UTM[0], pos3d_UTM[1])
         return [back_conv_lat, back_conv_lon, pos3d_UTM[2]]
 
+    def generate_pos3d_UTM_list(self, easting, northing, z_rel, hemisphere = 'N', zone=32, letter='U'):
+        """ Generates a 3d UTM point as list
+        Input: easting, northing, z_rel and optional hemisphere, zone, and letter
+        Output: 6 value 1 element array of y/easting, x/norting, alt_rel, hemisphere, zone, and letter
+        """
+        return [float(easting), float(northing), float(z_rel), hemisphere, zone, letter]
+    def generate_pos3d_UTM_dict(self, easting, northing, z_rel, hemisphere = 'N', zone=32, letter='U'):
+        """ Generates a 3d UTM point as list
+        Input: easting, northing, z_rel and optional hemisphere, zone, and letter
+        Output: 6 value 1 element dict of y/easting, x/norting, alt_rel, hemisphere, zone, and letter
+        """
+        return {'y':float(easting), 'x': float(northing), 'z_rel':float(z_rel), 'hemisphere': hemisphere, 'zone': zone, 'letter': letter}
+
     def pos3dDICT2pos2dDICT_geodetic(self, pos3dDICT):
         """ Converts pos3dDICT to pos2dDICT, geodetic
         Input: 3 value 1 element DICT of lat, lon, alt_rel

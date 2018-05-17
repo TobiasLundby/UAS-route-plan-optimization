@@ -17,7 +17,7 @@ default_plot_color      = 'red'
 default_plot_alpha      = 0.8
 
 class map_plotter():
-    def __init__(self, coord_conv_object, debug = False):
+    def __init__(self, coord_conv_object, output_filename = "path_planning.html", debug = False):
         """
         Init method
         Input: optional debug parameter which toogles debug messages
@@ -28,7 +28,7 @@ class map_plotter():
         self.coord_conv = coord_conv_object
 
         # Set output file for Bokeh
-        output_file("path_planning.html")
+        output_file(output_filename)
 
         # Set bounds for map plot
         use_bounds = False
