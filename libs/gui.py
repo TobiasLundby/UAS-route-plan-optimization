@@ -40,6 +40,13 @@ class path_planner_gui(StoppableThread):
     DEFAULT_STEP_SIZE_HORZ = 75
     DEFAULT_STEP_SIZE_VERT = 10
     DEFAULT_SEARCH_TIME_MAX = 120 # unit: s
+
+    DEFAULT_TIME_STEP = 1.0 # unit: s
+    DEFAULT_ACCELERATION_FACTOR = 4.0 # unitless
+    DEFAULT_STEP_SIZE_HORZ_LOCAL = 25
+    DEFAULT_STEP_SIZE_VERT_LOCAL = 10
+    DEFAULT_SEARCH_TIME_MAX_LOCAL = 180 # unit: s
+
     def __init__(self, parent_class, auto_start = False):
         # self.__class__ = type(self.__class__.__name__, (base_class, object), dict(self.__class__.__dict__))
         # super(self.__class__, self).__init__()
@@ -148,10 +155,30 @@ class path_planner_gui(StoppableThread):
     def set_scrolledtext_global_path(self, txt):
         self.scrolledtext_global_path.delete(1.0,END)
         self.scrolledtext_global_path.insert(INSERT,txt)
+
     def enable_button_global_plan(self):
         self.button_global_plan.configure(state='normal')
     def diable_button_global_plan(self):
         self.button_global_plan.configure(state='disabled')
+
+    def set_label_local_plan_status(self, txt, color = 'black'):
+        self.label_local_plan_status_res.configure(text=txt)
+        self.label_local_plan_status_res.configure(fg=color)
+    def set_label_local_plan_time(self, val, color = 'black'):
+        self.label_local_plan_time_res.configure(text='%.02f [s]'%val)
+        self.label_local_plan_time_res.configure(fg=color)
+    def set_label_local_uav_y(self, val, color = 'black'):
+        self.label_local_uav_y_res.configure(text='%.01f [m]'%val)
+        self.label_local_uav_y_res.configure(fg=color)
+    def set_label_local_uav_x(self, val, color = 'black'):
+        self.label_local_uav_x_res.configure(text='%.01f [m]'%val)
+        self.label_local_uav_x_res.configure(fg=color)
+    def set_label_local_uav_z_rel(self, val, color = 'black'):
+        self.label_local_uav_z_rel_res.configure(text='%.01f [m]'%val)
+        self.label_local_uav_z_rel_res.configure(fg=color)
+    def set_label_local_uav_status(self, txt, color = 'black'):
+        self.label_local_uav_status_res.configure(text=txt)
+        self.label_local_uav_status_res.configure(fg=color)
 
     def global_planner_thread(self, point_start, point_goal, path_planner, step_size_horz, step_size_vert, search_time_max):
         if self.parent_class.plan_path_global(point_start, point_goal, path_planner, step_size_horz=step_size_horz, step_size_vert=step_size_vert, search_time_max=search_time_max): # Plan path and test the result to update the GUI
@@ -188,8 +215,8 @@ class path_planner_gui(StoppableThread):
         thread_global_planning.start()
         #thread_global_planning.join()
 
-    def local_planner_thread(self, path_planner):
-        self.parent_class.plan_path_local(path_planner)
+    def local_planner_thread(self, path_planner, step_size_horz, step_size_vert, max_search_time, time_step, acceleration_factor):
+        self.parent_class.plan_path_local(path_planner = path_planner, step_size_horz = step_size_horz, step_size_vert = step_size_vert, time_step = time_step, acceleration_factor = acceleration_factor)
         self.button_global_plan.configure(state='normal')
         self.button_local_plan.configure(state='normal')
     def start_local_path_planning(self):
@@ -197,8 +224,13 @@ class path_planner_gui(StoppableThread):
         self.button_local_plan.configure(state='disabled')
         # Get data from the GUI
         path_planner = str(self.combo_planner_type.get())
+        time_step = float(self.input_time_step.get())
+        acceleration_factor = float(self.input_acceleration_factor.get())
+        step_size_horz = float(self.input_replan_step_size_horz.get())
+        step_size_vert = float(self.input_replan_step_size_vert.get())
+        search_time_max = float(self.input_replan_search_time_max.get())
         # Create and start the thread
-        thread_local_planning = threading.Thread(target=self.local_planner_thread, args=(path_planner,))
+        thread_local_planning = threading.Thread(target=self.local_planner_thread, args=(path_planner, step_size_horz, step_size_vert, search_time_max, time_step, acceleration_factor))
         thread_local_planning.start()
 
     def show_result_webpage(self):
@@ -224,7 +256,7 @@ class path_planner_gui(StoppableThread):
         self.root.title("UAV Path Planner")
         #self.root.geometry('{}x{}'.format(460, 350))
 
-        # Left side layout
+        """ Left side layout """
         row_num_left = 0
         self.label_start_point = Label(self.root, text="Path Planning", font=("Arial Bold", 12))
         self.label_start_point.grid(row=row_num_left, column=0, columnspan = 2)
@@ -269,7 +301,7 @@ class path_planner_gui(StoppableThread):
         self.input_goal_point_lon.grid(row=row_num_left, column=1)
 
         row_num_left += 1
-        self.label_options  = Label(self.root, text="Options", font=("Arial Bold", 10))
+        self.label_options  = Label(self.root, text="Options global path planner", font=("Arial Bold", 10))
         self.label_options.grid(row=row_num_left, column=0, columnspan = 2)
         row_num_left += 1
         self.label_step_size_horz = Label(self.root, text="Horizontal step-size [m]:")
@@ -294,54 +326,79 @@ class path_planner_gui(StoppableThread):
         self.button_global_plan = Button(self.root, text="Start global planning", command=self.start_global_path_planning)
         self.button_global_plan.configure(state='disabled')
         self.button_global_plan.grid(row=row_num_left, column=0, columnspan = 2)
-        row_num_left += 1
-        self.label_global_plan_status = Label(self.root, text="Status:")
-        self.label_global_plan_status.grid(row=row_num_left, column=0)
-        self.label_global_plan_status_res = Label(self.root, text="idle")
-        self.label_global_plan_status_res.grid(row=row_num_left, column=1)
-        row_num_left += 1
-        self.label_global_plan_start_heuristic = Label(self.root, text="Start heuristic:")
-        self.label_global_plan_start_heuristic.grid(row=row_num_left, column=0)
-        self.label_global_plan_start_heuristic_res = Label(self.root, text="N/A")
-        self.label_global_plan_start_heuristic_res.grid(row=row_num_left, column=1)
-        row_num_left += 1
-        self.label_global_plan_cur_heuristic = Label(self.root, text="Best heuristic:")
-        self.label_global_plan_cur_heuristic.grid(row=row_num_left, column=0)
-        self.label_global_plan_cur_heuristic_res = Label(self.root, text="N/A")
-        self.label_global_plan_cur_heuristic_res.grid(row=row_num_left, column=1)
-        row_num_left += 1
-        self.label_global_plan_horz_step_size = Label(self.root, text="Horizontal step-size:")
-        self.label_global_plan_horz_step_size.grid(row=row_num_left, column=0)
-        self.label_global_plan_horz_step_size_res = Label(self.root, text="N/A")
-        self.label_global_plan_horz_step_size_res.grid(row=row_num_left, column=1)
-        row_num_left += 1
-        self.label_global_plan_vert_step_size = Label(self.root, text="Vertical step-size:")
-        self.label_global_plan_vert_step_size.grid(row=row_num_left, column=0)
-        self.label_global_plan_vert_step_size_res = Label(self.root, text="N/A")
-        self.label_global_plan_vert_step_size_res.grid(row=row_num_left, column=1)
-        row_num_left += 1
-        self.label_global_plan_search_time = Label(self.root, text="Search time:")
-        self.label_global_plan_search_time.grid(row=row_num_left, column=0)
-        self.label_global_plan_search_time_res = Label(self.root, text="N/A")
-        self.label_global_plan_search_time_res.grid(row=row_num_left, column=1)
-        row_num_left += 1
-        self.label_global_plan_nodes_visited = Label(self.root, text="Nodes visited:")
-        self.label_global_plan_nodes_visited.grid(row=row_num_left, column=0)
-        self.label_global_plan_nodes_visited_res = Label(self.root, text="N/A")
-        self.label_global_plan_nodes_visited_res.grid(row=row_num_left, column=1)
-        row_num_left += 1
-        self.label_global_plan_nodes_explored = Label(self.root, text="Nodes explored:")
-        self.label_global_plan_nodes_explored.grid(row=row_num_left, column=0)
-        self.label_global_plan_nodes_explored_res = Label(self.root, text="N/A")
-        self.label_global_plan_nodes_explored_res.grid(row=row_num_left, column=1)
 
-
+        row_num_left += 1
+        self.label_options_local  = Label(self.root, text="Options local path planner", font=("Arial Bold", 10))
+        self.label_options_local.grid(row=row_num_left, column=0, columnspan = 2)
+        row_num_left += 1
+        self.label_time_step = Label(self.root, text="Time step [s]:")
+        self.label_time_step.grid(row=row_num_left, column=0)
+        self.input_time_step = Entry(self.root,width=10)
+        self.input_time_step.insert(0, self.DEFAULT_TIME_STEP)
+        self.input_time_step.grid(row=row_num_left, column=1)
+        row_num_left += 1
+        self.label_acceleration_factor = Label(self.root, text="Acceleration factor:")
+        self.label_acceleration_factor.grid(row=row_num_left, column=0)
+        self.input_acceleration_factor = Entry(self.root,width=10)
+        self.input_acceleration_factor.insert(0, self.DEFAULT_ACCELERATION_FACTOR)
+        self.input_acceleration_factor.grid(row=row_num_left, column=1)
+        row_num_left += 1
+        self.label_replan_step_size_horz = Label(self.root, text="Replan horizontal step-size [m]:")
+        self.label_replan_step_size_horz.grid(row=row_num_left, column=0)
+        self.input_replan_step_size_horz = Entry(self.root,width=10)
+        self.input_replan_step_size_horz.insert(0, self.DEFAULT_STEP_SIZE_HORZ_LOCAL)
+        self.input_replan_step_size_horz.grid(row=row_num_left, column=1)
+        row_num_left += 1
+        self.label_replan_step_size_vert = Label(self.root, text="Replan vertical step-size [m]:")
+        self.label_replan_step_size_vert.grid(row=row_num_left, column=0)
+        self.input_replan_step_size_vert = Entry(self.root,width=10)
+        self.input_replan_step_size_vert.insert(0, self.DEFAULT_STEP_SIZE_VERT_LOCAL)
+        self.input_replan_step_size_vert.grid(row=row_num_left, column=1)
+        row_num_left += 1
+        self.label_replan_search_time_max = Label(self.root, text="Replan max search time [s]:")
+        self.label_replan_search_time_max.grid(row=row_num_left, column=0)
+        self.input_replan_search_time_max = Entry(self.root,width=10)
+        self.input_replan_search_time_max.insert(0, self.DEFAULT_SEARCH_TIME_MAX_LOCAL)
+        self.input_replan_search_time_max.grid(row=row_num_left, column=1)
         row_num_left += 1
         self.button_local_plan = Button(self.root, text="Start local planning", command=self.start_local_path_planning)
         self.button_local_plan.configure(state='disabled') # disable the button since it cannot make a local plan before it has made a global plan
         self.button_local_plan.grid(row=row_num_left, column=0, columnspan = 2)
+        row_num_left += 1
+        self.label_sim_info = Label(self.root, text="Simulation information", font=("Arial Bold", 10))
+        self.label_sim_info.grid(row=row_num_left, column=0, columnspan = 2)
+        row_num_left += 1
+        self.label_local_plan_status = Label(self.root, text="Status:")
+        self.label_local_plan_status.grid(row=row_num_left, column=0)
+        self.label_local_plan_status_res = Label(self.root, text="idle")
+        self.label_local_plan_status_res.grid(row=row_num_left, column=1)
+        row_num_left += 1
+        self.label_local_plan_time = Label(self.root, text="Time:")
+        self.label_local_plan_time.grid(row=row_num_left, column=0)
+        self.label_local_plan_time_res = Label(self.root, text="N/A")
+        self.label_local_plan_time_res.grid(row=row_num_left, column=1)
+        row_num_left += 1
+        self.label_local_uav_y = Label(self.root, text="UAV y:")
+        self.label_local_uav_y.grid(row=row_num_left, column=0)
+        self.label_local_uav_y_res = Label(self.root, text="N/A")
+        self.label_local_uav_y_res.grid(row=row_num_left, column=1)
+        row_num_left += 1
+        self.label_local_uav_x = Label(self.root, text="UAV x:")
+        self.label_local_uav_x.grid(row=row_num_left, column=0)
+        self.label_local_uav_x_res = Label(self.root, text="N/A")
+        self.label_local_uav_x_res.grid(row=row_num_left, column=1)
+        row_num_left += 1
+        self.label_local_uav_z_rel = Label(self.root, text="UAV z_rel:")
+        self.label_local_uav_z_rel.grid(row=row_num_left, column=0)
+        self.label_local_uav_z_rel_res = Label(self.root, text="N/A")
+        self.label_local_uav_z_rel_res.grid(row=row_num_left, column=1)
+        row_num_left += 1
+        self.label_local_uav_status = Label(self.root, text="UAV status:")
+        self.label_local_uav_status.grid(row=row_num_left, column=0)
+        self.label_local_uav_status_res = Label(self.root, text="N/A")
+        self.label_local_uav_status_res.grid(row=row_num_left, column=1)
 
-        # Right side layout
+        """ Right side layout """
         row_num_right = 0
         self.label_data_sources = Label(self.root, text="Data data sources", font=("Arial Bold", 12))
         self.label_data_sources.grid(row=row_num_right, column=2, columnspan = 2)
@@ -440,7 +497,51 @@ class path_planner_gui(StoppableThread):
         self.label_gpe_objects_planner_res = Label(self.root, text="N/A")
         self.label_gpe_objects_planner_res.grid(row=row_num_right, column=3)
 
-        # Both sides
+        row_num_right += 1
+        self.label_planning_info = Label(self.root, text="Planning information", font=("Arial Bold", 10))
+        self.label_planning_info.grid(row=row_num_right, column=2, columnspan = 2)
+        row_num_right += 1
+        self.label_global_plan_status = Label(self.root, text="Status:")
+        self.label_global_plan_status.grid(row=row_num_right, column=2)
+        self.label_global_plan_status_res = Label(self.root, text="idle")
+        self.label_global_plan_status_res.grid(row=row_num_right, column=3)
+        row_num_right += 1
+        self.label_global_plan_start_heuristic = Label(self.root, text="Start heuristic:")
+        self.label_global_plan_start_heuristic.grid(row=row_num_right, column=2)
+        self.label_global_plan_start_heuristic_res = Label(self.root, text="N/A")
+        self.label_global_plan_start_heuristic_res.grid(row=row_num_right, column=3)
+        row_num_right += 1
+        self.label_global_plan_cur_heuristic = Label(self.root, text="Best heuristic:")
+        self.label_global_plan_cur_heuristic.grid(row=row_num_right, column=2)
+        self.label_global_plan_cur_heuristic_res = Label(self.root, text="N/A")
+        self.label_global_plan_cur_heuristic_res.grid(row=row_num_right, column=3)
+        row_num_right += 1
+        self.label_global_plan_horz_step_size = Label(self.root, text="Horizontal step-size:")
+        self.label_global_plan_horz_step_size.grid(row=row_num_right, column=2)
+        self.label_global_plan_horz_step_size_res = Label(self.root, text="N/A")
+        self.label_global_plan_horz_step_size_res.grid(row=row_num_right, column=3)
+        row_num_right += 1
+        self.label_global_plan_vert_step_size = Label(self.root, text="Vertical step-size:")
+        self.label_global_plan_vert_step_size.grid(row=row_num_right, column=2)
+        self.label_global_plan_vert_step_size_res = Label(self.root, text="N/A")
+        self.label_global_plan_vert_step_size_res.grid(row=row_num_right, column=3)
+        row_num_right += 1
+        self.label_global_plan_search_time = Label(self.root, text="Search time:")
+        self.label_global_plan_search_time.grid(row=row_num_right, column=2)
+        self.label_global_plan_search_time_res = Label(self.root, text="N/A")
+        self.label_global_plan_search_time_res.grid(row=row_num_right, column=3)
+        row_num_right += 1
+        self.label_global_plan_nodes_visited = Label(self.root, text="Nodes visited:")
+        self.label_global_plan_nodes_visited.grid(row=row_num_right, column=2)
+        self.label_global_plan_nodes_visited_res = Label(self.root, text="N/A")
+        self.label_global_plan_nodes_visited_res.grid(row=row_num_right, column=3)
+        row_num_right += 1
+        self.label_global_plan_nodes_explored = Label(self.root, text="Nodes explored:")
+        self.label_global_plan_nodes_explored.grid(row=row_num_right, column=2)
+        self.label_global_plan_nodes_explored_res = Label(self.root, text="N/A")
+        self.label_global_plan_nodes_explored_res.grid(row=row_num_right, column=3)
+
+        """ Both sides """
         if row_num_left > row_num_right:
             row_num_both = row_num_left
         else:

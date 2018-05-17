@@ -428,16 +428,17 @@ class UAV_path_planner():
         return self.is_point_in_no_fly_zone_UTM(test_point_UTM, polygon_index, use_buffer_zone, use_base_buffer_distance_m)
 
     """ Path planning functions """
-    def plan_path_local(self, step_size_horz = 2, step_size_vert = 1, path_planner = 0):
+    def plan_path_local(self, step_size_horz = 25.0, step_size_vert = 10.0, max_search_time = INF, path_planner = 0, time_step = 1.0, acceleration_factor = 4.0):
         """
         Framework for different global path planning algorithms
         Input: start and goal/end point (latitude, longitude in EPSG:4326, and relative altitude) as 3 value array or DICT (lat, lon, alt_rel)
         Output: bool but the path is saved as internal object (planned path of geodetic points (latitude, longitude in EPSG:4326, relative altitude, and relative time))
         """
-        step_size_horz = 50
-        step_size_vert = 10
         if len(self.planned_path_global_UTM) >= 2 and len(self.planned_path_global_geodetic) >= 2: # Check if the global path plan actually made a path
+            self.gui.on_main_thread( lambda: self.gui.set_label_local_plan_status('initializing', 'yellow') )
             print colored('\nLocal path planning started', TERM_COLOR_INFO)
+            # Take a copy of the global plan and work on this instead
+            planned_path_UTM = deepcopy(self.planned_path_global_UTM)
 
             # Get wind data
             weather_index = self.weather_module.convert_time_to_index(WEATHER_HIST_YEAR,WEATHER_HIST_MONTH,WEATHER_HIST_DATE,WEATHER_HIST_HOUR)  # Should be live data when running live
@@ -449,76 +450,106 @@ class UAV_path_planner():
             snowfall = self.weather_module.get_snowfall(weather_index)
 
             # Init simualtion variables
-            uav = {'y':self.planned_path_global_UTM[0]['y'], 'x':self.planned_path_global_UTM[0]['x'], 'z_rel':self.planned_path_global_UTM[0]['z_rel'],'status':self.UAV_STATUS_NORMAL}
-            acceleration_factor = 2
-            time_step = 1 # unit: s
-            time_ctr = 0
+            uav = {'y':planned_path_UTM[0]['y'], 'x':planned_path_UTM[0]['x'], 'z_rel':planned_path_UTM[0]['z_rel'],'status':self.UAV_STATUS_NORMAL}
+            time_ctr = 0.0
             waypoint_ctr = 0
-            waypoint_last = len(self.planned_path_global_UTM)-1
+            waypoint_last = len(planned_path_UTM)-1
             stop_simulation = False
-
-            for i in range(waypoint_last):
+            i = 0
+            self.gui.on_main_thread( lambda: self.gui.set_label_local_plan_status('simulating', 'orange') )
+            while i < waypoint_last:
                 print '\nCurrent waypoints %d and %d' % (i, i+1)
+                print 'Time:', time_ctr
                 # Calculate the direction vector scaled based on time and the step size
                 travel_dir = [
-                    (self.planned_path_global_UTM[i+1]['y']-self.planned_path_global_UTM[i]['y']) / ( (self.planned_path_global_UTM[i+1]['time_rel']-self.planned_path_global_UTM[i]['time_rel']) / time_step ),
-                    (self.planned_path_global_UTM[i+1]['x']-self.planned_path_global_UTM[i]['x']) / ( (self.planned_path_global_UTM[i+1]['time_rel']-self.planned_path_global_UTM[i]['time_rel']) / time_step ),
-                    (self.planned_path_global_UTM[i+1]['z_rel']-self.planned_path_global_UTM[i]['z_rel']) / ( (self.planned_path_global_UTM[i+1]['time_rel']-self.planned_path_global_UTM[i]['time_rel']) / time_step )
+                    (planned_path_UTM[i+1]['y']    -planned_path_UTM[i]['y'])     / ( (planned_path_UTM[i+1]['time_rel']-planned_path_UTM[i]['time_rel']) / time_step ),
+                    (planned_path_UTM[i+1]['x']    -planned_path_UTM[i]['x'])     / ( (planned_path_UTM[i+1]['time_rel']-planned_path_UTM[i]['time_rel']) / time_step ),
+                    (planned_path_UTM[i+1]['z_rel']-planned_path_UTM[i]['z_rel']) / ( (planned_path_UTM[i+1]['time_rel']-planned_path_UTM[i]['time_rel']) / time_step )
                     ]
-                steps_on_current_line = int(floor( ( self.planned_path_global_UTM[i+1]['time_rel']-self.planned_path_global_UTM[i]['time_rel'] )/time_step ))
+                steps_on_current_line = int(floor( ( planned_path_UTM[i+1]['time_rel']-planned_path_UTM[i]['time_rel'] )/time_step ))
                 for k in range(steps_on_current_line):
                     uav['y'] += travel_dir[0]
                     uav['x'] += travel_dir[1]
                     uav['z_rel'] += travel_dir[2]
-                    # TODO make some check
+                    # Check if the UAV is in collision with anything
                     if not self.local_planner_uav_check(uav, time_ctr, time_step, step_size_horz):
                         if uav['status'] == self.UAV_STATUS_IN_NO_FLY_ZONE:
-                            print 'UAV is close to a dynamic no-fly zone, replanning'
+                            self.gui.on_main_thread( lambda: self.gui.set_label_local_plan_status('violates dynamic no-fly zone, replanning', 'red') )
+                            print colored('UAV is close to a dynamic no-fly zone, replanning', TERM_COLOR_ERROR)
                             waypoint_to_plan_to = i+1
                             while True:
-                                colission, smallest_dist = self.is_point_in_no_fly_zones_UTM(self.planned_path_global_UTM[waypoint_to_plan_to], buffer_distance_m = 2*step_size_horz, use_dynamic = True)
+                                colission, smallest_dist = self.is_point_in_no_fly_zones_UTM(planned_path_UTM[waypoint_to_plan_to], buffer_distance_m = step_size_horz, use_dynamic = True)
                                 if not colission:
                                     break
                                 waypoint_to_plan_to += 1
                             print 'Planning towards waypoint ', waypoint_to_plan_to
-                            new_start_point = deepcopy(self.planned_path_global_UTM[waypoint_to_plan_to])
+                            new_start_point = deepcopy(planned_path_UTM[waypoint_to_plan_to])
                             new_start_point['y'] = uav['y']
                             new_start_point['x'] = uav['x']
                             new_start_point['z_rel'] = uav['z_rel']
-                            print self.planned_path_global_UTM[waypoint_to_plan_to]
+                            print planned_path_UTM[waypoint_to_plan_to]
                             print new_start_point
                             # Update the start heuristic in the GUI
-                            self.gui.on_main_thread( lambda: self.gui.set_global_plan_start_heuristic(self.heuristic_a_star(new_start_point, self.planned_path_global_UTM[waypoint_to_plan_to], self.LOCAL_PLANNING)) )
-                            path_UTM = self.plan_planner_Astar(new_start_point, self.planned_path_global_UTM[waypoint_to_plan_to], step_size_horz = step_size_horz, step_size_vert = step_size_vert, type_of_planning = self.LOCAL_PLANNING)
-                            for element in path_UTM:
+                            self.gui.on_main_thread( lambda: self.gui.set_global_plan_start_heuristic(self.heuristic_a_star(new_start_point, planned_path_UTM[waypoint_to_plan_to], self.LOCAL_PLANNING)) )
+                            # Make the new path
+                            path_new_UTM = self.plan_planner_Astar(new_start_point, planned_path_UTM[waypoint_to_plan_to], step_size_horz = step_size_horz, step_size_vert = step_size_vert, type_of_planning = self.LOCAL_PLANNING, search_time_max = max_search_time)
+
+                            # for element in path_new_UTM:
+                            #     print element
+                            planned_path_UTM = planned_path_UTM[:i+1]+path_new_UTM+planned_path_UTM[waypoint_to_plan_to+1:]
+                            # TODO fix the time
+                            for j in range(len(planned_path_UTM)-1):
+                                planned_path_UTM[j+1]['time_rel'] = planned_path_UTM[j]['time_rel'] + self.calc_travel_time_from_UTMpoints_w_wind(planned_path_UTM[j], planned_path_UTM[j+1])
+                            for element in planned_path_UTM:
                                 print element
-                            exit(1)
+                            self.map_plotter.draw_path_UTM(planned_path_UTM)
+                            waypoint_last = len(planned_path_UTM)-1
+                            #exit(1)
+                            break
+
+                        elif uav['status'] == self.UAV_STATUS_WEATHER_LIMIT:
+                            self.gui.on_main_thread( lambda: self.gui.set_label_local_plan_status('violates weather limit, replanning to rally point', 'red') )
+                            print colored('Weather exceeds limits, planning towards nearest rally point', TERM_COLOR_ERROR)
+                            pass
 
                     print 'UAV:', uav
                     time.sleep(time_step/acceleration_factor)
                     time_ctr += time_step
-                last_time_step = ((self.planned_path_global_UTM[i+1]['time_rel']-self.planned_path_global_UTM[i]['time_rel']) / time_step) - steps_on_current_line
+                    self.gui.on_main_thread( lambda: self.gui.set_label_local_plan_time(time_ctr)  )# Update the time on the GUI
+                    self.gui.on_main_thread( lambda: self.gui.set_label_local_uav_y(uav['y'])  )# Update the time on the GUI
+                    self.gui.on_main_thread( lambda: self.gui.set_label_local_uav_x(uav['x'])  )# Update the time on the GUI
+                    self.gui.on_main_thread( lambda: self.gui.set_label_local_uav_z_rel(uav['z_rel'])  )# Update the time on the GUI
+                    self.gui.on_main_thread( lambda: self.gui.set_label_local_uav_status(uav['status'])  )# Update the time on the GUI
+                last_time_step = ((planned_path_UTM[i+1]['time_rel']-planned_path_UTM[i]['time_rel']) / time_step) - steps_on_current_line
+                print last_time_step
                 if last_time_step != 0.0:
                     uav['y'] += travel_dir[0]*last_time_step
                     uav['x'] += travel_dir[1]*last_time_step
                     uav['z_rel'] += travel_dir[2]*last_time_step
                     # TODO make some check
                     print 'UAV:', uav
-                    time.sleep(time_step/acceleration_factor)
-                    time_ctr += time_step
+                    time.sleep(last_time_step/acceleration_factor)
+                    time_ctr += last_time_step
 
+                self.gui.on_main_thread( lambda: self.gui.set_label_local_plan_time(time_ctr)  )# Update the time on the GUI
+                self.gui.on_main_thread( lambda: self.gui.set_label_local_uav_y(uav['y'])  )# Update the time on the GUI
+                self.gui.on_main_thread( lambda: self.gui.set_label_local_uav_x(uav['x'])  )# Update the time on the GUI
+                self.gui.on_main_thread( lambda: self.gui.set_label_local_uav_z_rel(uav['z_rel'])  )# Update the time on the GUI
+                self.gui.on_main_thread( lambda: self.gui.set_label_local_uav_status(uav['status'])  )# Update the time on the GUI
+                i += 1 # increment the loop counter
+            self.gui.on_main_thread( lambda: self.gui.set_label_local_plan_status('idle') )
             print colored('\nSimulated until end or stop', TERM_COLOR_INFO)
 
     def local_planner_uav_check(self, uav, time_current, time_step, step_size_horz, wind_velocity = 0, wind_gust = 0, temp = 0):
         # Check for new no-fly zones
-        colission, smallest_dist = self.is_point_in_no_fly_zones_UTM(uav,buffer_distance_m = 2*step_size_horz, use_dynamic = True)
-        print colission, smallest_dist
+        colission, smallest_dist = self.is_point_in_no_fly_zones_UTM(uav,buffer_distance_m = step_size_horz, use_dynamic = True)
+        #print colission, smallest_dist
         if colission:
             uav['status'] = self.UAV_STATUS_IN_NO_FLY_ZONE
             return False
 
         # Check for ads-b data TODO
-        # Check for droneID dat TODO
+        # Check for droneID data TODO
 
         # Check for weather
         if wind_velocity > MaxOperationWindSpeed_def or wind_gust > MaxOperationWindGusts_def or OperationMinTemperature_def > temp > OperationMaxTemperature_def: # Check wind speed/velocity
@@ -592,10 +623,13 @@ class UAV_path_planner():
             self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('planner not defined', 'red') )
             return []
 
-        # Check if the path planner produced a result
-        if len(path_UTM) <= 1:
+        # if len(path_UTM) > 1: # DRAW if the path has more than 1 waypoints
+        #     self.map_plotter.draw_path_UTM(path_UTM)
+
+        if len(path_UTM) <= 1: # Check if the path planner produced a result
             print colored('The chosen path planner could not find a solution to the problem', TERM_COLOR_ERROR)
             return False
+
         # Convert path from UTM to geodetic
         path_geodetic = []
         for i in range(len(path_UTM)):
@@ -731,35 +765,27 @@ class UAV_path_planner():
         if not continue_planning:
             if self.debug:
                 print colored('Starting new path planning', TERM_COLOR_INFO)
-            # closed list: The set of nodes already evaluated
-            closed_list = set()
+            closed_list = set() # closed list: The set of nodes already evaluated
 
             # For each node, which node it can most efficiently be reached from.
             # If a node can be reached from many nodes, cameFrom will eventually contain the
             # most efficient previous step.
             came_from = {}
 
-            # For each node, the cost of getting from the start node to that node.
-            g_score = {}
-            # The cost of going from start to start is zero.
-            g_score[point_start_tuple] = 0
+            g_score = {} # For each node, the cost of getting from the start node to that node.
+            g_score[point_start_tuple] = 0 # The cost of going from start to start is zero.
 
             # For each node, the total cost of getting from the start node to the goal
             # by passing by that node. That value is partly known, partly heuristic.
             f_score = {}
-            # For the first node, that value is completely heuristic.
-            f_score[point_start_tuple] = self.heuristic_a_star(point_start_tuple, point_goal_tuple, type_of_planning)
+            f_score[point_start_tuple] = self.heuristic_a_star(point_start_tuple, point_goal_tuple, type_of_planning) # For the first node, that value is completely heuristic.
             if self.debug:
                 print colored(INFO_ALT_INDENT+'Start point heuristic: %f' % f_score[point_start_tuple], TERM_COLOR_INFO_ALT)
 
-            # open list: The set of currently discovered nodes that are not evaluated yet.
-            open_list = []
+            open_list = [] # open list: The set of currently discovered nodes that are not evaluated yet.
+            heappush(open_list, (f_score[point_start_tuple], point_start_tuple)) # Initially, only the start node is known.
 
-            # Initially, only the start node is known.
-            heappush(open_list, (f_score[point_start_tuple], point_start_tuple))
-
-            # Take note of the smallest heuristic
-            smallest_heuristic = INF
+            smallest_heuristic = INF # Take note of the smallest heuristic
 
         # Variables for seeing the progress of the search
         open_list_popped_ctr = 0
@@ -805,8 +831,6 @@ class UAV_path_planner():
                 self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('backtracing', 'green') )
                 #planned_path = self.reduce_path_rdp_UTM(planned_path, ((step_size_vert+step_size_horz)/2))
 
-                # DRAW
-                self.map_plotter.draw_path_UTM(planned_path)
                 if self.DRAW_OPEN_LIST:
                     self.map_plotter.draw_points_UTM(open_list, 0, 'yellow', 2)
                 if self.DRAW_CLOSED_LIST:
