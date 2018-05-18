@@ -86,9 +86,11 @@ class UAV_path_planner():
     PP_PRINT_NEW_NODE               = False # RRT
     DRAW_OPEN_LIST                  = False
     DRAW_CLOSED_LIST                = False
-    GLOBAL_PLANNING                 = 0
-    LOCAL_PLANNING                  = 1
-    EMERGENCY_PLANNING              = 2
+    GLOBAL_PLANNING                 = 0 # UAV state numer
+    LOCAL_PLANNING                  = 1 # UAV state numer
+    EMERGENCY_PLANNING              = 2 # UAV state numer
+    RDP_FACTOR_ASTAR                = 1 # Scale factor for the RDP parameter; self.RDP_FACTOR*((step_size_vert+step_size_horz)/2)
+    RDP_FACTOR_RRT                  = 2 # Scale factor for the RDP parameter; self.RDP_FACTOR*((step_size_vert+step_size_horz)/2)
     """ Path evaluation (path fitness) factor constants """
     HORZ_DISTANCE_FACTOR            = 1 # unit: unitless
     VERT_DISTANCE_FACTOR            = 2 # unit: unitless
@@ -933,7 +935,7 @@ class UAV_path_planner():
                 #     print element
 
                 self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('backtracing', 'green') )
-                #planned_path = self.reduce_path_rdp_UTM(planned_path, ((step_size_vert+step_size_horz)/2))
+                planned_path = self.reduce_path_rdp_UTM(planned_path, self.RDP_FACTOR_ASTAR*((step_size_vert+step_size_horz)/2))
 
                 if self.DRAW_OPEN_LIST:
                     self.map_plotter_global.draw_points_UTM(open_list, 0, 'yellow', 2)
@@ -1301,6 +1303,8 @@ class UAV_path_planner():
         planned_path.append(self.coord_conv.pos4dTUPLE2pos4dDICT_UTM(point_start_tuple))
         planned_path.reverse()
 
+        planned_path = self.reduce_path_rdp_UTM(planned_path, self.RDP_FACTOR_RRT*((step_size_vert+step_size_horz)/2))
+
         self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('path backtraced', 'green') )
         # Return the path = empty
         return planned_path
@@ -1546,7 +1550,7 @@ class UAV_path_planner():
             fitness += self.VERT_DISTANCE_FACTOR*vert_distance
             fitness += self.TRAVEL_TIME_FACTOR*travel_time
             fitness += self.WAYPOINTS_FACTOR*waypoints
-            fitness += self.AVG_WAYPOINT_DIST_FACTOR*avg_waypoint_dist
+            fitness -= self.AVG_WAYPOINT_DIST_FACTOR*avg_waypoint_dist
             print colored('Path evaluation done', TERM_COLOR_INFO)
             print colored(RES_INDENT+'Path fitness %.02f [unitless]' % fitness, TERM_COLOR_RES)
             self.planned_path_global_fitness = fitness
