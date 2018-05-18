@@ -32,20 +32,30 @@ class StoppableThread(threading.Thread):
             self.join()
 
 class path_planner_gui(StoppableThread):
-    DEFAULT_START_LAT = 55.43526 #55.431122
-    DEFAULT_START_LON = 10.41086 #10.420436
+    DEFAULT_START_LAT = 55.434352 #55.43526 #55.431122
+    DEFAULT_START_LON = 10.415182 #10.41086 #10.420436
     DEFAULT_GOAL_LAT  = 55.42474 #55.427203
     DEFAULT_GOAL_LON  = 10.41975 #10.419043
 
-    DEFAULT_STEP_SIZE_HORZ = 75
-    DEFAULT_STEP_SIZE_VERT = 10
+    DEFAULT_STEP_SIZE_HORZ_ASTAR = 100
+    DEFAULT_STEP_SIZE_VERT_ASTAR = 10
+    DEFAULT_STEP_SIZE_HORZ_RRT = 50
+    DEFAULT_STEP_SIZE_VERT_RRT = 10
     DEFAULT_SEARCH_TIME_MAX = 120 # unit: s
+    DEFAULT_ITERATIONS_MAX = 3000
 
     DEFAULT_TIME_STEP = 1.0 # unit: s
-    DEFAULT_ACCELERATION_FACTOR = 4.0 # unitless
-    DEFAULT_STEP_SIZE_HORZ_LOCAL = 25
-    DEFAULT_STEP_SIZE_VERT_LOCAL = 10
+    DEFAULT_ACCELERATION_FACTOR = 10.0 # unitless
+
+    DEFAULT_STEP_SIZE_HORZ_LOCAL_ASTAR = 10
+    DEFAULT_STEP_SIZE_VERT_LOCAL_ASTAR = 5
     DEFAULT_SEARCH_TIME_MAX_LOCAL = 180 # unit: s
+
+    DEFAULT_STEP_SIZE_HORZ_LOCAL_RRT = 10
+    DEFAULT_STEP_SIZE_VERT_LOCAL_RRT = 5
+    DEFAULT_ITERATIONS_MAX_LOCAL = 3000 # unit: s
+
+    INITIAL_PLANNER = 1
 
     def __init__(self, parent_class, auto_start = False):
         # self.__class__ = type(self.__class__.__name__, (base_class, object), dict(self.__class__.__dict__))
@@ -198,7 +208,11 @@ class path_planner_gui(StoppableThread):
             self.button_local_plan.configure(state='disabled')
             self.button_global_plan.configure(state='normal')
             self.button_show_result_webpage_global.configure(state='disabled')
-            self.button_global_plan.configure(text='Continue global planning')
+            path_planner = str(self.combo_planner_type.get())
+            if path_planner == self.parent_class.PATH_PLANNER_NAMES[0]:
+                self.button_global_plan.configure(text='Continue global planning')
+            elif path_planner == self.parent_class.PATH_PLANNER_NAMES[1]:
+                self.button_global_plan.configure(text='Retry global planning')
             self.button_evaluate_path.configure(state='disabled')
             self.button_web_visualize_global.configure(state='disabled')
     def start_global_path_planning(self):
@@ -243,13 +257,21 @@ class path_planner_gui(StoppableThread):
         thread_local_planning = threading.Thread(target=self.local_planner_thread, args=(path_planner, step_size_horz, step_size_vert, search_time_max, time_step, acceleration_factor))
         thread_local_planning.start()
 
-    def show_result_webpage_global(self):
+    def show_result_webpage_global_thread(self):
         self.parent_class.draw_planned_path_global()
         self.parent_class.map_plotter_global.show_plot()
 
-    def show_result_webpage_local(self):
+    def show_result_webpage_global(self):
+        show_result_webpage_global = threading.Thread(target=self.show_result_webpage_global_thread)
+        show_result_webpage_global.start()
+
+    def show_result_webpage_local_thread(self):
         self.parent_class.draw_planned_path_local()
         self.parent_class.map_plotter_local.show_plot()
+
+    def show_result_webpage_local(self):
+        show_result_webpage_local = threading.Thread(target=self.show_result_webpage_local_thread)
+        show_result_webpage_local.start()
 
     def show_web_visualize_global(self):
         route_id = self.parent_class.visualize_path_3d_global()
@@ -269,6 +291,38 @@ class path_planner_gui(StoppableThread):
         thread_evaluate_path = threading.Thread(target=self.path_evaluation_thread)
         thread_evaluate_path.start()
 
+    def change_planner(self, event=None):
+        path_planner = str(self.combo_planner_type.get())
+        if path_planner == self.parent_class.PATH_PLANNER_NAMES[0]:
+            self.input_step_size_horz.delete(0,END)
+            self.input_step_size_horz.insert(0, self.DEFAULT_STEP_SIZE_HORZ_ASTAR)
+            self.input_step_size_vert.delete(0,END)
+            self.input_step_size_vert.insert(0, self.DEFAULT_STEP_SIZE_VERT_ASTAR)
+            self.label_search_time_max.configure(text='Max search time [s]:')
+            self.input_search_time_max.delete(0,END)
+            self.input_search_time_max.insert(0, self.DEFAULT_SEARCH_TIME_MAX)
+            self.input_replan_step_size_horz.delete(0,END)
+            self.input_replan_step_size_horz.insert(0, self.DEFAULT_STEP_SIZE_HORZ_LOCAL_ASTAR)
+            self.input_replan_step_size_vert.delete(0,END)
+            self.input_replan_step_size_vert.insert(0, self.DEFAULT_STEP_SIZE_VERT_LOCAL_ASTAR)
+            self.label_replan_search_time_max.configure(text='Replan max search time [s]:')
+            self.input_replan_search_time_max.delete(0,END)
+            self.input_replan_search_time_max.insert(0, self.DEFAULT_SEARCH_TIME_MAX_LOCAL)
+        elif path_planner == self.parent_class.PATH_PLANNER_NAMES[1]:
+            self.input_step_size_horz.delete(0,END)
+            self.input_step_size_horz.insert(0, self.DEFAULT_STEP_SIZE_HORZ_RRT)
+            self.input_step_size_vert.delete(0,END)
+            self.input_step_size_vert.insert(0, self.DEFAULT_STEP_SIZE_VERT_RRT)
+            self.label_search_time_max.configure(text='Max iterations:')
+            self.input_search_time_max.delete(0,END)
+            self.input_search_time_max.insert(0, self.DEFAULT_ITERATIONS_MAX)
+            self.input_replan_step_size_horz.delete(0,END)
+            self.input_replan_step_size_horz.insert(0, self.DEFAULT_STEP_SIZE_HORZ_LOCAL_RRT)
+            self.input_replan_step_size_vert.delete(0,END)
+            self.input_replan_step_size_vert.insert(0, self.DEFAULT_STEP_SIZE_VERT_LOCAL_RRT)
+            self.label_replan_search_time_max.configure(text='Replan max iterations:')
+            self.input_replan_search_time_max.delete(0,END)
+            self.input_replan_search_time_max.insert(0, self.DEFAULT_ITERATIONS_MAX_LOCAL)
 
     def run(self):
         self.root = Tk()
@@ -285,7 +339,11 @@ class path_planner_gui(StoppableThread):
         self.label_planner_type.grid(row=row_num_left, column=0)
         self.combo_planner_type = Combobox(self.root)
         self.combo_planner_type['values'] = self.parent_class.PATH_PLANNER_NAMES
-        self.combo_planner_type.current(1)
+        if self.INITIAL_PLANNER == 0:
+            self.combo_planner_type.current(0)
+        elif self.INITIAL_PLANNER == 1:
+            self.combo_planner_type.current(1)
+        self.combo_planner_type.bind('<<ComboboxSelected>>', self.change_planner)
         self.combo_planner_type.grid(row=row_num_left, column=1)
 
         row_num_left += 1
@@ -327,19 +385,32 @@ class path_planner_gui(StoppableThread):
         self.label_step_size_horz = Label(self.root, text="Horizontal step-size [m]:")
         self.label_step_size_horz.grid(row=row_num_left, column=0)
         self.input_step_size_horz = Entry(self.root,width=10)
-        self.input_step_size_horz.insert(0, self.DEFAULT_STEP_SIZE_HORZ)
+        if self.INITIAL_PLANNER == 0:
+            self.input_step_size_horz.insert(0, self.DEFAULT_STEP_SIZE_HORZ_ASTAR)
+        elif self.INITIAL_PLANNER == 1:
+            self.input_step_size_horz.insert(0, self.DEFAULT_STEP_SIZE_HORZ_RRT)
         self.input_step_size_horz.grid(row=row_num_left, column=1)
         row_num_left += 1
         self.label_step_size_vert = Label(self.root, text="Vertical step-size [m]:")
         self.label_step_size_vert.grid(row=row_num_left, column=0)
         self.input_step_size_vert = Entry(self.root,width=10)
-        self.input_step_size_vert.insert(0, self.DEFAULT_STEP_SIZE_VERT)
+        if self.INITIAL_PLANNER == 0:
+            self.input_step_size_vert.insert(0, self.DEFAULT_STEP_SIZE_VERT_ASTAR)
+        elif self.INITIAL_PLANNER == 1:
+            self.input_step_size_vert.insert(0, self.DEFAULT_STEP_SIZE_VERT_RRT)
         self.input_step_size_vert.grid(row=row_num_left, column=1)
         row_num_left += 1
-        self.label_search_time_max = Label(self.root, text="Max search time [s] (A*) or iterations (RRT):")
+        self.label_search_time_max = Label(self.root, text="")
+        if self.INITIAL_PLANNER == 0:
+            self.label_search_time_max.configure(text='Max search time [s]:')
+        elif self.INITIAL_PLANNER == 1:
+            self.label_search_time_max.configure(text='Max iterations:')
         self.label_search_time_max.grid(row=row_num_left, column=0)
         self.input_search_time_max = Entry(self.root,width=10)
-        self.input_search_time_max.insert(0, self.DEFAULT_SEARCH_TIME_MAX)
+        if self.INITIAL_PLANNER == 0:
+            self.input_search_time_max.insert(0, self.DEFAULT_SEARCH_TIME_MAX)
+        elif self.INITIAL_PLANNER == 1:
+            self.input_search_time_max.insert(0, self.DEFAULT_ITERATIONS_MAX)
         self.input_search_time_max.grid(row=row_num_left, column=1)
 
         row_num_left += 1
@@ -366,19 +437,32 @@ class path_planner_gui(StoppableThread):
         self.label_replan_step_size_horz = Label(self.root, text="Replan horizontal step-size [m]:")
         self.label_replan_step_size_horz.grid(row=row_num_left, column=0)
         self.input_replan_step_size_horz = Entry(self.root,width=10)
-        self.input_replan_step_size_horz.insert(0, self.DEFAULT_STEP_SIZE_HORZ_LOCAL)
+        if self.INITIAL_PLANNER == 0:
+            self.input_replan_step_size_horz.insert(0, self.DEFAULT_STEP_SIZE_HORZ_LOCAL_ASTAR)
+        elif self.INITIAL_PLANNER == 1:
+            self.input_replan_step_size_horz.insert(0, self.DEFAULT_STEP_SIZE_HORZ_LOCAL_RRT)
         self.input_replan_step_size_horz.grid(row=row_num_left, column=1)
         row_num_left += 1
         self.label_replan_step_size_vert = Label(self.root, text="Replan vertical step-size [m]:")
         self.label_replan_step_size_vert.grid(row=row_num_left, column=0)
         self.input_replan_step_size_vert = Entry(self.root,width=10)
-        self.input_replan_step_size_vert.insert(0, self.DEFAULT_STEP_SIZE_VERT_LOCAL)
+        if self.INITIAL_PLANNER == 0:
+            self.input_replan_step_size_vert.insert(0, self.DEFAULT_STEP_SIZE_VERT_LOCAL_ASTAR)
+        elif self.INITIAL_PLANNER == 1:
+            self.input_replan_step_size_vert.insert(0, self.DEFAULT_STEP_SIZE_VERT_LOCAL_RRT)
         self.input_replan_step_size_vert.grid(row=row_num_left, column=1)
         row_num_left += 1
         self.label_replan_search_time_max = Label(self.root, text="Replan max search time [s]:")
+        if self.INITIAL_PLANNER == 0:
+            self.label_replan_search_time_max.configure(text='Replan max search time [s]:')
+        elif self.INITIAL_PLANNER == 1:
+            self.label_replan_search_time_max.configure(text='Replan max iterations:')
         self.label_replan_search_time_max.grid(row=row_num_left, column=0)
         self.input_replan_search_time_max = Entry(self.root,width=10)
-        self.input_replan_search_time_max.insert(0, self.DEFAULT_SEARCH_TIME_MAX_LOCAL)
+        if self.INITIAL_PLANNER == 0:
+            self.input_replan_search_time_max.insert(0, self.DEFAULT_SEARCH_TIME_MAX_LOCAL)
+        elif self.INITIAL_PLANNER == 1:
+            self.input_replan_search_time_max.insert(0, self.DEFAULT_ITERATIONS_MAX_LOCAL)
         self.input_replan_search_time_max.grid(row=row_num_left, column=1)
         row_num_left += 1
         self.button_local_plan = Button(self.root, text="Start local planning", command=self.start_local_path_planning)
@@ -604,8 +688,9 @@ class path_planner_gui(StoppableThread):
         self.button_web_visualize_local.configure(state='disabled') # Disabled because no global plan has been made
         self.button_web_visualize_local.grid(row=row_num_both, column=2, columnspan = 2)
 
-
-
+        row_num_both += 1
+        self.label_credit = Label(self.root, text="Copyright (c) 2018, Tobias Lundby, BSD 3-Clause License", fg = "grey", font=("Arial 8 italic"))
+        self.label_credit.grid(row=row_num_both, column=0, columnspan=4)
 
         # Configure the queue callback
         self.root.after(250, self.check_queue)

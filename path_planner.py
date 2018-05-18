@@ -81,8 +81,9 @@ class UAV_path_planner():
     PATH_PLANNER_NAMES              = ['A star algorithm', 'RRT']
     #PATH_PLANNER                    = PATH_PLANNER_ASTAR # the name of the chosen path path planner; NOTE the user can set this
     PATH_PLANNER_SPACE_DIMENSIONS   = 3 # NOTE that this only space dimension and the time dimension is therefore not included
-    PP_PRINT_POPPED_NODE            = False
-    PP_PRINT_EXPLORE_NODE           = False
+    PP_PRINT_POPPED_NODE            = False # A star
+    PP_PRINT_EXPLORE_NODE           = False # A star
+    PP_PRINT_NEW_NODE               = False # RRT
     DRAW_OPEN_LIST                  = False
     DRAW_CLOSED_LIST                = False
     GLOBAL_PLANNING                 = 0
@@ -1131,8 +1132,11 @@ class UAV_path_planner():
         path[-1]['z_rel'] = goal_node[2] # element 2 = z_rel
         return path
 
-    def plan_planner_RRT(self, point_start, point_goal, step_size_horz, step_size_vert, type_of_planning = 0, use_start_elevation_m = 0, calc_goal_height = False, max_iterations = INF, goal_sample_rate = 5):
+    def plan_planner_RRT(self, point_start, point_goal, step_size_horz, step_size_vert, type_of_planning = 0, use_start_elevation_m = 0, calc_goal_height = False, max_iterations = INF, goal_sample_rate = 10):
         self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('initializing RRT', 'yellow') )
+        if type_of_planning == self.GLOBAL_PLANNING or type_of_planning == self.LOCAL_PLANNING:
+            self.gui.on_main_thread( lambda: self.gui.set_global_plan_horz_step_size(step_size_horz) )
+            self.gui.on_main_thread( lambda: self.gui.set_global_plan_vert_step_size(step_size_vert) )
         # Set start time of start point to 0 (relative)
         point_start['time_rel'] = 0
         point_goal['time_rel'] = 0
@@ -1157,13 +1161,14 @@ class UAV_path_planner():
         x_max    = max(point_start_tuple[1], point_goal_tuple[1])
         z_rel_min = min(0, point_goal_z_rel_not_elevated)
         z_rel_max = self.MAX_FLYING_ALTITUDE
+        z_rel_avg = (z_rel_min+z_rel_max) / 2
         y_min_max_diff = y_max - y_min
         x_min_max_diff = x_max - x_min
         x_y_diff_avg = (y_min_max_diff+x_min_max_diff) / 2
 
-        y_range = [y_min-(x_y_diff_avg/2), y_max-(x_y_diff_avg/2)]
-        x_range = [x_min-(x_y_diff_avg/2), x_max-(x_y_diff_avg/2)]
-        z_rel_range = [z_rel_min-10, z_rel_max+10]
+        y_range = [y_min-(x_y_diff_avg/2), y_max+(x_y_diff_avg/2)]
+        x_range = [x_min-(x_y_diff_avg/2), x_max+(x_y_diff_avg/2)]
+        z_rel_range = [z_rel_min, z_rel_max]
         # print y_range
         # print x_range
         # print z_rel_range
@@ -1179,12 +1184,17 @@ class UAV_path_planner():
 
         # Start the search
         self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('searching', 'orange') )
-        while iteration_counter < max_iterations:
+        while iteration_counter <= max_iterations:
+            iteration_counter += 1
             # Generate a random point and make it the goal goal_sample_rate % of the time
             if randint(0, 100) > goal_sample_rate:
                 rnd = [ uniform(y_range[0], y_range[1]), uniform(x_range[0], x_range[1]), uniform(z_rel_range[0], z_rel_range[1]) ]
+                # print '\nRand y: [%.01f < %.01f < %.01f]' % (y_range[0], rnd[0], y_range[1])
+                # print 'Rand x: [%.01f < %.01f < %.01f]' % (x_range[0], rnd[1], x_range[1])
+                # print 'Rand z: [%.01f < %.01f < %.01f]' % (z_rel_range[0], rnd[2], z_rel_range[1])
             else:
                 rnd = [ point_goal_tuple[0], point_goal_tuple[1], point_goal_tuple[2] ]
+                #print '\nRand is goal'
 
             # Generate a proper point from the rand array
             rnd_pos4d_tuple = self.coord_conv.pos4dDICT2pos4dTUPLE_UTM(self.coord_conv.generate_pos4d_UTM_dict(rnd[0], rnd[1], rnd[2]))
@@ -1208,6 +1218,10 @@ class UAV_path_planner():
                 if nearest_node[2] == self.IDEAL_FLIGHT_ALTITUDE:
                     extend_z_rel = 0
                 else:
+                    # if rnd_pos4d_tuple[2] < z_rel_avg:
+                    #     extend_z_rel = step_size_vert
+                    # else:
+                    #     extend_z_rel = -step_size_vert
                     if nearest_node[2] < self.IDEAL_FLIGHT_ALTITUDE:
                         extend_z_rel = step_size_vert
                     else:
@@ -1216,12 +1230,33 @@ class UAV_path_planner():
                 if nearest_node[2] == point_goal_tuple[2]:
                     extend_z_rel = 0
                 else:
+                    # if rnd_pos4d_tuple[2] < z_rel_avg:
+                    #     extend_z_rel = step_size_vert
+                    # else:
+                    #     extend_z_rel = -step_size_vert
                     if nearest_node[2] < point_goal_tuple[2]:
                         extend_z_rel = step_size_vert
                     else:
                         extend_z_rel = -step_size_vert
 
             new_node = self.pos4dTUPLE_UTM_copy_and_move_point(nearest_node, extend_y, extend_x, extend_z_rel, type_of_planning, force_time_calc = True) # Construct the new_node node; the function calculates the 4 dimension by the time required to travel between the nodes
+
+            #print '\nExtd: %.01f, %.01f, %.01f' % (extend_y, extend_x, extend_z_rel)
+            # print 'Rand: %.01f, %.01f, %.01f' % (rnd_pos4d_tuple[0], rnd_pos4d_tuple[1], rnd_pos4d_tuple[2])
+            #print 'Near: %.01f, %.01f, %.01f' % (nearest_node[0], nearest_node[1], nearest_node[2])
+            #print ' New: %.01f, %.01f, %.01f' % (new_node[0], new_node[1], new_node[2])
+
+            #print '%.01f\t%.01f\t%.01f' % (rnd_pos4d_tuple[0], rnd_pos4d_tuple[1], rnd_pos4d_tuple[2])
+            #print '%.01f\t%.01f\t%.01f' % (nearest_node[0], nearest_node[1], nearest_node[2])
+            #print '\n%.01f\t%.01f\t%.01f' % (new_node[0], new_node[1], new_node[2])
+            #print '%.01f\t%.01f\t%.01f' % (extend_y, extend_x, extend_z_rel)
+
+            if self.PP_PRINT_NEW_NODE:
+                print colored(INFO_ALT_INDENT+'New node (%.02f [m], %.02f [m], %.02f [m], %.02f [s])' % (new_node[0], new_node[1], new_node[2], new_node[3]), TERM_COLOR_INFO_ALT)
+
+            if self.is_point_in_no_fly_zones_UTM(new_node, buffer_distance_m = step_size_horz)[0]:
+                #print 'INSIDE GEOFENCE'
+                continue
 
             if type_of_planning == self.LOCAL_PLANNING:
                 if self.is_point_in_no_fly_zones_UTM(new_node, buffer_distance_m = step_size_horz, use_dynamic = True)[0]:
@@ -1239,10 +1274,9 @@ class UAV_path_planner():
             node_list.append(new_node)
             parent_list.append(nearest_index)
 
-            iteration_counter += 1
-
             # Test if current point is close enough to the goal point
             is_goal, dist_to_goal = self.is_goal_UTM(new_node, point_goal_tuple, step_size_horz, step_size_vert)
+            #print 'Distance to goal:', dist_to_goal
             if is_goal:
                 """ Solution has been found """
                 self.gui.on_main_thread( lambda: self.gui.set_global_plan_status('found solution', 'green') )
@@ -1281,7 +1315,6 @@ class UAV_path_planner():
         for element in node_list:
             dist_list.append(self.calc_euclidian_dist_UTM(rnd_point, element)[0])
         return dist_list.index(min(dist_list))
-
 
     def reduce_path_rdp_UTM(self, planned_path, tolerance=-1):
         """
@@ -1398,6 +1431,8 @@ class UAV_path_planner():
         """
         # dist = self.calc_euclidian_horz_dist_UTM(point4dUTM_test, point4dUTM_goal)
         dist, horz_dist, vert_dist = self.calc_euclidian_dist_UTM(point4dUTM_test, point4dUTM_goal)
+        # print '\nVert distance:', vert_dist, 'acceptance:', in_goal_acceptance_altitude_m, 'height:', point4dUTM_test[2]
+        # print 'Horz distance:', horz_dist, 'acceptance:', in_goal_acceptance_radius_m
         if horz_dist > in_goal_acceptance_radius_m or vert_dist > in_goal_acceptance_altitude_m:
             # if self.debug:
             #     print colored(error_indent+'Points are NOT within goal acceptance radius; distance between points: %.02f [m], acceptance radius: %.02f [m]' % (dist, self.goal_acceptance_radius), TERM_COLOR_INFO_ALT)
@@ -1794,7 +1829,7 @@ if __name__ == '__main__':
     #goal_point_3dDICT  = {'lat': 55.427203, 'lon': 10.419043, 'alt_rel': 0} # org
 
     # Instantiate UAV_path_planner class
-    UAV_path_planner_module = UAV_path_planner(True, data_path_no_fly_zones = 'data_sources/no_fly_zones/drone_nofly_dk.kml', data_path_height_map = 'data_sources/height/')
+    UAV_path_planner_module = UAV_path_planner(debug = True, data_path_no_fly_zones = 'data_sources/no_fly_zones/drone_nofly_dk.kml', data_path_height_map = 'data_sources/height/')
     """
     No-fly zone paths: (local) 'data_sources/no_fly_zones/drone_nofly_dk.kml' = old but has airports etc.
                        (local) 'data_sources/no_fly_zones/KmlUasZones_2018-05-02-15-50.kml' = current from droneluftrum.dk
