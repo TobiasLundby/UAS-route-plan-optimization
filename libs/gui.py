@@ -236,7 +236,7 @@ class path_planner_gui(StoppableThread):
         #thread_global_planning.join()
 
     def local_planner_thread(self, path_planner, step_size_horz, step_size_vert, max_search_time, time_step, acceleration_factor):
-        self.parent_class.plan_path_local(path_planner = path_planner, step_size_horz = step_size_horz, step_size_vert = step_size_vert, time_step = time_step, acceleration_factor = acceleration_factor)
+        self.parent_class.plan_path_local(path_planner = path_planner, step_size_horz = step_size_horz, step_size_vert = step_size_vert, max_search_time = max_search_time, time_step = time_step, acceleration_factor = acceleration_factor)
         self.button_global_plan.configure(state='normal')
         self.button_local_plan.configure(state='normal')
         self.button_web_visualize_local.configure(state='normal')
@@ -505,7 +505,7 @@ class path_planner_gui(StoppableThread):
 
         """ Right side layout """
         row_num_right = 0
-        self.label_data_sources = Label(self.root, text="Data data sources", font=("Arial Bold", 12))
+        self.label_data_sources = Label(self.root, text="Data sources", font=("Arial Bold", 12))
         self.label_data_sources.grid(row=row_num_right, column=2, columnspan = 2)
         row_num_right += 1
         self.label_data_source_no_fly_zones = Label(self.root, text="No-fly zones:")
@@ -514,7 +514,7 @@ class path_planner_gui(StoppableThread):
         self.label_data_source_no_fly_zones_res.configure(fg='red')
         self.label_data_source_no_fly_zones_res.grid(row=row_num_right, column=3)
         row_num_right += 1
-        self.label_data_source_height_map = Label(self.root, text="Height map:")
+        self.label_data_source_height_map = Label(self.root, text="Altitude map:")
         self.label_data_source_height_map.grid(row=row_num_right, column=2)
         self.label_data_source_height_map_res = Label(self.root, text="not loaded")
         self.label_data_source_height_map_res.configure(fg='red')
@@ -675,16 +675,16 @@ class path_planner_gui(StoppableThread):
         self.button_show_result_webpage_global.configure(state='disabled') # Disabled because no global plan has been made
         self.button_show_result_webpage_global.grid(row=row_num_both, column=0, columnspan = 2)
         #row_num_both += 1
-        self.button_web_visualize_global = Button(self.root, text="3D global path visualization (online)", command=self.show_web_visualize_global)
-        self.button_web_visualize_global.configure(state='disabled') # Disabled because no global plan has been made
-        self.button_web_visualize_global.grid(row=row_num_both, column=2, columnspan = 2)
-
-        row_num_both += 1
         self.button_show_result_webpage_local = Button(self.root, text="2D local path visualization (local)", command=self.show_result_webpage_local)
         self.button_show_result_webpage_local.configure(state='disabled') # Disabled because no global plan has been made
-        self.button_show_result_webpage_local.grid(row=row_num_both, column=0, columnspan = 2)
+        self.button_show_result_webpage_local.grid(row=row_num_both, column=2, columnspan = 2)
+
+        row_num_both += 1
+        self.button_web_visualize_global = Button(self.root, text="3D global path simulation (online)", command=self.show_web_visualize_global)
+        self.button_web_visualize_global.configure(state='disabled') # Disabled because no global plan has been made
+        self.button_web_visualize_global.grid(row=row_num_both, column=0, columnspan = 2)
         #row_num_both += 1
-        self.button_web_visualize_local = Button(self.root, text="3D local path visualization (online)", command=self.show_web_visualize_local)
+        self.button_web_visualize_local = Button(self.root, text="3D local path simulation (online)", command=self.show_web_visualize_local)
         self.button_web_visualize_local.configure(state='disabled') # Disabled because no global plan has been made
         self.button_web_visualize_local.grid(row=row_num_both, column=2, columnspan = 2)
 
