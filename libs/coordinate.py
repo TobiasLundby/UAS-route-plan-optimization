@@ -60,8 +60,8 @@ class coordinate_transform():
         """
         self.debug = debug
 
-        self.geodetic_proj  = Proj('+init=EPSG:4326')  # EPSG:3857 - WGS 84 / Pseudo-Mercator - https://epsg.io/3857 - OSM projection
-        self.OSM_proj       = Proj('+init=EPSG:3857')  # EPSG:4326 - WGS 84 / World Geodetic System 1984, used in GPS - https://epsg.io/4326
+        self.geodetic_proj  = Proj('+init=EPSG:4326')  # EPSG:4326 - WGS 84 / World Geodetic System 1984, used in GPS - https://epsg.io/4326
+        self.OSM_proj       = Proj('+init=EPSG:3857')  # EPSG:3857 - WGS 84 / Pseudo-Mercator - https://epsg.io/3857 - OSM projection
 
         # Instantiate utmconv class
         self.uc = utmconv()

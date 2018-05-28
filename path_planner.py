@@ -25,7 +25,7 @@ from data_sources.no_fly_zones.kml_reader import kml_no_fly_zones_parser
 from data_sources.drone_id.get_droneid_data import droneid_data
 from data_sources.height.srtm import srtm_lib
 from data_sources.ads_b.get_adsb_data import adsb_data
-from data_sources.weather.ibm_test import ibm_weather_csv
+from data_sources.weather.ibm import ibm_weather_csv
 from data_sources.rally_points.rally_point_reader import rally_point_reader
 from libs.various import *
 from libs.gui import path_planner_gui
@@ -41,14 +41,19 @@ DRONEID_FORCE_ALL_REAL  = True
 
 MaxOperationWindSpeed_def = 12
 MaxOperationWindGusts_def = MaxOperationWindSpeed_def+5.14 # 10kts more than wind speed based on the tower at HCA Airport
-OperationMinTemperature_def = -10
-OperationMaxTemperature_def = 40
+OperationMinTemperature_def = -20
+OperationMaxTemperature_def = 45
+MAX_PRECIPITATION = 0.76 # unit: cm
+MAX_SNOWFALL = 0.5 # unit: cm
+ICING_DEWPOINT_SPREAD = 2.7 # unit: degrees Celcius
+ICING_MAX_TEMP          = 1 # just a bit over 0 degrees Celcius
+ICING_MIN_TEMP          = -15 # unit: degrees Celcius
 
 UAV_EMERGENCY_FLIGHT = False
 
 INVOKE_TEMP_CHANGE = False
 INVOKE_TEMP_CHANGE_AT = 30 # unit: s
-INVOKE_TEMP_CHANGED_TO = -20 # unit: degrees C
+INVOKE_TEMP_CHANGED_TO = -21 # unit: degrees C
 
 USE_DYNAMIC_NO_FLY_ZONE = True
 DYNAMIC_NO_FLY_ZONE = [
@@ -480,6 +485,7 @@ class UAV_path_planner():
             wind_gust = self.weather_module.get_wind_gust(weather_index)
             wind_dir_deg = self.weather_module.get_wind_direction(weather_index)
             temp = self.weather_module.get_temp(weather_index)
+            temp_dewpoint = self.weather_module.get_temp_dewpoint(weather_index)
             precipitation = self.weather_module.get_precipitation(weather_index)
             snowfall = self.weather_module.get_snowfall(weather_index)
 
@@ -518,7 +524,7 @@ class UAV_path_planner():
                             uav['x'] += travel_dir[1]*last_time_step
                             uav['z_rel'] += travel_dir[2]*last_time_step
                     # Check if the UAV is in collision with anything
-                    if not self.local_planner_uav_check(uav, time_ctr, time_step, step_size_horz):
+                    if not self.local_planner_uav_check(uav, time_ctr, time_step, step_size_horz, wind_velocity = wind_velocity, wind_gust = wind_gust, temp = temp, temp_dewpoint = temp_dewpoint, precipitation = precipitation, snowfall = snowfall):
                         # Act on the UAV state
                         if uav['status'] == self.UAV_STATUS_IN_NO_FLY_ZONE:
                             # Move the UAV back since the current pos is bad!
@@ -647,7 +653,7 @@ class UAV_path_planner():
             self.gui.on_main_thread( lambda: self.gui.set_label_local_plan_status('simulation successful, idle', 'green') )
             print colored('\nSimulated until end or stop', TERM_COLOR_INFO)
 
-    def local_planner_uav_check(self, uav, time_current, time_step, step_size_horz, wind_velocity = 0, wind_gust = 0, temp = 0):
+    def local_planner_uav_check(self, uav, time_current, time_step, step_size_horz, wind_velocity = 0, wind_gust = 0, temp = 0, temp_dewpoint = -10, precipitation = 0, snowfall = 0):
         if uav['status'] != self.UAV_STATUS_EMERGENCY_FLIGHT:
             # Check for new no-fly zones - replan around if violated
             colission, smallest_dist = self.is_point_in_no_fly_zones_UTM(uav, buffer_distance_m = step_size_horz, use_dynamic = True)
@@ -665,6 +671,19 @@ class UAV_path_planner():
 
             # Check for weather - if it violates land at a rally point if there is any that are closer than the goal point
             if wind_velocity > MaxOperationWindSpeed_def or wind_gust > MaxOperationWindGusts_def or OperationMinTemperature_def > temp or temp > OperationMaxTemperature_def: # Check wind speed/velocity
+                uav['status'] = self.UAV_STATUS_LAND_AT_RALLY_POINT
+                #print colored('Weather has changed for the worse, land at rally point', TERM_COLOR_ERROR)
+                return False
+            if precipitation > MAX_PRECIPITATION:
+                uav['status'] = self.UAV_STATUS_LAND_AT_RALLY_POINT
+                #print colored('Weather has changed for the worse, land at rally point', TERM_COLOR_ERROR)
+                return False
+            if snowfall > MAX_SNOWFALL:
+                uav['status'] = self.UAV_STATUS_LAND_AT_RALLY_POINT
+                #print colored('Weather has changed for the worse, land at rally point', TERM_COLOR_ERROR)
+                return False
+
+            if temp - temp_dewpoint > ICING_DEWPOINT_SPREAD and (temp < ICING_MAX_TEMP and temp > ICING_MIN_TEMP): # Icing
                 uav['status'] = self.UAV_STATUS_LAND_AT_RALLY_POINT
                 #print colored('Weather has changed for the worse, land at rally point', TERM_COLOR_ERROR)
                 return False
@@ -800,6 +819,7 @@ class UAV_path_planner():
         wind_gust = self.weather_module.get_wind_gust(weather_index)
         wind_dir_deg = self.weather_module.get_wind_direction(weather_index)
         temp = self.weather_module.get_temp(weather_index)
+        temp_dewpoint = self.weather_module.get_temp_dewpoint(weather_index)
         precipitation = self.weather_module.get_precipitation(weather_index)
         snowfall = self.weather_module.get_snowfall(weather_index)
         if wind_velocity > MaxOperationWindSpeed_def: # Check wind speed/velocity
@@ -811,7 +831,18 @@ class UAV_path_planner():
         if OperationMinTemperature_def > temp > OperationMaxTemperature_def: # Check temperature (double bounded)
             print colored('Temperature exceeds limit, temperature %f' % temp, TERM_COLOR_ERROR)
             return False
-        # Still have no data for precipitation and snowfall so these are left out
+        if precipitation > MAX_PRECIPITATION:
+            print colored('Precipitation exceeds limit, precipitation %f' % precipitation, TERM_COLOR_ERROR)
+            #print colored('Weather has changed for the worse, land at rally point', TERM_COLOR_ERROR)
+            return False
+        if snowfall > MAX_SNOWFALL:
+            print colored('Snowfall exceeds limit, snowfall %f' % snowfall, TERM_COLOR_ERROR)
+            #print colored('Weather has changed for the worse, land at rally point', TERM_COLOR_ERROR)
+            return False
+        if temp - temp_dewpoint > ICING_DEWPOINT_SPREAD and (temp < ICING_MAX_TEMP and temp > ICING_MIN_TEMP): # Icing
+            uav['status'] = self.UAV_STATUS_LAND_AT_RALLY_POINT
+            #print colored('Weather has changed for the worse, land at rally point', TERM_COLOR_ERROR)
+            return False
 
         # Check if the goal is rechable in a straight line path
         uav_max_range_incl_wind = self.calc_max_range_incl_wind_UTM(point_start_UTM, point_goal_UTM, wind_dir_deg, wind_velocity) # Calculate the max range considering wind

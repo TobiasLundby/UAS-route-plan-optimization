@@ -30,9 +30,11 @@ MaxOperationWindSpeed_def = 12
 MaxOperationWindGusts_def = MaxOperationWindSpeed_def+5.14 # 10kts more than wind speed based on the tower at HCA Airport
 OperationMinTemperature_def = -10
 OperationMaxTemperature_def = 40
-icing_temp_diff_tolerance = 0.5 # the allowed difference between the surface temperature and dewpoint temperature
-use_apparent_temp = True # for the condition checking
-use_wind_gusts = False # for the condition checking
+icing_temp_diff_tolerance = 2.7 # the allowed difference between the surface temperature and dewpoint temperature
+ICING_MAX_TEMP          = 1 # just a bit over 0 degrees Celcius
+ICING_MIN_TEMP          = -15 # unit: degrees Celcius
+use_apparent_temp = False # for the condition checking
+use_wind_gusts = True # for the condition checking
 use_icing_test = True # for the condition checking
 ### Define end
 
@@ -174,6 +176,8 @@ class ibm_weather_csv():
         return self.WindDirectionDegreesS[index]
     def get_temp(self, index):
         return self.SurfaceTempCS[index]
+    def get_temp_dewpoint(self, index):
+        return self.SurfaceDewpointTempCS[index]
     def get_precipitation(self, index):
         return self.PrecipitationPreviousHourCmS[index]
     def get_snowfall(self, index):
@@ -213,7 +217,7 @@ class ibm_weather_csv():
             diff_SurfaceTem_SurfaceDewpointTemp = abs(self.SurfaceTempCS[sample_nr] - self.SurfaceDewpointTempCS[sample_nr])
             # if self.SurfaceTempCS[sample_nr] < 0:
             #     print "Icing: date ", self.DateSGMT[sample_nr], "diff:", diff_SurfaceTem_SurfaceDewpointTemp, "temp:", self.SurfaceTempCS[sample_nr]
-            if diff_SurfaceTem_SurfaceDewpointTemp < icing_temp_diff_tolerance and self.SurfaceTempCS[sample_nr] < 0:
+            if diff_SurfaceTem_SurfaceDewpointTemp < icing_temp_diff_tolerance and (self.SurfaceTempCS[sample_nr] < ICING_MAX_TEMP and self.SurfaceTempCS[sample_nr] > ICING_MIN_TEMP):
                 return False
             else:
                 return True
