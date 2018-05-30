@@ -80,8 +80,9 @@ class UAV_path_planner():
     UAV_STATUS_NORMAL               = 0 # UAV state number
     UAV_STATUS_IN_NO_FLY_ZONE       = 1 # UAV state number
     UAV_STATUS_LAND_AT_RALLY_POINT  = 2 # UAV state number
+    UAV_STATUS_TERMINATE_FLIGHT     = 3 # UAV state number
     UAV_STATUS_EMERGENCY_FLIGHT     = -1 # UAV state number
-    UAV_STATUS_NAMES                = ['NORMAL','IN NO FLY ZONE','LAND AT RALLY POINT','EMERGENCY FLIGHT']
+    UAV_STATUS_NAMES                = ['NORMAL','IN NO FLY ZONE','LAND AT RALLY POINT','TERMINATE FLIGHT','EMERGENCY FLIGHT']
     """ Legislation constants """
     MAX_FLYING_ALTITUDE             = 100 # unit: m; max flying altitude for rural areas
     """ Path planning constants """
@@ -98,18 +99,18 @@ class UAV_path_planner():
     GLOBAL_PLANNING                 = 0 # Path planning state
     LOCAL_PLANNING                  = 1 # Path planning state
     EMERGENCY_PLANNING              = 2 # Path planning state
-    RDP_FACTOR_ASTAR                = 0.25 # Scale factor for the RDP parameter; self.RDP_FACTOR*((step_size_vert+step_size_horz)/2)
+    RDP_FACTOR_ASTAR                = 0.15 # Scale factor for the RDP parameter; self.RDP_FACTOR*((step_size_vert+step_size_horz)/2)
     RDP_FACTOR_RRT                  = 0.75 # Scale factor for the RDP parameter; self.RDP_FACTOR*((step_size_vert+step_size_horz)/2)
     """ Path evaluation (path fitness) factor constants """
     HORZ_DISTANCE_FACTOR            = 1 # unit: unitless
     VERT_DISTANCE_FACTOR            = 2 # unit: unitless
     TRAVEL_TIME_FACTOR              = 1 # unit: unitless
-    WAYPOINTS_FACTOR                = 1 # unit: unitless
+    WAYPOINTS_FACTOR                = 100 # unit: unitless
     AVG_WAYPOINT_DIST_FACTOR        = 1 # unit: unitless
     """ Other constants """
     NO_FLY_ZONE_HEIGHT              = 100 # unit: m
     NO_FLY_ZONE_BASE_BUFFER_DIST    = 10 # unit: m; added to the buffer distance if the funcitons are not explicitly told not to
-    NO_FLY_ZONE_REDUCE_FLIGHT_DISTANCE_FACTOR = 2 # unit: unitless ; used for reducing the no-fly zones based on the flight distance of the start point, reason: if the wind is 12m/s and the drone if flying with 15m/s the safe reducing is 1.8 (not safe) ≈ 2 (safe)
+    NO_FLY_ZONE_REDUCE_FLIGHT_DISTANCE_FACTOR = 1.8 # unit: unitless ; used for reducing the no-fly zones based on the flight distance of the start point, reason: if the wind is 12m/s and the drone if flying with 15m/s the safe reducing is 1.8 (not safe) ≈ 2 (safe)
     GEOID_WGS84                     = Geod(ellps='WGS84') # used for calculating Great Circle Distance
 
     def __init__(self, debug = False, data_path_no_fly_zones = None, data_path_height_map = None):
@@ -627,6 +628,8 @@ class UAV_path_planner():
                         elif uav['status'] == self.UAV_STATUS_EMERGENCY_FLIGHT:
                             # This is an emergency so just keep flying
                             pass
+                        elif uav['status'] == self.UAV_STATUS_TERMINATE_FLIGHT:
+                            return
 
                     if k != steps_on_current_line: # When there is something rest in the path not corresponding to the exact time steps
                         time.sleep(time_step/acceleration_factor)
@@ -998,7 +1001,7 @@ class UAV_path_planner():
                 waypoints_before = len(planned_path)
                 internal_rdp_factor = 1
                 while True:
-                    tmp_planned_path = self.reduce_path_rdp_UTM(planned_path, internal_rdp_factor*self.RDP_FACTOR_RRT*((step_size_vert+step_size_horz)/2))
+                    tmp_planned_path = self.reduce_path_rdp_UTM(planned_path, internal_rdp_factor*self.RDP_FACTOR_ASTAR*((step_size_vert+step_size_horz)/2))
                     if self.debug:
                         print colored('\n Internal RDP factor: %d' % internal_rdp_factor, TERM_COLOR_INFO_ALT)
                         print colored('Waypoints before %d, now %d' % (waypoints_before, len(tmp_planned_path)), TERM_COLOR_INFO_ALT)
@@ -1149,6 +1152,10 @@ class UAV_path_planner():
 
             # Penalize for flight distance
             node_cost += total_dist_seg
+
+            if seg_vert_distance_seg > 0:
+                #pass
+                node_cost += seg_vert_distance_seg
 
             return node_cost
 
@@ -1655,7 +1662,39 @@ class UAV_path_planner():
             fitness += self.WAYPOINTS_FACTOR*waypoints
             fitness -= self.AVG_WAYPOINT_DIST_FACTOR*avg_waypoint_dist
             print colored('Path evaluation done', TERM_COLOR_INFO)
-            print colored(RES_INDENT+'Path fitness %.02f [unitless]' % fitness, TERM_COLOR_RES)
+            print colored(RES_INDENT+'Raw path fitness %.02f [unitless]' % fitness, TERM_COLOR_RES)
+
+
+            self.planned_path_global_UTM
+            ideal_path_UTM = []
+            ideal_path_UTM.append( deepcopy(self.planned_path_global_UTM[0]) )
+            ideal_path_UTM.append( deepcopy(self.planned_path_global_UTM[0]) )
+            ideal_path_UTM[1]['z_rel'] += self.IDEAL_FLIGHT_ALTITUDE
+            ideal_path_UTM.append( deepcopy(self.planned_path_global_UTM[-1]) )
+            ideal_path_UTM[2]['z_rel'] += self.IDEAL_FLIGHT_ALTITUDE
+            ideal_path_UTM.append( deepcopy(self.planned_path_global_UTM[-1]) )
+            for j in range(len(ideal_path_UTM)-1): # fix the time
+                ideal_path_UTM[j+1]['time_rel'] = ideal_path_UTM[j]['time_rel'] + self.calc_travel_time_from_UTMpoints_w_wind(ideal_path_UTM[j], ideal_path_UTM[j+1])
+            ideal_path = []
+            for i in range(len(ideal_path_UTM)):
+                ideal_path.append( self.coord_conv.pos4dDICT_UTM2pos4dDICT_geodetic( ideal_path_UTM[i] ) )
+
+            horz_distance_ideal, horz_distances_ideal = self.calc_horz_dist_geodetic_total(ideal_path)
+            vert_distance_ideal, vert_distance_ascend_ideal, vert_distance_descend_ideal, vert_distances_ideal = self.calc_vert_dist(ideal_path)
+            travel_time_ideal = self.calc_travel_time(ideal_path)
+            waypoints_ideal = len(ideal_path)
+            avg_waypoint_dist_ideal, total3d_waypoint_dist_ideal = self.calc_avg_waypoint_dist(ideal_path, horz_distances_ideal, vert_distances_ideal)
+            fitness_ideal = self.HORZ_DISTANCE_FACTOR*horz_distance_ideal
+            fitness_ideal += self.VERT_DISTANCE_FACTOR*vert_distance_ideal
+            fitness_ideal += self.TRAVEL_TIME_FACTOR*travel_time_ideal
+            fitness_ideal += self.WAYPOINTS_FACTOR*waypoints_ideal
+            fitness_ideal -= self.AVG_WAYPOINT_DIST_FACTOR*avg_waypoint_dist_ideal
+
+            print colored(RES_INDENT+'Ideal path fitness %.02f [unitless]' % fitness_ideal, TERM_COLOR_RES)
+
+            fitness = fitness_ideal/fitness
+            print colored(RES_INDENT+'Final path fitness %.04f [unitless]' % fitness, TERM_COLOR_RES)
+
             self.planned_path_global_fitness = fitness
 
             self.memory_usage_module.save_heap() # Save the heap size before calculating and outputting statistics

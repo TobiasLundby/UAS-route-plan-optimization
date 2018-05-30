@@ -661,13 +661,13 @@ class path_planner_gui(StoppableThread):
         row_num_both += 1
         self.label_global_path = Label(self.root, text="Global path:")
         self.label_global_path.grid(row=row_num_both, column=0)
-        self.scrolledtext_global_path = tkst.ScrolledText(self.root,height=10)
+        self.scrolledtext_global_path = tkst.ScrolledText(self.root,height=5)
         self.scrolledtext_global_path.grid(row=row_num_both, column=1, columnspan=3)
 
         row_num_both += 1
         self.label_local_path = Label(self.root, text="Local path:")
         self.label_local_path.grid(row=row_num_both, column=0)
-        self.scrolledtext_local_path = tkst.ScrolledText(self.root,height=10)
+        self.scrolledtext_local_path = tkst.ScrolledText(self.root,height=5)
         self.scrolledtext_local_path.grid(row=row_num_both, column=1, columnspan=3)
 
         row_num_both += 1
@@ -680,11 +680,11 @@ class path_planner_gui(StoppableThread):
         self.button_show_result_webpage_local.grid(row=row_num_both, column=2, columnspan = 2)
 
         row_num_both += 1
-        self.button_web_visualize_global = Button(self.root, text="3D global path simulation (online)", command=self.show_web_visualize_global)
+        self.button_web_visualize_global = Button(self.root, text="3D global path visualization (online)", command=self.show_web_visualize_global)
         self.button_web_visualize_global.configure(state='disabled') # Disabled because no global plan has been made
         self.button_web_visualize_global.grid(row=row_num_both, column=0, columnspan = 2)
         #row_num_both += 1
-        self.button_web_visualize_local = Button(self.root, text="3D local path simulation (online)", command=self.show_web_visualize_local)
+        self.button_web_visualize_local = Button(self.root, text="3D local path visualization (online)", command=self.show_web_visualize_local)
         self.button_web_visualize_local.configure(state='disabled') # Disabled because no global plan has been made
         self.button_web_visualize_local.grid(row=row_num_both, column=2, columnspan = 2)
 

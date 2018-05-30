@@ -54,6 +54,11 @@ class map_plotter():
         self.p.xaxis.axis_label = "Longitude [deg]"
         self.p.yaxis.axis_label = "Latitude [deg]"
 
+        self.cur_path_color = 0
+        self.path_end_colors = ['firebrick', 'seagreen', 'steelblue', 'fuchsia', 'magenta']
+        self.path_colors = ['red', 'green', 'blue', 'deeppink', 'purple']
+
+
     def draw_circle_OSM(self, point, circle_color_in = default_plot_color, circle_size_in = 10, circle_alpha_in = default_plot_alpha):
         """
         Draws a circle on the map plot from OSM coordinates
@@ -139,12 +144,16 @@ class map_plotter():
             points_in_converted = self.coord_conv.check_pos2dALL_geodetic2pos2dDICT_OSM(points_in)
 
             for i in range(len(points_in_converted)-1):
-                self.draw_line_OSM(points_in_converted[i], points_in_converted[i+1])
+                self.draw_line_OSM(points_in_converted[i], points_in_converted[i+1], line_color_in = self.path_colors[self.cur_path_color])
             for i in range(len(points_in_converted)):
                 if i == 0 or i == (len(points_in_converted)-1): # first point make other colored
-                    self.draw_circle_OSM(points_in_converted[i], 'firebrick')
+                    self.draw_circle_OSM(points_in_converted[i], self.path_end_colors[self.cur_path_color])
                 else:
-                    self.draw_circle_OSM(points_in_converted[i], 'red',7)
+                    self.draw_circle_OSM(points_in_converted[i], self.path_colors[self.cur_path_color] ,7)
+            self.cur_path_color += 1
+            if self.cur_path_color >= len(self.path_colors):
+                self.cur_path_color = 0
+
     def draw_path_UTM(self, points_in):
         """
         Draws a path on the map plot from UTM coordinates
@@ -153,12 +162,15 @@ class map_plotter():
         """
         if len(points_in) > 0:
             for i in range(len(points_in)-1):
-                self.draw_line_UTM(points_in[i], points_in[i+1])
+                self.draw_line_UTM(points_in[i], points_in[i+1], line_color_in = self.path_colors[self.cur_path_color])
             for i in range(len(points_in)):
                 if i == 0 or i == (len(points_in)-1): # first point make other colored
-                    self.draw_circle_UTM(points_in[i], 'firebrick')
+                    self.draw_circle_UTM(points_in[i], self.path_end_colors[self.cur_path_color])
                 else:
-                    self.draw_circle_UTM(points_in[i], 'red',7)
+                    self.draw_circle_UTM(points_in[i], self.path_colors[self.cur_path_color],7)
+            self.cur_path_color += 1
+            if self.cur_path_color >= len(self.path_colors):
+                self.cur_path_color = 0
 
     def draw_geofence_geodetic(self, geofence_in):
         """
