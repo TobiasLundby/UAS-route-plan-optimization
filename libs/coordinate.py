@@ -52,7 +52,7 @@ from pyproj import Proj, transform # Transform coordiantes between projections
 from transverse_mercator_py.utm import utmconv # Convert between geodetic and UTM coordinates
 
 class coordinate_transform():
-    def __init__(self, debug = False):
+    def __init__(self, debug = False, lock_UTM_zone = None):
         """
         Init method
         Input: optional debug parameter which toogles debug messages
@@ -66,6 +66,8 @@ class coordinate_transform():
         # Instantiate utmconv class
         self.uc = utmconv()
         self.first_UTM_conv = True
+        if lock_UTM_zone != None:
+            self.uc.set_zone_override(lock_UTM_zone)
 
     def Geodetic2PseudoMercator(self, lat, lon = False):
         """
@@ -99,6 +101,7 @@ class coordinate_transform():
         if self.first_UTM_conv:
             (hemisphere, zone, letter, easting, northing) = self.uc.geodetic_to_utm(lat, lon)
             self.uc.set_zone_override(zone)
+            print 'zone override to', zone
             self.first_UTM_conv = False
             return (hemisphere, zone, letter, easting, northing)
         return self.uc.geodetic_to_utm(lat, lon)
@@ -187,14 +190,31 @@ class coordinate_transform():
         Input: 3 value 1 array of lat, lon, alt_rel
         Output: 6 value 1 element array of y/easting, x/norting, alt_rel, hemisphere, zone, and letter
         """
+        if self.first_UTM_conv:
+            (hemisphere, zone, letter, easting, northing) = self.uc.geodetic_to_utm(pos3d_geodetic[0],pos3d_geodetic[1])
+            self.uc.set_zone_override(zone)
+            print 'zone override to', zone
+            self.first_UTM_conv = False
+            return [easting, northing, pos3d_geodetic[2], hemisphere, zone, letter]
         (hemisphere, zone, letter, easting, northing) = self.uc.geodetic_to_utm(pos3d_geodetic[0],pos3d_geodetic[1])
         return [easting, northing, pos3d_geodetic[2], hemisphere, zone, letter]
+
+
+        # (hemisphere, zone, letter, easting, northing) = self.uc.geodetic_to_utm(pos3d_geodetic[0],pos3d_geodetic[1])
+        # return [easting, northing, pos3d_geodetic[2], hemisphere, zone, letter]
     def pos3d_UTM2pos3d_geodetic(self, pos3d_UTM):
         """ Converts UTM pos3d to geodetic pos3d
         Input: 6 value 1 element array of y/easting, x/norting, alt_rel, hemisphere, zone, and letter
         Output: 3 value 1 array of lat, lon, alt_rel
         """
         (back_conv_lat, back_conv_lon) = self.uc.utm_to_geodetic (pos3d_UTM[3], pos3d_UTM[4], pos3d_UTM[0], pos3d_UTM[1])
+        return [back_conv_lat, back_conv_lon, pos3d_UTM[2]]
+    def pos3d_UTM2pos3d_geodetic_special(self, pos3d_UTM):
+        """ Converts UTM pos3d to geodetic pos3d
+        Input: 6 value 1 element array of y/easting, x/norting, alt_rel, hemisphere, zone, and letter
+        Output: 3 value 1 array of lat, lon, alt_rel
+        """
+        (back_conv_lat, back_conv_lon) = self.uc.utm_to_geodetic ('N', 32, pos3d_UTM[0], pos3d_UTM[1])
         return [back_conv_lat, back_conv_lon, pos3d_UTM[2]]
 
     def generate_pos3d_UTM_list(self, easting, northing, z_rel, hemisphere = 'N', zone=32, letter='U'):
@@ -249,8 +269,17 @@ class coordinate_transform():
             x = norting = up: flying direction
             y = easting = right: tangent to flying direction
         """
+        if self.first_UTM_conv:
+            (hemisphere, zone, letter, easting, northing) = self.uc.geodetic_to_utm(pos3dDICT['lat'],pos3dDICT['lon'])
+            self.uc.set_zone_override(zone)
+            print 'zone override to', zone
+            self.first_UTM_conv = False
+            return {'hemisphere':hemisphere,'zone':zone,'letter':letter,'y':easting,'x':northing,'z_rel':pos3dDICT['alt_rel'],'time_rel':None}
         (hemisphere, zone, letter, easting, northing) = self.uc.geodetic_to_utm(pos3dDICT['lat'],pos3dDICT['lon'])
         return {'hemisphere':hemisphere,'zone':zone,'letter':letter,'y':easting,'x':northing,'z_rel':pos3dDICT['alt_rel'],'time_rel':None}
+
+        # (hemisphere, zone, letter, easting, northing) = self.uc.geodetic_to_utm(pos3dDICT['lat'],pos3dDICT['lon'])
+        # return {'hemisphere':hemisphere,'zone':zone,'letter':letter,'y':easting,'x':northing,'z_rel':pos3dDICT['alt_rel'],'time_rel':None}
     def pos4dDICT_UTM2pos4dDICT_geodetic(self, pos4dDICT_UTM):
         """ Converts pos4dDICT (UTM) to pos4dDICT (geodetic)
         Input: 7 value 1 element DICT of hemisphere, zone, letter, y, x, z_rel, time_rel

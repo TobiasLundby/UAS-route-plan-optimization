@@ -34,8 +34,13 @@ class StoppableThread(threading.Thread):
 class path_planner_gui(StoppableThread):
     DEFAULT_START_LAT = 55.434352 #55.43526 #55.431122
     DEFAULT_START_LON = 10.415182 #10.41086 #10.420436
-    DEFAULT_GOAL_LAT  = 55.42474 #55.427203
-    DEFAULT_GOAL_LON  = 10.41975 #10.419043
+    DEFAULT_GOAL_LAT  = 55.429331#55.42474 #55.427203
+    DEFAULT_GOAL_LON  = 10.422770#10.41975 #10.419043
+
+    # for testing altitude - points near Hindsgavl, Middelfart
+    # start_point_3dDICT = {'lat': 55.505618, 'lon': 9.681612, 'alt_rel': 0}
+    # goal_point_3dDICT  = {'lat': 55.518093, 'lon': 9.699519, 'alt_rel': 0}
+    # goal inside geofence: 55.429331, 10.422770
 
     DEFAULT_STEP_SIZE_HORZ_ASTAR = 100
     DEFAULT_STEP_SIZE_VERT_ASTAR = 10
@@ -47,11 +52,11 @@ class path_planner_gui(StoppableThread):
     DEFAULT_TIME_STEP = 1.0 # unit: s
     DEFAULT_ACCELERATION_FACTOR = 10.0 # unitless
 
-    DEFAULT_STEP_SIZE_HORZ_LOCAL_ASTAR = 10
+    DEFAULT_STEP_SIZE_HORZ_LOCAL_ASTAR = 50
     DEFAULT_STEP_SIZE_VERT_LOCAL_ASTAR = 5
     DEFAULT_SEARCH_TIME_MAX_LOCAL = 180 # unit: s
 
-    DEFAULT_STEP_SIZE_HORZ_LOCAL_RRT = 10
+    DEFAULT_STEP_SIZE_HORZ_LOCAL_RRT = 25
     DEFAULT_STEP_SIZE_VERT_LOCAL_RRT = 5
     DEFAULT_ITERATIONS_MAX_LOCAL = 3000 # unit: s
 

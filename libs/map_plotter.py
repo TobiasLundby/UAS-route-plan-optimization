@@ -188,6 +188,23 @@ class map_plotter():
                 points_OSM_x.append(geofence_in_converted[i]['x'])
                 points_OSM_y.append(geofence_in_converted[i]['y'])
             self.p.patch(points_OSM_x, points_OSM_y, alpha=0.5, line_width=2)
+    def draw_geofence_geodetic_multiple(self, geofence_in):
+        """
+        Draws a ploygon on the map plot from geodetic coordinates
+        Input: a set of 2d geodetic points (either array or DICT) representing a polygon
+        Output: none but drawing on the provided plot
+        """
+        for element in geofence_in:
+            if len(element) > 2:
+                # Check and convert points
+                geofence_in_converted = self.coord_conv.check_pos2dALL_geodetic2pos2dDICT_OSM(element)
+
+                points_OSM_x = []
+                points_OSM_y = []
+                for i in range(len(element)):
+                    points_OSM_x.append(geofence_in_converted[i]['x'])
+                    points_OSM_y.append(geofence_in_converted[i]['y'])
+                self.p.patch(points_OSM_x, points_OSM_y, alpha=0.5, line_width=2)
 
     def show_plot(self):
         show(self.p)

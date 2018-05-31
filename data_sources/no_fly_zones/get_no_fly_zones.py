@@ -48,58 +48,63 @@ class get_no_fly_zones():
 			r = requests.post(url = get_token_url,auth=required_auth,data=payload)
 		except:
 			if self.debug:
-				print 'Unexpected error in polling get_requests'
-
-		if r.text == '0' or int(r.status_code) != 200: # Handle empty response
-			if self.debug:
-				print "No response or error code 200"
+				print 'Error in polling get_requests'
 		else:
-			if self.print_raw_response == True:
-				print "--- Raw response start ---"
-				print r.text
-				print "--- Raw response end ---"
 			try:
-				jsonformat = json.loads(r.text) # convert to json
-			except:
-				if self.debug:
-					print 'Unexpected error in parsing r.text as json'
-
-			access_token = jsonformat["access_token"]
-			token_type   = jsonformat["token_type"]
-
-			if access_token != '' and access_token != '0':
-				# print "Access token: "+jsonformat["access_token"]
-				if self.debug:
-					print "Access token acquired"
-
-				#time.sleep(1)
-
-				# # Get no-fly zones
-				# Parse URL - NOTE added an extra '%' to escape '%20', could have been replaced with the corresponding ' ' (space)
-				url = 'https://www.droneluftrum.dk//api/uaszones/exportKmlUasZones?Authorization=%s%%20%s' % (token_type, access_token)
-				#print 'Trying URL: %s' % url
-				if self.debug:
-					print 'Attempting to download'
-
-				try:
-					response = urlopen(url)
-				except HTTPError as e:
-					self.result = '%s' % (e.code)
-				except URLError as e:
-					self.result = '%s %s' % (e.code, e.reason)
+				r.text
+			except UnboundLocalError:
+				print 'No connection'
+			else:
+				if r.text == '0' or int(r.status_code) != 200: # Handle empty response
+					if self.debug:
+						print "No response or error code 200"
 				else:
-					if self.debug:
-						print 'No errors encountered during download, attempting to read result'
-					self.result = response.read()
+					if self.print_raw_response == True:
+						print "--- Raw response start ---"
+						print r.text
+						print "--- Raw response end ---"
+					try:
+						jsonformat = json.loads(r.text) # convert to json
+					except:
+						if self.debug:
+							print 'Unexpected error in parsing r.text as json'
 
-				if self.result == '400' or self.result == 400:
-					if self.debug:
-						print 'Bad request, terminating'
-					sys.exit()
-				else:
-					self.data_downloaded = True
-					if self.debug:
-						print 'Result read'
+					access_token = jsonformat["access_token"]
+					token_type   = jsonformat["token_type"]
+
+					if access_token != '' and access_token != '0':
+						# print "Access token: "+jsonformat["access_token"]
+						if self.debug:
+							print "Access token acquired"
+
+						#time.sleep(1)
+
+						# # Get no-fly zones
+						# Parse URL - NOTE added an extra '%' to escape '%20', could have been replaced with the corresponding ' ' (space)
+						url = 'https://www.droneluftrum.dk//api/uaszones/exportKmlUasZones?Authorization=%s%%20%s' % (token_type, access_token)
+						#print 'Trying URL: %s' % url
+						if self.debug:
+							print 'Attempting to download'
+
+						try:
+							response = urlopen(url)
+						except HTTPError as e:
+							self.result = '%s' % (e.code)
+						except URLError as e:
+							self.result = '%s %s' % (e.code, e.reason)
+						else:
+							if self.debug:
+								print 'No errors encountered during download, attempting to read result'
+							self.result = response.read()
+
+						if self.result == '400' or self.result == 400:
+							if self.debug:
+								print 'Bad request, terminating'
+							sys.exit()
+						else:
+							self.data_downloaded = True
+							if self.debug:
+								print 'Result read'
 
 	def save_to_file(self):
 		"""

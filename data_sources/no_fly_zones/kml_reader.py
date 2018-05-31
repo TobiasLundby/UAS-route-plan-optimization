@@ -139,24 +139,25 @@ class kml_no_fly_zones_parser():
                             if self.debug:
                                 print 'Something is wrong with the name format (contains special characters which \'lxml.objectify.StringElement\' cannot handle); defaulting name to \'NaN\''
                             element_name = 'NaN'
-                        sub_itr = 0
-                        for sub_element in element.MultiGeometry.Polygon:
-                            coordinates_raw =  sub_element.outerBoundaryIs.LinearRing.coordinates
-                            coordinates_str_split = str(coordinates_raw).split(' ')
-                            del coordinates_str_split[-1] # delete the last element since it is just empty and not 3 elements
+                        if element_name != 'Danmark':
+                            sub_itr = 0
+                            for sub_element in element.MultiGeometry.Polygon:
+                                coordinates_raw =  sub_element.outerBoundaryIs.LinearRing.coordinates
+                                coordinates_str_split = str(coordinates_raw).split(' ')
+                                del coordinates_str_split[-1] # delete the last element since it is just empty and not 3 elements
 
-                            coordinate3d_placemark = []
-                            for coordinate in coordinates_str_split:
-                                coordinate3d = []
-                                sub_coordinates = coordinate.split(',')
-                                for sub_coordinate in sub_coordinates:
-                                    coordinate3d.append(float(sub_coordinate))
-                                coordinate3d = [coordinate3d[1], coordinate3d[0], coordinate3d[2]] # correct the order to lat, lon, alt_rel instead of lon, lat, alt_rel
-                                coordinate3d_placemark.append(coordinate3d)
-                            if self.debug:
-                                print element_id+'-'+str(sub_itr)
-                            self.coordinate3d_combined.append({'style': element_style, 'id': element_id+'-'+str(sub_itr), 'name': element_name, 'coordinates': coordinate3d_placemark})
-                            sub_itr += 1
+                                coordinate3d_placemark = []
+                                for coordinate in coordinates_str_split:
+                                    coordinate3d = []
+                                    sub_coordinates = coordinate.split(',')
+                                    for sub_coordinate in sub_coordinates:
+                                        coordinate3d.append(float(sub_coordinate))
+                                    coordinate3d = [coordinate3d[1], coordinate3d[0], coordinate3d[2]] # correct the order to lat, lon, alt_rel instead of lon, lat, alt_rel
+                                    coordinate3d_placemark.append(coordinate3d)
+                                if self.debug:
+                                    print element_id+'-'+str(sub_itr)
+                                self.coordinate3d_combined.append({'style': element_style, 'id': element_id+'-'+str(sub_itr), 'name': element_name, 'coordinates': coordinate3d_placemark})
+                                sub_itr += 1
                 else:
                     if self.debug:
                         print 'Single Polygon object'
@@ -169,23 +170,23 @@ class kml_no_fly_zones_parser():
                         if self.debug:
                             print 'Something is wrong with the name format (contains special characters which \'lxml.objectify.StringElement\' cannot handle); defaulting name to \'NaN\''
                         element_name = 'NaN'
+                    if element_name != 'Danmark':
+                        coordinates_raw =  element.Polygon.outerBoundaryIs.LinearRing.coordinates
+                        coordinates_str_split = str(coordinates_raw).split(' ')
+                        del coordinates_str_split[-1] # delete the last element since it is just empty and not 3 elements
 
-                    coordinates_raw =  element.Polygon.outerBoundaryIs.LinearRing.coordinates
-                    coordinates_str_split = str(coordinates_raw).split(' ')
-                    del coordinates_str_split[-1] # delete the last element since it is just empty and not 3 elements
-
-                    coordinate3d_placemark = []
-                    for coordinate in coordinates_str_split:
-                        coordinate3d = []
-                        sub_coordinates = coordinate.split(',')
-                        for sub_coordinate in sub_coordinates:
-                            coordinate3d.append(float(sub_coordinate))
-                        coordinate3d = [coordinate3d[1], coordinate3d[0], coordinate3d[2]]  # correct the order to lat, lon, alt_rel instead of lon, lat, alt_rel
-                        coordinate3d_placemark.append(coordinate3d)
-                    if self.debug:
-                        print element_id
-                    self.coordinate3d_combined.append({'style': element_style, 'id': element_id, 'name': element_name, 'coordinates': coordinate3d_placemark})
-        self.placemarks = itr
+                        coordinate3d_placemark = []
+                        for coordinate in coordinates_str_split:
+                            coordinate3d = []
+                            sub_coordinates = coordinate.split(',')
+                            for sub_coordinate in sub_coordinates:
+                                coordinate3d.append(float(sub_coordinate))
+                            coordinate3d = [coordinate3d[1], coordinate3d[0], coordinate3d[2]]  # correct the order to lat, lon, alt_rel instead of lon, lat, alt_rel
+                            coordinate3d_placemark.append(coordinate3d)
+                        if self.debug:
+                            print element_id
+                        self.coordinate3d_combined.append({'style': element_style, 'id': element_id, 'name': element_name, 'coordinates': coordinate3d_placemark})
+            self.placemarks = itr
         if len(self.coordinate3d_combined) == 0:
             print 'No no-fly zones were parsed'
             return False

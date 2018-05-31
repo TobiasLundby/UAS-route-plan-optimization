@@ -120,7 +120,7 @@ class path_visualizer():
                         print colored('Path uploaded, route ID %s: %s, %s' % (route_id, 'http://uas.heltner.net/routes/'+str(route_id)+'/2d', 'http://uas.heltner.net/routes/'+str(route_id)+'/3d'), 'green')
                     return route_id
                 else:
-                    print colored('Path NOT uploaded', 'red')
+                    print colored('Path NOT uploaded %s' % r.status_code, 'red')
         return None
     def delete_route(self, routeid):
         """
