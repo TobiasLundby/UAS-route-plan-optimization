@@ -53,13 +53,13 @@ ICING_DEWPOINT_SPREAD = 2.7 # unit: degrees Celcius
 ICING_MAX_TEMP          = 1 # just a bit over 0 degrees Celcius
 ICING_MIN_TEMP          = -15 # unit: degrees Celcius
 
-UAV_EMERGENCY_FLIGHT = True
+UAV_EMERGENCY_FLIGHT = False
 
 INVOKE_TEMP_CHANGE = False
 INVOKE_TEMP_CHANGE_AT = 30 # unit: s
 INVOKE_TEMP_CHANGED_TO = -21 # unit: degrees C
 
-USE_DYNAMIC_NO_FLY_ZONE = True
+USE_DYNAMIC_NO_FLY_ZONE = False
 DYNAMIC_NO_FLY_ZONE = [
     [55.431397, 10.411145, 0.0],
     [55.432968, 10.414696, 0.0],
