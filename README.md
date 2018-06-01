@@ -7,4 +7,4 @@ _Co-supervisor:_ Kristian Husum Terkildsen, The Maersk Mc-Kinney Moller Institut
 
 _Core partner:_ IBM
 
-_Case partners:_ ROCKWOOL, Odense University Hospital, and Falck
+_Case partners:_ ROCKWOOL and Odense University Hospital
