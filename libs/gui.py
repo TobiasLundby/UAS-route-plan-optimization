@@ -34,8 +34,8 @@ class StoppableThread(threading.Thread):
 class path_planner_gui(StoppableThread):
     DEFAULT_START_LAT = 55.434352 #55.43526 #55.431122
     DEFAULT_START_LON = 10.415182 #10.41086 #10.420436
-    DEFAULT_GOAL_LAT  = 55.429331#55.42474 #55.427203
-    DEFAULT_GOAL_LON  = 10.422770#10.41975 #10.419043
+    DEFAULT_GOAL_LAT  = 55.42474 #55.427203
+    DEFAULT_GOAL_LON  = 10.41975 #10.419043
 
     # for testing altitude - points near Hindsgavl, Middelfart
     # start_point_3dDICT = {'lat': 55.505618, 'lon': 9.681612, 'alt_rel': 0}
@@ -205,6 +205,7 @@ class path_planner_gui(StoppableThread):
         if self.parent_class.plan_path_global(point_start, point_goal, path_planner, step_size_horz=step_size_horz, step_size_vert=step_size_vert, search_time_max=search_time_max): # Plan path and test the result to update the GUI
             self.button_local_plan.configure(state='normal')
             self.button_global_plan.configure(state='normal')
+            self.button_gen_global_sim_files.configure(state='normal')
             self.button_global_plan.configure(text='Start global planning')
             self.button_show_result_webpage_global.configure(state='normal')
             self.button_evaluate_path.configure(state='normal')
@@ -212,6 +213,7 @@ class path_planner_gui(StoppableThread):
         else: # The global path planner failed and therefore diable the local path planner and change the option to continue
             self.button_local_plan.configure(state='disabled')
             self.button_global_plan.configure(state='normal')
+            self.button_gen_global_sim_files.configure(state='disabled')
             self.button_show_result_webpage_global.configure(state='disabled')
             path_planner = str(self.combo_planner_type.get())
             if path_planner == self.parent_class.PATH_PLANNER_NAMES[0]:
@@ -222,6 +224,7 @@ class path_planner_gui(StoppableThread):
             self.button_web_visualize_global.configure(state='disabled')
     def start_global_path_planning(self):
         self.button_global_plan.configure(state='disabled')
+        self.button_gen_global_sim_files.configure(state='disabled')
         self.button_local_plan.configure(state='disabled')
         self.button_show_result_webpage_global.configure(state='disabled')
         self.button_evaluate_path.configure(state='disabled')
@@ -243,14 +246,18 @@ class path_planner_gui(StoppableThread):
     def local_planner_thread(self, path_planner, step_size_horz, step_size_vert, max_search_time, time_step, acceleration_factor):
         self.parent_class.plan_path_local(path_planner = path_planner, step_size_horz = step_size_horz, step_size_vert = step_size_vert, max_search_time = max_search_time, time_step = time_step, acceleration_factor = acceleration_factor)
         self.button_global_plan.configure(state='normal')
+        self.button_gen_global_sim_files.configure(state='normal')
         self.button_local_plan.configure(state='normal')
         self.button_web_visualize_local.configure(state='normal')
         self.button_show_result_webpage_local.configure(state='normal')
+        self.button_gen_local_sim_files.configure(state='normal')
     def start_local_path_planning(self):
         self.button_global_plan.configure(state='disabled')
+        self.button_gen_global_sim_files.configure(state='disabled')
         self.button_local_plan.configure(state='disabled')
         self.button_web_visualize_local.configure(state='disabled')
         self.button_show_result_webpage_local.configure(state='disabled')
+        self.button_gen_local_sim_files.configure(state='disabled')
         # Get data from the GUI
         path_planner = str(self.combo_planner_type.get())
         time_step = float(self.input_time_step.get())
@@ -269,6 +276,20 @@ class path_planner_gui(StoppableThread):
     def show_result_webpage_global(self):
         show_result_webpage_global = threading.Thread(target=self.show_result_webpage_global_thread)
         show_result_webpage_global.start()
+
+    def gen_global_sim_files_thread(self):
+        self.parent_class.generate_simulation_files_global()
+
+    def gen_global_sim_files(self):
+        gen_global_sim = threading.Thread(target=self.gen_global_sim_files_thread)
+        gen_global_sim.start()
+
+    def gen_local_sim_files_thread(self):
+        self.parent_class.generate_simulation_files_local()
+
+    def gen_local_sim_files(self):
+        gen_local_sim = threading.Thread(target=self.gen_local_sim_files_thread)
+        gen_local_sim.start()
 
     def show_result_webpage_local_thread(self):
         self.parent_class.draw_planned_path_local()
@@ -692,6 +713,15 @@ class path_planner_gui(StoppableThread):
         self.button_web_visualize_local = Button(self.root, text="3D local path visualization (online)", command=self.show_web_visualize_local)
         self.button_web_visualize_local.configure(state='disabled') # Disabled because no global plan has been made
         self.button_web_visualize_local.grid(row=row_num_both, column=2, columnspan = 2)
+
+        row_num_both += 1
+        self.button_gen_global_sim_files = Button(self.root, text="Generate global path simulation files", command=self.gen_global_sim_files)
+        self.button_gen_global_sim_files.configure(state='disabled') # Disabled because no global plan has been made
+        self.button_gen_global_sim_files.grid(row=row_num_both, column=0, columnspan = 2)
+        #row_num_both += 1
+        self.button_gen_local_sim_files = Button(self.root, text="Generate local path simulation files", command=self.gen_local_sim_files)
+        self.button_gen_local_sim_files.configure(state='disabled') # Disabled because no global plan has been made
+        self.button_gen_local_sim_files.grid(row=row_num_both, column=2, columnspan = 2)
 
         row_num_both += 1
         self.label_credit = Label(self.root, text="Copyright (c) 2018, Tobias Lundby, BSD 3-Clause License", fg = "grey", font=("Arial 8 italic"))

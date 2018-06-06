@@ -29,6 +29,7 @@ from data_sources.weather.ibm import ibm_weather_csv
 from data_sources.rally_points.rally_point_reader import rally_point_reader
 from libs.various import *
 from libs.gui import path_planner_gui
+from libs.qgc_sim import qgc_sim_path_writer
 from external.path_visualizer import path_visualizer
 from shapely import geometry # used to calculate the distance to polygons
 from random import randint, uniform
@@ -39,7 +40,12 @@ import time # used for sleeping the main loop
 """ User constants """
 DRONEID_FORCE_ALL_REAL  = True
 
-START_GUI = True
+GPS_ACCURACY_SGPS = 3.5 # unit: m; standard GPS
+GPS_ACCURACY_DGPS = 2.0 # unit: m; differential GPS
+GPS_ACCURACY_RTKGPS = 0.4 # unit: m; real time kinematics (RTK) GPS (can go down to 20cm but 40cm approximate)
+GPS_ACCURACY = GPS_ACCURACY_SGPS
+
+START_GUI = False
 USE_STATIC_FILE = True
 STATIC_FILE = 'test.csv'
 
@@ -134,6 +140,8 @@ class UAV_path_planner():
         # Instantiate map plotter class
         self.map_plotter_global = map_plotter(self.coord_conv, output_filename = 'path_planning_global.html', debug = False)
         self.map_plotter_local  = map_plotter(self.coord_conv, output_filename = 'path_planning_local.html', debug = False)
+        self.drawn_static_no_fly_zones = False
+        self.drawn_dynamic_no_fly_zones = False
 
         # Instantiate and start the GUI
         if START_GUI:
@@ -1997,14 +2005,59 @@ class UAV_path_planner():
 
     def draw_planned_path_global(self):
         if len(self.planned_path_global_UTM) > 1: # DRAW if the path has more than 1 waypoints
+            if not self.drawn_static_no_fly_zones:
+                self.map_plotter_global.draw_geofence_geodetic_multiple(self.no_fly_zone_polygons_reduced_geodetic)
+                self.drawn_static_no_fly_zones = True
             self.map_plotter_global.draw_path_UTM(self.planned_path_global_UTM)
-            self.map_plotter_global.draw_geofence_geodetic_multiple(self.no_fly_zone_polygons_reduced_geodetic)
 
     def draw_planned_path_local(self):
         if len(self.planned_path_local_UTM) > 1: # DRAW if the path has more than 1 waypoints
-            self.map_plotter_local.draw_path_UTM(self.planned_path_local_UTM)
             if USE_DYNAMIC_NO_FLY_ZONE:
-                self.map_plotter_local.draw_geofence_geodetic(DYNAMIC_NO_FLY_ZONE)
+                if not self.drawn_dynamic_no_fly_zones:
+                    self.map_plotter_local.draw_geofence_geodetic(DYNAMIC_NO_FLY_ZONE)
+                    self.drawn_dynamic_no_fly_zones = True
+            self.map_plotter_local.draw_path_UTM(self.planned_path_local_UTM)
+
+    def generate_simulation_files(self, path_geodetic, file_id = None):
+        if len(path_geodetic) > 1:
+            path_qgc_writer = qgc_sim_path_writer(True, file_id = file_id)
+            for i in range(len(path_geodetic)):
+                if i == 0: # Start position
+                    tmp_location = [
+                        path_geodetic[i]['lat'],
+                        path_geodetic[i]['lon'],
+                        path_geodetic[i]['alt_rel']
+                        ]
+                    path_qgc_writer.add_home(tmp_location)
+                elif i == 1:
+                    tmp_location = [
+                        path_geodetic[i]['lat'],
+                        path_geodetic[i]['lon'],
+                        path_geodetic[i]['alt_rel']
+                        ]
+                    path_qgc_writer.add_takeoff(tmp_location)
+                elif i == len(self.planned_path_global_geodetic)-1:
+                    tmp_location = [
+                        path_geodetic[i]['lat'],
+                        path_geodetic[i]['lon'],
+                        path_geodetic[i-1]['alt_rel']
+                        ]
+                    path_qgc_writer.add_land(tmp_location, abort_alt_rel = path_geodetic[i]['alt_rel']-GPS_ACCURACY)
+                else:
+                    tmp_location = [
+                        path_geodetic[i]['lat'],
+                        path_geodetic[i]['lon'],
+                        path_geodetic[i]['alt_rel']
+                        ]
+                    path_qgc_writer.add_waypoint(tmp_location)
+                #print self.planned_path_global_geodetic[i]
+            path_qgc_writer.write_plan()
+
+    def generate_simulation_files_global(self):
+        self.generate_simulation_files(self.planned_path_global_geodetic, 'global')
+
+    def generate_simulation_files_local(self):
+        self.generate_simulation_files(self.planned_path_local_geodetic, 'local')
 
 
 if __name__ == '__main__':
@@ -2039,9 +2092,9 @@ if __name__ == '__main__':
     """
 
     if not START_GUI:
-        step_size_horizontal = 200
+        step_size_horizontal = 100
         ste_size_vertical = 10
-        maximum_search_time = 3000 # used for iteration in RRT
+        maximum_search_time = 10000 # used for iteration in RRT
         path_planner_to_use = UAV_path_planner_module.PATH_PLANNER_NAMES[0] # 0=Astar, 1=RRT
         start_point_3dDICT = {'lat': 55.434352, 'lon': 10.415182, 'alt_rel': 0}
         goal_point_3dDICT  = {'lat': 55.42474, 'lon': 10.41975, 'alt_rel': 0}
@@ -2050,7 +2103,15 @@ if __name__ == '__main__':
         start_point_3dDICT = {'lat': 55.505618, 'lon': 9.681612, 'alt_rel': 0}
         goal_point_3dDICT  = {'lat': 55.518093, 'lon': 9.699519, 'alt_rel': 0}
 
-        number_of_tests = 100
+        # Distance test
+        start_point_3dDICT = {'lat': 55.285660, 'lon': 10.357090, 'alt_rel': 0}
+        #goal_point_3dDICT  = {'lat': 55.285660, 'lon': 10.447761, 'alt_rel': 0}
+        #goal_point_3dDICT  = {'lat': 55.285660, 'lon': 10.437254, 'alt_rel': 0}
+        #goal_point_3dDICT  = {'lat': 55.285660, 'lon': 10.421451, 'alt_rel': 0}
+        #goal_point_3dDICT  = {'lat': 55.285660, 'lon': 10.403434, 'alt_rel': 0}
+        goal_point_3dDICT  = {'lat': 55.285660, 'lon': 10.386576, 'alt_rel': 0}
+
+        number_of_tests = 5
 
         failed_plannings = 0
         itr = 0
