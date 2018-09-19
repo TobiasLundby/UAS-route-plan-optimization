@@ -45,7 +45,7 @@ GPS_ACCURACY_DGPS = 2.0 # unit: m; differential GPS
 GPS_ACCURACY_RTKGPS = 0.4 # unit: m; real time kinematics (RTK) GPS (can go down to 20cm but 40cm approximate)
 GPS_ACCURACY = GPS_ACCURACY_SGPS
 
-START_GUI = False
+START_GUI = True
 USE_STATIC_FILE = True
 STATIC_FILE = 'test.csv'
 
