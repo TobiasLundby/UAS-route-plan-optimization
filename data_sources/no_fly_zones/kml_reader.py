@@ -6,6 +6,7 @@ Description: KML parser for the no-fly zones obtained from https://www.droneluft
              The KML parser can handle Document.Placemark.Polygon, Document.Placemark.MultiGeometry.Polygon (generates sub placemarks with a modifies ID), and Document.Folder.Placemark.Polygon (Kjelds generated no-fly zone data format)
              The parsing can be verfied by comparing the results to the results on https://www.techgen.dk/msc/kml-viewer.html
     License: BSD 3-Clause
+    Author: Tobias Lundby (tolu@mmmi.sdu.dk)
 """
 
 from pykml import parser # KML file parser
