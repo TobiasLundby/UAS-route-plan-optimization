@@ -16,98 +16,112 @@ License: BSD 3-Clause
 ### Import start
 import csv
 import numpy as np
-from bokeh.io import output_file, show
+from bokeh.io import output_file, show, export_svgs
 from bokeh.layouts import gridplot, column, widgetbox, layout
 from bokeh.plotting import figure
 from bokeh.models import ColumnDataSource
 from bokeh.models.widgets import Div
 from datetime import datetime
 import pandas as pd
+
+from svglib.svglib import svg2rlg
+from reportlab.graphics import renderPDF
 ### Import end
 
 ### Define start
-MaxOperationWindSpeed_def = 12
-MaxOperationWindGusts_def = MaxOperationWindSpeed_def+5.14 # 10kts more than wind speed based on the tower at HCA Airport
-OperationMinTemperature_def = -20
-OperationMaxTemperature_def = 45
-icing_temp_diff_tolerance = 2.7 # the allowed difference between the surface temperature and dewpoint temperature
-ICING_MAX_TEMP          = 1 # just a bit over 0 degrees Celcius
-ICING_MIN_TEMP          = -15 # unit: degrees Celcius
-MAX_PRECIPITATION = 0.76 # unit: cm
-MAX_SNOWFALL = 0.5 # unit: cm
+ICING_TEMP_DIFF = 2.7 # the allowed difference between the surface temperature and dewpoint temperature
+ICING_MAX_TEMP  = 0 # just a bit over 0 degrees Celcius # old value from M.Sc 0 deg C
+ICING_MIN_TEMP  = -20 # unit: degrees Celcius # old value from M.Sc -15 deg C # new value includes clear, rime, and mixed
 
-use_apparent_temp = False # for the condition checking
-use_wind_gusts = True # for the condition checking
-use_icing_test = True # for the condition checking
-use_precipitation_test = True
-use_snowfall_test = True
+CONV_10kts2mps = 5.14 # 10kts more than wind speed based on the tower at HCA Airport
+CONV_kph2mps = 1/3.6
+
+USE_TEMP_APPARENT               = False
+USE_ICING_CONDITION_CONDITION   = True
+USE_ICING_CONDITION             = True
+USE_PRECIPITATION_CONDITION     = True
+USE_SNOWFALL_CONDITION          = True
+
+SHOW_WEBPAGE = True
+GENERATE_SVG_et_PDF = True
 ### Define end
 
 ### Class start
 class ibm_weather_csv():
-    def __init__(self, inFileName, inCity, inYear, inMaxOperationWindSpeed, inMaxOperationWindGusts, inOperationMinTemperature, inOperationMaxTemperature, debug = False):
+    def __init__(self, inFileName, inCity, inYear, inWindSpeedOperationMax, inWindGustOperationMax, inTemperatureOperationMin, inTemperatureOperationMax, inPrecipitationMax, inSnowfallMax, debug = False):
         self.fileName = inFileName;
         self.city = inCity
         self.year = inYear
-        self.maxOperationWindSpeed = inMaxOperationWindSpeed
-        self.maxOperationWindGusts = inMaxOperationWindGusts
-        self.minOperationTemperature = inOperationMinTemperature
-        self.maxOperationTemperature = inOperationMaxTemperature
 
+        # Save UAV limits as class variables
+        self.WindSpeedOperationMax = inWindSpeedOperationMax
+        self.WindGustOperationMax = inWindGustOperationMax
+        self.TempOperationMin = inTemperatureOperationMin
+        self.TempOperationMax = inTemperatureOperationMax
+        self.PrecipitationMax = inPrecipitationMax
+        self.SnowfallMax = inSnowfallMax
+
+        # Prepare containers for the data
         self.DateSGMT = []
 
         self.WindSpeedKphS = []
-        self.SurfaceWindGustsKphS = []
-
         self.WindSpeedMpsS = []
-        self.SurfaceWindGustsMpsS = []
-
+        self.WindGustSurfaceKphS = []
+        self.WindGustSurfaceMpsS = []
         self.WindDirectionDegreesS = []
 
-        self.SurfaceTempCS = []
-        self.ApparentTemperatureCS = []
-        self.WindChillTemperatureCS = []
-        self.SurfaceDewpointTempCS = [] # SurfaceDewpointTemperatureCelsius
+        self.TempSurfaceCS = []
+        self.TempApparentCS = []
+        self.TempWindChillCS = []
+        self.TempSurfaceDewpointCS = []
 
         self.PrecipitationPreviousHourCmS = []
         self.SnowfallCmS = []
 
+        # Bookkeeping values
         self.samples = 0
+        self.days = 0
 
+        # Bokeh variables
         self.plotWidth = 800
         self.plotHeight = 400
 
+        # Print debug value
         self.debugText = debug
-
-        self.days = 0
 
     def reset(self):
         self.fileName = '';
         self.city = ''
         self.year = np.nan
-        self.maxOperationWindSpeed = np.nan
-        self.minOperationTemperature = np.nan
+
+        self.WindSpeedOperationMax = np.nan
+        self.WindGustOperationMax = np.nan
+        self.TempOperationMin = np.nan
+        self.TempOperationMax = np.nan
 
         self.DateSGMT = []
 
         self.WindSpeedKphS = []
-        self.SurfaceWindGustsKphS = []
+        self.WindSpeedMpsS = []
+        self.WindGustSurfaceKphS = []
+        self.WindGustSurfaceMpsS = []
+        self.WindDirectionDegreesS = []
 
-        self.SurfaceTempCS = []
-        self.ApparentTemperatureCS = []
-        self.WindChillTemperatureCS = []
-        self.SurfaceDewpointTempCS = []
+        self.TempSurfaceCS = []
+        self.TempApparentCS = []
+        self.TempWindChillCS = []
+        self.TempSurfaceDewpointCS = []
 
         self.PrecipitationPreviousHourCmS = []
         self.SnowfallCmS = []
 
         self.samples = 0
-
         self.days = 0
 
     def loadCSV(self):
         if self.debugText:
-            print 'Attempting to open data file'
+            print "Location:", self.city
+            print 'Attempting to open data file:', self.fileName
         with open(self.fileName) as csvfile:
         #with open('DronePlanning/sec.csv') as csvfile:
             if self.debugText:
@@ -123,24 +137,24 @@ class ibm_weather_csv():
                 self.WindSpeedKphS.append(WindSpeedKph)
 
                 SurfaceWindGustsKph = float(row['SurfaceWindGustsKph'])
-                self.SurfaceWindGustsKphS.append(SurfaceWindGustsKph)
+                self.WindGustSurfaceKphS.append(SurfaceWindGustsKph)
 
                 WindDirectionDegrees = float(row['WindDirectionDegrees'])
                 self.WindDirectionDegreesS.append(WindDirectionDegrees)
 
                 # Temperature load
                 SurfaceTempC = float(row['SurfaceTemperatureCelsius'])
-                self.SurfaceTempCS.append(SurfaceTempC)
+                self.TempSurfaceCS.append(SurfaceTempC)
 
                 ApparentTemperatureC = float(row['ApparentTemperatureCelsius'])
-                self.ApparentTemperatureCS.append(ApparentTemperatureC)
+                self.TempApparentCS.append(ApparentTemperatureC)
 
                 WindChillTemperatureC = float(row['WindChillTemperatureCelsius'])
-                self.WindChillTemperatureCS.append(WindChillTemperatureC)
+                self.TempWindChillCS.append(WindChillTemperatureC)
 
                 #SurfaceDewpointTemperatureCelsius
                 SurfaceDewpointTemperatureC = float(row['SurfaceDewpointTemperatureCelsius'])
-                self.SurfaceDewpointTempCS.append(SurfaceDewpointTemperatureC)
+                self.TempSurfaceDewpointCS.append(SurfaceDewpointTemperatureC)
 
                 PrecipitationPreviousHourCm = float(row['PrecipitationPreviousHourCentimeters'])
                 self.PrecipitationPreviousHourCmS.append(PrecipitationPreviousHourCm)
@@ -160,8 +174,8 @@ class ibm_weather_csv():
 
 
         # convert to the more used m/s
-        self.WindSpeedMpsS = np.divide(self.WindSpeedKphS, 3.6)
-        self.SurfaceWindGustsMpsS = np.divide(self.SurfaceWindGustsKphS, 3.6)
+        self.WindSpeedMpsS = np.multiply(self.WindSpeedKphS, CONV_kph2mps)
+        self.WindGustSurfaceMpsS = np.multiply(self.WindGustSurfaceKphS, CONV_kph2mps)
         #WindSpeedMpsS = [x / 3.6 for x in WindSpeedKphS] #note that the list contains floats, use calc above
         #print(WindSpeedMpsS)
 
@@ -176,13 +190,13 @@ class ibm_weather_csv():
     def get_wind_speed(self, index):
         return self.WindSpeedMpsS[index]
     def get_wind_gust(self, index):
-        return self.SurfaceWindGustsMpsS[index]
+        return self.WindGustSurfaceMpsS[index]
     def get_wind_direction(self, index):
         return self.WindDirectionDegreesS[index]
     def get_temp(self, index):
-        return self.SurfaceTempCS[index]
+        return self.TempSurfaceCS[index]
     def get_temp_dewpoint(self, index):
-        return self.SurfaceDewpointTempCS[index]
+        return self.TempSurfaceDewpointCS[index]
     def get_precipitation(self, index):
         return self.PrecipitationPreviousHourCmS[index]
     def get_snowfall(self, index):
@@ -191,82 +205,91 @@ class ibm_weather_csv():
 
 
     ## Check condition methods
-    def check_conditions_wind(self, sample_nr):
-        # true = sattisfies wind conditions
-        # self.WindSpeedMpsS[i] > self.maxOperationWindSpeed or self.SurfaceWindGustsMpsS[i] > self.maxOperationWindSpeed
-        if self.WindSpeedMpsS[sample_nr] > self.maxOperationWindSpeed:
+    def check_condition_windspeed(self, sample_nr):
+        # Info: Checks if the wind speed is exceeding the limit for the provided sample number
+        # Input: sample number
+        # Output: true = satisfies wind speed limit, false = does not satisfy wind speed limit
+
+        # self.WindSpeedMpsS[i] > self.WindSpeedOperationMax or self.WindGustSurfaceMpsS[i] > self.WindSpeedOperationMax
+        if self.WindSpeedMpsS[sample_nr] > self.WindSpeedOperationMax:
             #print "WIND exceed"
             return False
-        if use_wind_gusts:
-            if self.SurfaceWindGustsMpsS[sample_nr] > self.maxOperationWindGusts:
+        if USE_ICING_CONDITION_CONDITION:
+            if self.WindGustSurfaceMpsS[sample_nr] > self.WindGustOperationMax:
                 #print "GUST exceed"
                 return False
         return True
-    def check_conditions_temp(self, sample_nr):
-        # true = sattisfies temp conditions
-        if use_apparent_temp:
-            if self.ApparentTemperatureCS[sample_nr] < self.minOperationTemperature:
+
+    def check_condition_temp(self, sample_nr):
+        # Info: Checks if the temperature is exceeding the limit for the provided sample number
+        # Input: sample number
+        # Output: true = satisfies temperature limits, false = does not satisfy temperature limits
+        if USE_TEMP_APPARENT:
+            if self.TempApparentCS[sample_nr] < self.TempOperationMin:
                 return False
-            if self.ApparentTemperatureCS[sample_nr] > self.maxOperationTemperature:
+            if self.TempApparentCS[sample_nr] > self.TempOperationMax:
                 return False
             return True
         else:
-            if self.SurfaceTempCS[sample_nr] < self.minOperationTemperature:
+            if self.TempSurfaceCS[sample_nr] < self.TempOperationMin:
                 return False
-            if self.SurfaceTempCS[sample_nr] > self.maxOperationTemperature:
+            if self.TempSurfaceCS[sample_nr] > self.TempOperationMax:
                 return False
             return True
-    def check_conditions_icing(self, sample_nr):
+    def check_condition_icing(self, sample_nr):
+        # Info: Checks if there is chance of icing is exceeding the limit for the provided sample number
+        # Input: sample number
+        # Output: true = no icing risk, false = icing possiblity
         # true = no icing, false = icing possiblity
-        if use_icing_test:
-            diff_SurfaceTem_SurfaceDewpointTemp = abs(self.SurfaceTempCS[sample_nr] - self.SurfaceDewpointTempCS[sample_nr])
-            # if self.SurfaceTempCS[sample_nr] < 0:
-            #     print "Icing: date ", self.DateSGMT[sample_nr], "diff:", diff_SurfaceTem_SurfaceDewpointTemp, "temp:", self.SurfaceTempCS[sample_nr]
-            if diff_SurfaceTem_SurfaceDewpointTemp < icing_temp_diff_tolerance and (self.SurfaceTempCS[sample_nr] < ICING_MAX_TEMP and self.SurfaceTempCS[sample_nr] > ICING_MIN_TEMP):
+        if USE_ICING_CONDITION:
+            diff_SurfaceTem_SurfaceDewpointTemp = abs(self.TempSurfaceCS[sample_nr] - self.TempSurfaceDewpointCS[sample_nr])
+            # if self.TempSurfaceCS[sample_nr] < 0:
+            #     print "Icing: date ", self.DateSGMT[sample_nr], "diff:", diff_SurfaceTem_SurfaceDewpointTemp, "temp:", self.TempSurfaceCS[sample_nr]
+            if diff_SurfaceTem_SurfaceDewpointTemp < ICING_TEMP_DIFF and (self.TempSurfaceCS[sample_nr] < ICING_MAX_TEMP and self.TempSurfaceCS[sample_nr] > ICING_MIN_TEMP):
                 return False
             else:
                 return True
         else:
             return True
-    def check_conditions_precipitation(self, sample_nr):
+    def check_condition_precipitation(self, sample_nr):
         # true = can fly, false = cannot fly due to rain
-        if use_precipitation_test:
-            if self.PrecipitationPreviousHourCmS[sample_nr] > MAX_PRECIPITATION:
+        if USE_PRECIPITATION_CONDITION:
+            if self.PrecipitationPreviousHourCmS[sample_nr] > self.PrecipitationMax:
                 return False
             else:
                 return True
         else:
             return True
-    def check_conditions_snowfall(self, sample_nr):
+    def check_condition_snowfall(self, sample_nr):
         # true = can fly, false = cannot fly due to rain
-        if use_snowfall_test:
-            if self.SnowfallCmS[sample_nr] > MAX_SNOWFALL:
+        if USE_SNOWFALL_CONDITION:
+            if self.SnowfallCmS[sample_nr] > self.SnowfallMax:
                 return False
             else:
                 return True
         else:
             return True
-    def check_conditions_all(self, sample_nr):
-        if self.check_conditions_wind(sample_nr) and self.check_conditions_temp(sample_nr) and self.check_conditions_icing(sample_nr) and self.check_conditions_precipitation(sample_nr) and self.check_conditions_snowfall(sample_nr):
+    def check_condition_all(self, sample_nr):
+        if self.check_condition_windspeed(sample_nr) and self.check_condition_temp(sample_nr) and self.check_condition_icing(sample_nr) and self.check_condition_precipitation(sample_nr) and self.check_condition_snowfall(sample_nr):
             return True
         else:
             return False
-    def check_conditions_all_with_type(self, sample_nr):
+    def check_condition_all_with_type(self, sample_nr):
         # no_fly = [ [ [0,2,0], [2,14,1], [14,24,2] ],[ [0,13,0], [13,15,2], [15,24,1] ], [ [0,5,0], [5,7,1], [7,24,2] ], [ [0,13,0], [13,17,2], [17,24,1] ], [ [0,2,0], [2,14,1], [14,24,2] ],[ [0,13,0], [13,15,2], [15,24,1] ], [ [0,5,0], [5,7,1], [7,24,2] ], [ [0,13,0], [13,17,2], [17,24,1] ] ]
         condition_type = 0
-        if self.check_conditions_all(sample_nr):
+        if self.check_condition_all(sample_nr):
             condition_type = 0 # within conditions
-        elif self.check_conditions_wind(sample_nr) == False and self.check_conditions_temp(sample_nr) == False and self.check_conditions_icing(sample_nr) == False:
+        elif self.check_condition_windspeed(sample_nr) == False and self.check_condition_temp(sample_nr) == False and self.check_condition_icing(sample_nr) == False:
             condition_type = 1 # all exceeding
-        elif self.check_conditions_wind(sample_nr) == False:
+        elif self.check_condition_windspeed(sample_nr) == False:
             condition_type = 2 # wind exceeding
-        elif self.check_conditions_icing(sample_nr) == False:
+        elif self.check_condition_icing(sample_nr) == False:
             condition_type = 3 # icing risk
-        elif self.check_conditions_precipitation(sample_nr) == False:
+        elif self.check_condition_precipitation(sample_nr) == False:
             condition_type = 4 # rain exceeding
-        elif self.check_conditions_snowfall(sample_nr) == False:
+        elif self.check_condition_snowfall(sample_nr) == False:
             condition_type = 5 # snowfall exceeding
-        elif self.check_conditions_temp(sample_nr) == False:
+        elif self.check_condition_temp(sample_nr) == False:
             condition_type = 6 # temp exceeding
         #print condition_type
         return condition_type
@@ -286,12 +309,12 @@ class ibm_weather_csv():
         print "\nWind analysis"
         aboveThreshold = 0
         for i in range(self.samples):
-        	if self.check_conditions_wind(i) == False:
+        	if self.check_condition_windspeed(i) == False:
         		aboveThreshold += 1
                 #print self.DateSGMT[i], self.WindSpeedMpsS[i]
         if self.debugText:
-            print 'Number of samples above %d m/s = ' % (self.maxOperationWindSpeed), aboveThreshold
-            print 'Percentage of samples above %d m/s = ' % (self.maxOperationWindSpeed), aboveThreshold/(self.samples * 1.0)*100.0, '%'
+            print 'Number of samples above %d m/s = ' % (self.WindSpeedOperationMax), aboveThreshold
+            print 'Percentage of samples above %d m/s = ' % (self.WindSpeedOperationMax), aboveThreshold/(self.samples * 1.0)*100.0, '%'
 
         # Calculate consecutive periods with max conditions
         per_1h_count = 0
@@ -304,7 +327,7 @@ class ibm_weather_csv():
         in_period_count = 0
 
         for i in range(self.samples):
-            if self.check_conditions_wind(i) == False:
+            if self.check_condition_windspeed(i) == False:
                 in_period_count += 1
             else:
                 if in_period_count > 0:
@@ -324,7 +347,7 @@ class ibm_weather_csv():
 
                 in_period_count = 0
         if self.debugText:
-            print 'Number of periods with reports above %d m/s = ' % (self.maxOperationWindSpeed), len(periods)
+            print 'Number of periods with reports above %d m/s = ' % (self.WindSpeedOperationMax), len(periods)
 
             print '0-1 hour : ', per_1h_count
             print '1-2 hours: ', per_2h_count
@@ -343,7 +366,7 @@ class ibm_weather_csv():
         for day in range(self.days): # itr days
             extreme_hour_count = 0
             for sample in range(24): # itr samples
-                if self.check_conditions_wind(day*24+sample) == False:
+                if self.check_condition_windspeed(day*24+sample) == False:
                     extreme_hour_count += 1
             if extreme_hour_count >= 2:
                 hoursOfWind[extreme_hour_count] +=1
@@ -358,12 +381,12 @@ class ibm_weather_csv():
         print "\nTemperature analysis"
         belowThreshold = 0
         for i in range(self.samples):
-        	if self.check_conditions_temp(i) == False:
+        	if self.check_condition_temp(i) == False:
         		belowThreshold += 1
-                #print self.DateSGMT[i], self.ApparentTemperatureCS[i]
+                #print self.DateSGMT[i], self.TempApparentCS[i]
         if self.debugText:
-            print 'Number of samples below %d °C = ' % (self.minOperationTemperature), belowThreshold
-            print 'Percentage of samples below %d °C = ' % (self.minOperationTemperature), belowThreshold/(self.samples * 1.0)*100.0, '%'
+            print 'Number of samples below %d °C = ' % (self.TempOperationMin), belowThreshold
+            print 'Percentage of samples below %d °C = ' % (self.TempOperationMin), belowThreshold/(self.samples * 1.0)*100.0, '%'
 
         # Calculate consecutive periods with min conditions
         per_1h_count = 0
@@ -376,7 +399,7 @@ class ibm_weather_csv():
         in_period_count = 0
 
         for i in range(self.samples):
-            if self.check_conditions_temp(i) == False:
+            if self.check_condition_temp(i) == False:
                 in_period_count += 1
             else:
                 if in_period_count > 0:
@@ -396,7 +419,7 @@ class ibm_weather_csv():
 
                 in_period_count = 0
         if self.debugText:
-            print 'Number of periods with reports below %d °C = ' % (self.minOperationTemperature), len(periods)
+            print 'Number of periods with reports below %d °C = ' % (self.TempOperationMin), len(periods)
 
             print '0-1 hour : ', per_1h_count
             print '1-2 hours: ', per_2h_count
@@ -410,7 +433,7 @@ class ibm_weather_csv():
         print "\nCombined analysis"
         excedingConditions = 0
         for i in range(self.samples):
-        	if self.check_conditions_all(i) == False:
+        	if self.check_condition_all(i) == False:
         		excedingConditions += 1
                 #print self.DateSGMT[i], self.WindSpeedMpsS[i]
         if self.debugText:
@@ -428,7 +451,7 @@ class ibm_weather_csv():
         in_period_count = 0
 
         for i in range(self.samples):
-            if self.check_conditions_all(i) == False:
+            if self.check_condition_all(i) == False:
                 in_period_count += 1
                 #print self.DateSGMT[i]
             else:
@@ -469,7 +492,7 @@ class ibm_weather_csv():
         for day in range(self.days): # itr days
             extreme_hour_count = 0
             for sample in range(24): # itr samples
-                if self.check_conditions_all(day*24+sample) == False:
+                if self.check_condition_all(day*24+sample) == False:
                     extreme_hour_count += 1
             if extreme_hour_count >= 2:
                 hoursExcedingConditions[extreme_hour_count] +=1
@@ -495,7 +518,7 @@ class ibm_weather_csv():
             day_result = []
             for sample in range(24): # itr samples
                 cur_hour = sample
-                cur_result = self.check_conditions_all_with_type(day*24+sample)
+                cur_result = self.check_condition_all_with_type(day*24+sample)
                 if cur_result != last_result:
                     day_result.append([cur_start_hour, cur_hour, last_result])
                     last_result = cur_result
@@ -511,8 +534,51 @@ class ibm_weather_csv():
 ### Class end - Main start
 
 if __name__ == '__main__':
+
+    UAV = {
+        'cumulus': {
+            'WindSpeedOperationMax': 12, # unit: m/s
+            'WindGustOperationMax': 12+CONV_10kts2mps, # unit: m/s
+            'TempOperationMin': -20, # unit: degrees Celcius
+            'TempOperationMax': 45, # unit: degrees Celcius
+            'PrecipitationMax': 0.76, # unit: cm # intensity: moderate
+            'SnowfallMax': 0.5 # unit: cm # intensity: light
+        },
+        'HealthD': {
+            'WindSpeedOperationMax': 15, # unit: m/s
+            'WindGustOperationMax': 15+CONV_10kts2mps, # unit: m/s
+            'TempOperationMin': -10, # unit: degrees Celcius
+            'TempOperationMax': 40, # unit: degrees Celcius
+            'PrecipitationMax': 0.76, # unit: cm # intensity: moderate
+            'SnowfallMax': 0.5 # unit: cm # intensity: light
+        },
+        'DJIP4': {
+            'WindSpeedOperationMax': 10, # unit: m/s
+            'WindGustOperationMax': 10+CONV_10kts2mps, # unit: m/s
+            'TempOperationMin': 0, # unit: degrees Celcius
+            'TempOperationMax': 40, # unit: degrees Celcius
+            'PrecipitationMax': 0, # unit: cm # intensity: moderate
+            'SnowfallMax': 0 # unit: cm # intensity: light
+        }
+    }
+
+    droneChoice = 'cumulus'
+
+    print UAV[droneChoice]['TempOperationMin']
+
     # Initialize and load data
-    reader = ibm_weather_csv('DronePlanning/CleanedObservationsOdense.csv', 'Odense', 2016, MaxOperationWindSpeed_def, MaxOperationWindGusts_def, OperationMinTemperature_def, OperationMaxTemperature_def, debug = True)
+    # CleanedObservationsOdense, CleanedObservationsRinge, CleanedObservationsSvendborg
+    reader = ibm_weather_csv(
+        'DronePlanning/CleanedObservationsSvendborg.csv',
+        'Odense', 2016,
+        UAV[droneChoice]['WindSpeedOperationMax'],
+        UAV[droneChoice]['WindGustOperationMax'],
+        UAV[droneChoice]['TempOperationMin'],
+        UAV[droneChoice]['TempOperationMax'],
+        UAV[droneChoice]['PrecipitationMax'],
+        UAV[droneChoice]['SnowfallMax'],
+        debug = True
+    )
     reader.loadCSV()
 
 
@@ -526,10 +592,10 @@ if __name__ == '__main__':
     # create a new plot
     p1 = reader.createTimePlot('Wind', 'Date and time', 'Wind speed [m/s]')
     # Plot content
-    p1.line(reader.DateSGMT, reader.SurfaceWindGustsMpsS, legend="Wind gusts - %s" % reader.city, alpha=0.8, color="green")
+    p1.line(reader.DateSGMT, reader.WindGustSurfaceMpsS, legend="Wind gusts - %s" % reader.city, alpha=0.8, color="green")
     p1.line(reader.DateSGMT, reader.WindSpeedMpsS, legend="Wind speed - %s" % reader.city, alpha=0.8)
-    p1.line([reader.DateSGMT[0], reader.DateSGMT[-1]], [reader.maxOperationWindSpeed, reader.maxOperationWindSpeed], legend="Wind speed limit = %0d m/s" % reader.maxOperationWindSpeed, line_color="red", line_dash="2 4")
-    p1.line([reader.DateSGMT[0], reader.DateSGMT[-1]], [reader.maxOperationWindGusts, reader.maxOperationWindGusts], legend="Gust speed limit = %0d m/s" % reader.maxOperationWindGusts, line_color="red", line_dash="4 2")
+    p1.line([reader.DateSGMT[0], reader.DateSGMT[-1]], [reader.WindSpeedOperationMax, reader.WindSpeedOperationMax], legend="Wind speed limit = %0d m/s" % reader.WindSpeedOperationMax, line_color="red", line_dash="2 4")
+    p1.line([reader.DateSGMT[0], reader.DateSGMT[-1]], [reader.WindGustOperationMax, reader.WindGustOperationMax], legend="Gust speed limit = %0d m/s" % reader.WindGustOperationMax, line_color="red", line_dash="4 2")
     # %%%%%%%%% time plot of WIND SPEED and GUST - END %%%%%%%%%
 
     # %%%%%%%%% histogram of WIND SPEED - START %%%%%%%%%
@@ -543,7 +609,7 @@ if __name__ == '__main__':
 
     # %%%%%%%%% histogram of WIND GUST - START %%%%%%%%%
     p9 = figure(title="Wind gusts",tools="save",plot_width=reader.plotWidth/2,plot_height=reader.plotHeight)
-    hist,bins=np.histogram(reader.SurfaceWindGustsMpsS,bins=20)
+    hist,bins=np.histogram(reader.WindGustSurfaceMpsS,bins=20)
     p9.quad(top=hist, bottom=0, left=bins[:-1], right=bins[1:],line_color="blue")
     # Add labels
     p9.xaxis.axis_label = "Wind gusts [m/s] - %s" % reader.city
@@ -557,18 +623,18 @@ if __name__ == '__main__':
     # create a new plot
     p2 = reader.createTimePlot('Temperature', 'Date and time', 'Temperature [°C]')
     # Plot content
-    p2.line(reader.DateSGMT, reader.SurfaceTempCS, legend="Temperature - %s" % reader.city, alpha=0.8)
-    #p2.line(reader.DateSGMT, reader.WindChillTemperatureCS, legend="Wind Chill Temperature - %s" % reader.city, alpha=0.8, color="green")
-    #p2.line(reader.DateSGMT, reader.ApparentTemperatureCS, legend="Apparent Temperature - %s" % reader.city, alpha=0.8, color="orange")
-    p2.line(reader.DateSGMT, reader.SurfaceDewpointTempCS, legend="Dewpoint Temperature - %s" % reader.city, alpha=0.8, color="green")
+    p2.line(reader.DateSGMT, reader.TempSurfaceCS, legend="Temperature - %s" % reader.city, alpha=0.8)
+    #p2.line(reader.DateSGMT, reader.TempWindChillCS, legend="Wind Chill Temperature - %s" % reader.city, alpha=0.8, color="green")
+    #p2.line(reader.DateSGMT, reader.TempApparentCS, legend="Apparent Temperature - %s" % reader.city, alpha=0.8, color="orange")
+    p2.line(reader.DateSGMT, reader.TempSurfaceDewpointCS, legend="Dewpoint Temperature - %s" % reader.city, alpha=0.8, color="green")
     # Draw illustrative lines
-    p2.line([reader.DateSGMT[0], reader.DateSGMT[-1]], [reader.minOperationTemperature, reader.minOperationTemperature], legend="Temperature min = %0d °C" % reader.minOperationTemperature, line_color="red", line_dash="2 4")
-    p2.line([reader.DateSGMT[0], reader.DateSGMT[-1]], [reader.maxOperationTemperature, reader.maxOperationTemperature], legend="Temperature max = %0d °C" % reader.maxOperationTemperature, line_color="red", line_dash="4 2")
+    p2.line([reader.DateSGMT[0], reader.DateSGMT[-1]], [reader.TempOperationMin, reader.TempOperationMin], legend="Temperature min = %0d °C" % reader.TempOperationMin, line_color="red", line_dash="2 4")
+    p2.line([reader.DateSGMT[0], reader.DateSGMT[-1]], [reader.TempOperationMax, reader.TempOperationMax], legend="Temperature max = %0d °C" % reader.TempOperationMax, line_color="red", line_dash="4 2")
     # %%%%%%%%% time plot of TEMPERATURE (different types) - END %%%%%%%%%
 
     # %%%%%%%%% histogram of TEMPERATURE - START %%%%%%%%%
     p10 = figure(title="Temperature",tools="save",plot_width=reader.plotWidth/2,plot_height=reader.plotHeight)
-    hist,bins=np.histogram(reader.SurfaceTempCS,bins=20)
+    hist,bins=np.histogram(reader.TempSurfaceCS,bins=20)
     p10.quad(top=hist, bottom=0, left=bins[:-1], right=bins[1:],line_color="blue")
     # Add labels
     p10.xaxis.axis_label = "Temperature [°C] - %s" % reader.city
@@ -577,7 +643,7 @@ if __name__ == '__main__':
 
     # %%%%%%%%% histogram of Apparent TEMPERATURE - START %%%%%%%%%
     p11 = figure(title="Apparent Temperature",tools="save",plot_width=reader.plotWidth/2,plot_height=reader.plotHeight)
-    hist,bins=np.histogram(reader.ApparentTemperatureCS,bins=20)
+    hist,bins=np.histogram(reader.TempApparentCS,bins=20)
     p11.quad(top=hist, bottom=0, left=bins[:-1], right=bins[1:],line_color="blue")
     # Add labels
     p11.xaxis.axis_label = "Apparent Temperature [°C] - %s" % reader.city
@@ -610,7 +676,7 @@ if __name__ == '__main__':
     p5 = figure(title="Wind analysis",tools="save",plot_width=reader.plotWidth/2,plot_height=reader.plotHeight)
     hist,bins=np.histogram(periods_wind,bins=30)
     p5.quad(top=hist, bottom=0, left=bins[:-1], right=bins[1:],line_color="blue")
-    p5.xaxis.axis_label = 'Consequitive hours with wind velocity > %d m/s' % reader.maxOperationWindSpeed
+    p5.xaxis.axis_label = 'Consequitive hours with wind velocity > %d m/s' % reader.WindSpeedOperationMax
     p5.yaxis.axis_label = 'Occurences'
     # %%%%%%%%% histogram of Consequitive WIND hours - END %%%%%%%%%
 
@@ -619,7 +685,7 @@ if __name__ == '__main__':
     p7 = figure(
         tools="pan,box_zoom,reset,save,hover",
         title="Wind analysis: days with wind exceeding conditions, divided in time intervals",
-        x_axis_label='Hours with wind velocity > %d m/s (capped below 2 hours)' % reader.maxOperationWindSpeed,
+        x_axis_label='Hours with wind velocity > %d m/s (capped below 2 hours)' % reader.WindSpeedOperationMax,
         y_axis_label='Days',
         plot_height = reader.plotHeight, plot_width = reader.plotWidth
     )
@@ -636,7 +702,7 @@ if __name__ == '__main__':
     p6 = figure(title="Temperature analysis",tools="save",plot_width=reader.plotWidth/2,plot_height=reader.plotHeight)
     hist,bins=np.histogram(periods_temperature,bins=30)
     p6.quad(top=hist, bottom=0, left=bins[:-1], right=bins[1:],line_color="blue")
-    p6.xaxis.axis_label = 'Consequitive hours with temperature < %d °C' % reader.minOperationTemperature
+    p6.xaxis.axis_label = 'Consequitive hours with temperature < %d °C' % reader.TempOperationMin
     p6.yaxis.axis_label = 'Occurences'
     # %%%%%%%%% histogram of Consequitive TEMPERATURE hours - START %%%%%%%%%
 
@@ -673,7 +739,7 @@ if __name__ == '__main__':
     interval['end'] = interval['start'] + pd.Timedelta(hours=24)#pd.Timedelta(hours=23,minutes=59,seconds=59)
     #print interval,"\n\n"
 
-    p14 = figure(x_axis_type='datetime', plot_height=1,plot_width=3, tools="box_zoom,reset,save", x_range=(interval['start'][0], interval['end'][reader.days]), y_range=(0, 23)) # the plot format/size is set by heigh and width and the sizing_mode makes it reponsive
+    p14 = figure(x_axis_type='datetime', plot_height=(reader.plotHeight/3*2),plot_width=reader.plotWidth, tools="box_zoom,reset,save", x_range=(interval['start'][0], interval['end'][reader.days]), y_range=(0, 23)) # the plot format/size is set by heigh and width and the sizing_mode makes it reponsive
     # formatting
     p14.yaxis.minor_tick_line_color = None
     p14.ygrid[0].ticker.desired_num_ticks = 1
@@ -700,6 +766,17 @@ if __name__ == '__main__':
     p14.line([interval['start'][0], interval['end'][reader.days]], [8.15, 8.15],   line_color="white", line_dash="2 4")
     p14.line([interval['start'][0], interval['end'][reader.days]], [20.15, 20.15], line_color="white", line_dash="2 4")
     # %%%%%%%%% Illustrative COMBINED analysis plot - END %%%%%%%%%
+
+    # %%%%%%%%% Save plot p14 as svg - START %%%%%%%%%
+    if GENERATE_SVG_et_PDF:
+        plot_filename = 'plot'
+        plot_filename_svg = plot_filename + '.svg'
+        plot_filename_pdf = plot_filename + '.pdf'
+        p14.output_backend = "svg"
+        export_svgs(p14, filename=plot_filename_svg)
+        svg_plot = svg2rlg(plot_filename_svg)
+        renderPDF.drawToFile(svg_plot, plot_filename_pdf)
+    # %%%%%%%%% Save plot p14 as svg - END %%%%%%%%%
 
 
     # %%%%%%%%%%%%%%%%%% Bokeh %%%%%%%%%%%%%%%%%%
@@ -755,5 +832,6 @@ if __name__ == '__main__':
     #         sizing_mode='scale_width') # None for no show and , sizing_mode='stretch_both'
 
     # show the results
-    show(p)
+    if SHOW_WEBPAGE:
+        show(p)
 ### Main end

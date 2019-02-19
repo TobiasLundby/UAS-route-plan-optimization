@@ -206,3 +206,5 @@ if __name__ == "__main__":
 	print 'Ngelahun, SL (260m):', srtm.get_elevation (8.00182456, -11.0618724)
 	print 'Very close to Odense harbor:', srtm.get_elevation (55.431122, 10.420436)
 	print 'Close to Odense harbor:', srtm.get_elevation (55.427203, 10.419043)
+	print 'SDU:', srtm.get_elevation (55.366927, 10.431106)
+	print 'Odense Modelflyveklub:', srtm.get_elevation (55.471971, 10.415044)
