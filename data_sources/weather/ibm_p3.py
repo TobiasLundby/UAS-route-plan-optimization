@@ -14,18 +14,20 @@ License: BSD 3-Clause
 """
 
 ### Import start
-from math import floor
+from math import floor, ceil
 import csv
 import numpy as np
 from bokeh.io import output_file, show, export_svgs, export_png
 from bokeh.layouts import gridplot, column, widgetbox, layout
 from bokeh.plotting import figure
-from bokeh.models import ColumnDataSource
+from bokeh.models import ColumnDataSource, Legend, LegendItem, Label, LabelSet, Arrow, NormalHead, OpenHead
 from bokeh.models.widgets import Div
 #from bokeh.models import axes
 from bokeh.colors import RGB
 from datetime import datetime
 import pandas as pd
+
+import sys
 
 from svglib.svglib import svg2rlg
 from reportlab.graphics import renderPDF
@@ -175,7 +177,6 @@ class ibm_weather_csv():
             print('[%s] Samples:' % self.city, str(self.samples))
             print('[%s] Days:' % self.city, str(self.days))
 
-
         # convert to the more used m/s
         self.WindSpeedMpsS = np.multiply(self.WindSpeedKphS, CONV_kph2mps)
         self.WindGustSurfaceMpsS = np.multiply(self.WindGustSurfaceKphS, CONV_kph2mps)
@@ -279,21 +280,37 @@ class ibm_weather_csv():
             return False
     def check_condition_all_with_type(self, sample_nr):
         # no_fly = [ [ [0,2,0], [2,14,1], [14,24,2] ],[ [0,13,0], [13,15,2], [15,24,1] ], [ [0,5,0], [5,7,1], [7,24,2] ], [ [0,13,0], [13,17,2], [17,24,1] ], [ [0,2,0], [2,14,1], [14,24,2] ],[ [0,13,0], [13,15,2], [15,24,1] ], [ [0,5,0], [5,7,1], [7,24,2] ], [ [0,13,0], [13,17,2], [17,24,1] ] ]
+
+        res_arr = []
+        res_arr.append(self.check_condition_windspeed(sample_nr))
+        res_arr.append(self.check_condition_icing(sample_nr))
+        res_arr.append(self.check_condition_precipitation(sample_nr))
+        res_arr.append(self.check_condition_snowfall(sample_nr))
+        res_arr.append(self.check_condition_temp(sample_nr))
+        #print(res_arr)
+
+        res_val = 0
+        for value in res_arr:
+            res_val += not value
+        #print(res_val)
+
         condition_type = 0
-        if self.check_condition_all(sample_nr):
+        if res_val == 0:
             condition_type = 0 # within conditions
-        elif self.check_condition_windspeed(sample_nr) == False and self.check_condition_temp(sample_nr) == False and self.check_condition_icing(sample_nr) == False:
+        elif res_val == 5:
             condition_type = 1 # all exceeding
-        elif self.check_condition_windspeed(sample_nr) == False:
-            condition_type = 2 # wind exceeding
-        elif self.check_condition_icing(sample_nr) == False:
-            condition_type = 3 # icing risk
-        elif self.check_condition_precipitation(sample_nr) == False:
-            condition_type = 4 # rain exceeding
-        elif self.check_condition_snowfall(sample_nr) == False:
-            condition_type = 5 # snowfall exceeding
-        elif self.check_condition_temp(sample_nr) == False:
-            condition_type = 6 # temp exceeding
+        elif res_val >= 2:
+            condition_type = 2 # multiple problems
+        elif res_arr[0] == False:
+            condition_type = 3 # wind problem (exceeding)
+        elif res_arr[1] == False:
+            condition_type = 4 # icing risk
+        elif res_arr[2] == False:
+            condition_type = 5 # rain problem (exceeding)
+        elif res_arr[3] == False:
+            condition_type = 6 # snowfall problem (exceeding)
+        elif res_arr[4] == False:
+            condition_type = 7 # temp problem (exceeding)
         #print condition_type
         return condition_type
 
@@ -440,8 +457,10 @@ class ibm_weather_csv():
         		excedingConditions += 1
                 #print(self.DateSGMT[i], self.WindSpeedMpsS[i])
         if self.debugText:
-            print('[%s] Number of samples exceeding conditions = ' % self.city, excedingConditions)
-            print('[%s] Percentage of samples exceeding conditions = ' % self.city, excedingConditions/(self.samples * 1.0)*100.0, '%')
+            print('[%s] Number of samples EXCEEDING conditions = ' % self.city, excedingConditions)
+            print('[%s] Percentage of samples EXCEEDING conditions = ' % self.city, excedingConditions/(self.samples * 1.0)*100.0, '%')
+            print('[%s] Number of samples WITHIN conditions = ' % self.city, self.samples-excedingConditions)
+            print('[%s] Percentage of samples WITHIN conditions = ' % self.city, (self.samples-excedingConditions)/(self.samples * 1.0)*100.0, '%')
 
         # Calculate consecutive periods with max conditions
         per_1h_count = 0
@@ -517,18 +536,18 @@ class ibm_weather_csv():
         #for day in range(self.days): # itr days
         for day in range(self.days): # itr days
             cur_start_hour = 0
-            last_result = 0
+            last_result = self.check_condition_all_with_type(day*24)
             day_result = []
-            for sample in range(24): # itr samples
+            for sample in range(1, 24): # itr samples
                 cur_hour = sample
-                cur_result = self.check_condition_all_with_type(day*24+sample)
+                cur_result = self.check_condition_all_with_type(day*24+cur_hour)
                 if cur_result != last_result:
                     day_result.append([cur_start_hour, cur_hour, last_result])
                     last_result = cur_result
                     cur_start_hour = cur_hour
                 #print self.DateSGMT[sample]
-                if sample == 23:
-                    day_result.append([cur_start_hour, cur_hour, last_result])
+                if cur_hour == 23:
+                    day_result.append([cur_start_hour, cur_hour+1, last_result])
             combind_results.append(day_result)
         #print combind_results
 
@@ -547,8 +566,10 @@ def analyseCombined_2cities(obj_c1, obj_c2):
             excedingConditions += 1
             #print(self.DateSGMT[i], self.WindSpeedMpsS[i])
     if obj_c1.debugText:
-        print('[BOTH] Number of samples exceeding conditions = ', excedingConditions)
-        print('[BOTH] Percentage of samples exceeding conditions = ', excedingConditions/(obj_c1.samples * 1.0)*100.0, '%')
+        print('[BOTH] Number of samples EXCEEDING conditions = ', excedingConditions)
+        print('[BOTH] Percentage of samples EXCEEDING conditions = ', excedingConditions/(obj_c1.samples * 1.0)*100.0, '%')
+        print('[BOTH] Number of samples WITHIN conditions = ', obj_c1.samples-excedingConditions)
+        print('[BOTH] Percentage of samples WITHIN conditions = ', (obj_c1.samples-excedingConditions)/(obj_c1.samples * 1.0)*100.0, '%')
 
     # Calculate consecutive periods with max conditions
     per_1h_count = 0
@@ -623,31 +644,45 @@ def analyseCombined_2cities(obj_c1, obj_c2):
     #for day in range(self.days): # itr days
     for day in range(obj_c1.days): # itr days
         cur_start_hour = 0
-        last_result = 0
-        day_result = []
-        for sample in range(24): # itr samples
-            cur_hour = sample
-            cur_result_c1c2 = [obj_c1.check_condition_all_with_type(day*24+sample), obj_c2.check_condition_all_with_type(day*24+sample)]
-            cur_result_c1 = obj_c1.check_condition_all_with_type(day*24+sample)
-            cur_result_c2 = obj_c2.check_condition_all_with_type(day*24+sample)
 
+        first_result_c1c2 = [obj_c1.check_condition_all_with_type(day*24), obj_c2.check_condition_all_with_type(day*24)]
+        # Logic to handle that value 0 = within conditions etc.
+        if first_result_c1c2[0] == 0 and first_result_c1c2[1] == 0: # all within
+            last_result = first_result_c1c2[0]
+        elif first_result_c1c2[0] == 0:
+            last_result = first_result_c1c2[1]
+        elif first_result_c1c2[1] == 0:
+            last_result = first_result_c1c2[0]
+        elif first_result_c1c2[0] == first_result_c1c2[1]:
+            last_result = first_result_c1c2[0]
+        else:
+            last_result = 1 # multiple exceeding
+
+        day_result = []
+        for sample in range(1,24): # itr samples
+            cur_hour = sample
+
+            cur_result_c1c2 = [obj_c1.check_condition_all_with_type(day*24+cur_hour), obj_c2.check_condition_all_with_type(day*24+cur_hour)]
             # Logic to handle that value 0 = within conditions etc.
             if cur_result_c1c2[0] == 0 and cur_result_c1c2[1] == 0: # all within
                 cur_result = cur_result_c1c2[0]
-            elif cur_result_c1c2[0] == 0: # one within, take the other since some parameter is exceeding
+            elif cur_result_c1c2[0] == 0:
                 cur_result = cur_result_c1c2[1]
-            elif cur_result_c1c2[1] == 0: # one within, take the other since some parameter is exceeding
+            elif cur_result_c1c2[1] == 0:
                 cur_result = cur_result_c1c2[0]
-            else: # both cities are exceeding a parameter and thus choose the worst one
-                cur_result = min(cur_result_c1c2)
+            elif cur_result_c1c2[0] == cur_result_c1c2[1]:
+                cur_result = cur_result_c1c2[0]
+            else:
+                cur_result = 1 # multiple exceeding
 
             if cur_result != last_result:
+                #day_result.append([cur_start_hour, cur_hour, last_result])
                 day_result.append([cur_start_hour, cur_hour, last_result])
                 last_result = cur_result
                 cur_start_hour = cur_hour
             #print obj_c1.DateSGMT[sample]
-            if sample == 23:
-                day_result.append([cur_start_hour, cur_hour, last_result])
+            if cur_hour == 23:
+                day_result.append([cur_start_hour, cur_hour+1, last_result])
         combind_results.append(day_result)
     #print combind_results
 
@@ -664,6 +699,50 @@ def export_plot__png_eps_pdf(plot_to_export, plot_filename):
     svg_plot = svg2rlg(plot_filename_svg)
     renderPDF.drawToFile(svg_plot, plot_filename_pdf)
 
+def latex_plot_font(plot):
+    # Set LaTex font ('cmr' but system only has 'cmr10')
+    plot.xaxis.axis_label_text_font = "cmr10"
+    plot.xaxis.major_label_text_font = "cmr10"
+    plot.yaxis.axis_label_text_font = "cmr10"
+    plot.yaxis.major_label_text_font = "cmr10"
+    plot.legend.label_text_font = 'cmr10'
+
+def change_plot_axis_names(plot, xaxis_text, yaxis_text):
+    # Change the name of the x- and y-axis
+    plot.xaxis.axis_label = xaxis_text
+    plot.yaxis.axis_label = yaxis_text
+
+def custom_legend(plot):
+    plot.legend.orientation = "horizontal"
+    plot.legend.label_text_font_size = "10px"
+    new_legend = plot.legend[0]
+    plot.legend[0].plot = None
+    plot.add_layout(new_legend, 'above')
+    plot.legend.glyph_width = 15
+    plot.legend.glyph_height = 15
+    plot.legend.padding = 3
+    plot.legend.margin = 5
+
+def draw_quads(plot, results_combined_arr, interval):
+    for date_itr in range(len(results_combined_arr)):
+          for internal_itr in range(len(results_combined_arr[date_itr])):
+              #if results_combined_arr[date_itr][internal_itr][2] == 0: # 0 = palegreen color = within conditions
+                   #plot.quad(left=interval['start'][date_itr],right=interval['end'][date_itr],bottom=results_combined_arr[date_itr][internal_itr][0], top=results_combined_arr[date_itr][internal_itr][1], color=RGB(93,255,156)) # palegreen RGB(93,255,156)
+               if results_combined_arr[date_itr][internal_itr][2] == 1: # 1 = red color = all exceeding
+                   plot.quad(left=interval['start'][date_itr],right=interval['end'][date_itr],bottom=results_combined_arr[date_itr][internal_itr][0], top=results_combined_arr[date_itr][internal_itr][1], legend="All", color=RGB(215,48,39)) # red, old: red RGB(255,0,0)
+               if results_combined_arr[date_itr][internal_itr][2] == 2: # 1 = red color = all exceeding
+                   plot.quad(left=interval['start'][date_itr],right=interval['end'][date_itr],bottom=results_combined_arr[date_itr][internal_itr][0], top=results_combined_arr[date_itr][internal_itr][1], legend="Multiple", color=RGB(244,109,67)) # orange, old: red RGB(255,0,0)
+               if results_combined_arr[date_itr][internal_itr][2] == 3: # 2 = orange color = wind exceeding
+                   plot.quad(left=interval['start'][date_itr],right=interval['end'][date_itr],bottom=results_combined_arr[date_itr][internal_itr][0], top=results_combined_arr[date_itr][internal_itr][1], legend="Wind or gust", color=RGB(253,174,97)) # light orange, old: orange (255,168,0)
+               if results_combined_arr[date_itr][internal_itr][2] == 4: # 3 = yellow color = icing risk
+                   plot.quad(left=interval['start'][date_itr],right=interval['end'][date_itr],bottom=results_combined_arr[date_itr][internal_itr][0], top=results_combined_arr[date_itr][internal_itr][1], legend="Icing", color=RGB(254,224,144)) # yellow, old: brown or saddlebrown RGB(146,66,22)
+               if results_combined_arr[date_itr][internal_itr][2] == 5: # 3 = light blue color = rain risk
+                   plot.quad(left=interval['start'][date_itr],right=interval['end'][date_itr],bottom=results_combined_arr[date_itr][internal_itr][0], top=results_combined_arr[date_itr][internal_itr][1], legend="Percipitation", color=RGB(171,217,233)) # light blue, old: hotpink RGB(255,0,175)
+               if results_combined_arr[date_itr][internal_itr][2] == 6: # 5 = blue color = snowfall risk
+                   plot.quad(left=interval['start'][date_itr],right=interval['end'][date_itr],bottom=results_combined_arr[date_itr][internal_itr][0], top=results_combined_arr[date_itr][internal_itr][1], legend="Snowfall", color=RGB(116,173,209)) # blue, old: magenta RGB(255,0,255)
+               if results_combined_arr[date_itr][internal_itr][2] == 7: # 6 = dark blue = temp exceeding
+                   plot.quad(left=interval['start'][date_itr],right=interval['end'][date_itr],bottom=results_combined_arr[date_itr][internal_itr][0], top=results_combined_arr[date_itr][internal_itr][1], legend="Temperature", color=RGB(69,117,180)) # dark blue, old: royalblue RGB(91,13,223)
+
 ### Functions end - Main start
 
 if __name__ == '__main__':
@@ -677,13 +756,21 @@ if __name__ == '__main__':
             'PrecipitationMax': 0.76, # unit: cm # intensity: moderate
             'SnowfallMax': 0.5 # unit: cm # intensity: light
         },
-        'HealthD': {
+        'wingcopter': {
             'WindSpeedOperationMax': 15, # unit: m/s
-            'WindGustOperationMax': 15+CONV_10kts2mps, # unit: m/s
-            'TempOperationMin': -10, # unit: degrees Celcius
-            'TempOperationMax': 40, # unit: degrees Celcius
+            'WindGustOperationMax': 20, # unit: m/s
+            'TempOperationMin': -20, # unit: degrees Celcius
+            'TempOperationMax': 45, # unit: degrees Celcius
             'PrecipitationMax': 0.76, # unit: cm # intensity: moderate
-            'SnowfallMax': 0.5 # unit: cm # intensity: light
+            'SnowfallMax': 4 # unit: cm # intensity: light
+        },
+        'volocopter': {
+            'WindSpeedOperationMax': 8.6, # unit: m/s
+            'WindGustOperationMax': 8.6+CONV_10kts2mps, # unit: m/s
+            'TempOperationMin': -20, # unit: degrees Celcius
+            'TempOperationMax': 45, # unit: degrees Celcius
+            'PrecipitationMax': 0.76, # unit: cm # intensity: moderate
+            'SnowfallMax': 4 # unit: cm # intensity: light
         },
         'DJIP4': {
             'WindSpeedOperationMax': 10, # unit: m/s
@@ -857,13 +944,32 @@ if __name__ == '__main__':
     # %%%%%%%%% Analysis COMBINED - NOTE City 1 %%%%%%%%%
     periods_combined_c1, hoursExcedingConditions_c1, results_combined_arr_c1  = reader_c1.analyseCombined()
 
+    # Find the number that occurs the most in the data
+    most_occurance = max(periods_combined_c1,key=periods_combined_c1.count)
+    occurance_no = periods_combined_c1.count(most_occurance)
+    max_x = ceil(max(periods_combined_c1))
+    min_x = floor(min(periods_combined_c1))
+    data_points = len(periods_combined_c1)
+    # print(most_occurance)
+    # print(occurance_no)
+    # print(max_x)
+    # print(min_x)
     # %%%%%%%%% histogram of Consequitive COMBINED hours - START %%%%%%%%%
-    p12 = figure(title="Combined analysis",tools="save",plot_width=reader_c1.plotWidth,plot_height=reader_c1.plotHeight)
-    hist,bins=np.histogram(periods_combined_c1,bins=30)
-    p12.quad(top=hist, bottom=0, left=bins[:-1], right=bins[1:],line_color="blue")
+    hist,bins=np.histogram(periods_combined_c1) #,bins=10
+    # print(bins)
+    # print(hist)
+    p12 = figure(tools="save",plot_width=reader_c1.plotHeight,plot_height=reader_c1.plotHeight, y_range=(0,floor(max(hist)*1.15)), x_range=(min_x-1, max_x+1)) # title="Combined analysis",
+    p12.quad(top=hist, bottom=0, left=bins[:-1], right=bins[1:],line_color=RGB(0,0,0), color=RGB(116,173,209))
     p12.xaxis.axis_label = 'Consequitive hours exceeding conditions'
     p12.yaxis.axis_label = 'Occurences'
+    #latex_plot_font(p12)
+    #export_plot__png_eps_pdf(p12, 'hist_'+reader_c1.city) # %%%%%%%%% Save plot p14 as svg and pdf %%%%%%%%%
+
+
+
     # %%%%%%%%% histogram of Consequitive COMBINED hours - END %%%%%%%%%
+
+    #sys.exit(1)
 
     # %%%%%%%%% COMBINED analysis plot - START %%%%%%%%%
     p13 = figure(
@@ -880,45 +986,26 @@ if __name__ == '__main__':
     # %%%%%%%%% Illustrative COMBINED analysis plot - START %%%%%%%%%
     start_time_c1 = reader_c1.DateSGMT[0].strftime('%m/%d/%Y')
     #print start_time
-    rng_c1 = pd.date_range(start=start_time_c1, periods=reader_c1.days+1, freq='D' ) # reader_c1.days+1
+    rng_c1 = pd.date_range(start=start_time_c1, periods=reader_c1.days, freq='D' ) # reader_c1.days+1
     #print rng_c1
     interval_c1 = pd.DataFrame({'start' : rng_c1 })
     interval_c1['end'] = interval_c1['start'] + pd.Timedelta(hours=24)#pd.Timedelta(hours=23,minutes=59,seconds=59)
     #print interval_c1,"\n\n"
 
-    p14 = figure(x_axis_type='datetime', plot_height=floor(reader_c1.plotHeight/3*2),plot_width=reader_c1.plotWidth, tools="box_zoom,reset,save", x_range=(interval_c1['start'][0], interval_c1['end'][reader_c1.days]), y_range=(0, 23)) # the plot format/size is set by heigh and width and the sizing_mode makes it reponsive
-    # formatting
+    p14 = figure(x_axis_type='datetime', plot_height=floor(reader_c1.plotHeight/3*2),plot_width=reader_c1.plotWidth, tools="box_zoom,reset,save", x_range=(interval_c1['start'][0], interval_c1['end'][reader_c1.days-1]), y_range=(0, 24)) # the plot format/size is set by heigh and width and the sizing_mode makes it reponsive
+    draw_quads(p14, results_combined_arr_c1, interval_c1)
+    change_plot_axis_names(p14, "Date [m/Y]", "Time of day [H:M]")
+    latex_plot_font(p14)
+    p14.xaxis[0].ticker.desired_num_ticks = 12
+    p14.yaxis[0].ticker.desired_num_ticks = 12
+    p14.yaxis[0].ticker.num_minor_ticks = 3
+    p14.yaxis.major_label_overrides = {0:'00:00', 0.5:'00:30', 1:'01:00', 1.5:'01:30', 2:'02:00', 2.5:'02:30', 3:'03:00', 3.5:'03:30', 4:'04:00', 4.5:'04:30', 5:'05:00', 5.5:'05:30', 6:'06:00', 6.5:'06:30', 7:'07:00', 7.5:'07:30', 8:'08:00', 8.5:'08:30', 9:'09:00', 9.5:'09:30', 10:'10:00', 10.5:'10:30', 11:'11:00', 11.5:'11:30', 12:'12:00', 12.5:'12:30', 13:'13:00', 13.5:'13:30', 14:'14:00', 14.5:'14:30', 15:'15:00', 15.5:'15:30', 16:'16:00', 16.5:'16:30', 17:'17:00', 17.5:'17:30', 18:'18:00', 18.5:'18:30', 19:'19:00', 19.5:'19:30', 20:'20:00', 20.5:'20:30', 21:'21:00', 21.5:'21:30', 22:'22:00', 22.5:'22:30', 23:'23:00', 23.5:'23:30', 24:'00:00'}
     p14.yaxis.minor_tick_line_color = None
-    p14.ygrid[0].ticker.desired_num_ticks = 1
-    for date_itr in range(len(results_combined_arr_c1)):
-        for internal_itr in range(len(results_combined_arr_c1[date_itr])):
-            if results_combined_arr_c1[date_itr][internal_itr][2] == 0: # 0 = palegreen color = within conditions
-                p14.quad(left=interval_c1['start'][date_itr],right=interval_c1['end'][date_itr],bottom=results_combined_arr_c1[date_itr][internal_itr][0], top=results_combined_arr_c1[date_itr][internal_itr][1], color=RGB(93,255,156)) # palegreen
-            if results_combined_arr_c1[date_itr][internal_itr][2] == 1: # 1 = red color = all exceeding
-                p14.quad(left=interval_c1['start'][date_itr],right=interval_c1['end'][date_itr],bottom=results_combined_arr_c1[date_itr][internal_itr][0], top=results_combined_arr_c1[date_itr][internal_itr][1], color=RGB(255,0,0)) # red
-            if results_combined_arr_c1[date_itr][internal_itr][2] == 2: # 2 = orange color = wind exceeding
-                p14.quad(left=interval_c1['start'][date_itr],right=interval_c1['end'][date_itr],bottom=results_combined_arr_c1[date_itr][internal_itr][0], top=results_combined_arr_c1[date_itr][internal_itr][1], color=RGB(255,168,0)) # orange
-            if results_combined_arr_c1[date_itr][internal_itr][2] == 3: # 3 = cyan color = icing risk
-                p14.quad(left=interval_c1['start'][date_itr],right=interval_c1['end'][date_itr],bottom=results_combined_arr_c1[date_itr][internal_itr][0], top=results_combined_arr_c1[date_itr][internal_itr][1], color=RGB(146,66,22)) # brown or saddlebrown
-            if results_combined_arr_c1[date_itr][internal_itr][2] == 4: # 3 = magenta color = rain risk
-                p14.quad(left=interval_c1['start'][date_itr],right=interval_c1['end'][date_itr],bottom=results_combined_arr_c1[date_itr][internal_itr][0], top=results_combined_arr_c1[date_itr][internal_itr][1], color=RGB(255,0,175)) # hotpink
-            if results_combined_arr_c1[date_itr][internal_itr][2] == 5: # 5 = magenta color = snowfall risk
-                p14.quad(left=interval_c1['start'][date_itr],right=interval_c1['end'][date_itr],bottom=results_combined_arr_c1[date_itr][internal_itr][0], top=results_combined_arr_c1[date_itr][internal_itr][1], color=RGB(255,0,255)) # magenta
-            if results_combined_arr_c1[date_itr][internal_itr][2] == 6: # 6 = royalblue color = temp exceeding
-                p14.quad(left=interval_c1['start'][date_itr],right=interval_c1['end'][date_itr],bottom=results_combined_arr_c1[date_itr][internal_itr][0], top=results_combined_arr_c1[date_itr][internal_itr][1], color=RGB(91,13,223)) # royalblue
-    # Add axis labels
-    p14.xaxis.axis_label = "Date [MM/YYYY]"
-    p14.yaxis.axis_label = "Time of day"
-    # Set LaTex font ('cmr' but system only has 'cmr10')
-    p14.xaxis.axis_label_text_font = "cmr10"
-    p14.xaxis.major_label_text_font = "cmr10"
-    p14.yaxis.axis_label_text_font = "cmr10"
-    p14.yaxis.major_label_text_font = "cmr10"
     # Add lines to illustrate daylight. The times are based on the spring mean day https://www.dmi.dk/nyheder/arkiv/nyheder-2012/daglaengden-dykker-under-ti-timer/
-    p14.line([interval_c1['start'][0], interval_c1['end'][reader_c1.days]], [8.15, 8.15],   line_color="white", line_dash="2 4")
-    p14.line([interval_c1['start'][0], interval_c1['end'][reader_c1.days]], [20.15, 20.15], line_color="white", line_dash="2 4")
+    p14.line([interval_c1['start'][0], interval_c1['end'][reader_c1.days-1]], [8.15-1, 8.15-1],   line_color="black", line_dash="2 4", legend="Average sunrise and sunset")
+    p14.line([interval_c1['start'][0], interval_c1['end'][reader_c1.days-1]], [20.15-1, 20.15-1], line_color="black", line_dash="2 4")
+    custom_legend(p14) # Format legend
     # %%%%%%%%% Illustrative COMBINED analysis plot - END %%%%%%%%%
-
     export_plot__png_eps_pdf(p14, reader_c1.city) # %%%%%%%%% Save plot p14 as svg and pdf %%%%%%%%%
 
     # %%%%%%%%% Analysis COMBINED - NOTE City 2%%%%%%%%%
@@ -927,45 +1014,26 @@ if __name__ == '__main__':
     # %%%%%%%%% Illustrative COMBINED analysis plot - START %%%%%%%%%
     start_time_c2 = reader_c2.DateSGMT[0].strftime('%m/%d/%Y')
     #print start_time
-    rng_c2 = pd.date_range(start=start_time_c2, periods=reader_c2.days+1, freq='D' ) # reader_c2.days+1
+    rng_c2 = pd.date_range(start=start_time_c2, periods=reader_c2.days, freq='D' ) # reader_c2.days+1
     #print rng_c2
     interval_c2 = pd.DataFrame({'start' : rng_c2 })
     interval_c2['end'] = interval_c2['start'] + pd.Timedelta(hours=24)#pd.Timedelta(hours=23,minutes=59,seconds=59)
     #print interval_c2,"\n\n"
 
-    p15 = figure(x_axis_type='datetime', plot_height=floor(reader_c2.plotHeight/3*2),plot_width=reader_c2.plotWidth, tools="box_zoom,reset,save", x_range=(interval_c2['start'][0], interval_c2['end'][reader_c2.days]), y_range=(0, 23)) # the plot format/size is set by heigh and width and the sizing_mode makes it reponsive
-    # formatting
+    p15 = figure(x_axis_type='datetime', plot_height=floor(reader_c2.plotHeight/3*2),plot_width=reader_c2.plotWidth, tools="box_zoom,reset,save", x_range=(interval_c2['start'][0], interval_c2['end'][reader_c2.days-1]), y_range=(0, 24)) # the plot format/size is set by heigh and width and the sizing_mode makes it reponsive
+    draw_quads(p15, results_combined_arr_c2, interval_c2)
+    change_plot_axis_names(p15, "Date [m/Y]", "Time of day [H:M]")
+    latex_plot_font(p15)
+    p15.xaxis[0].ticker.desired_num_ticks = 12
+    p15.yaxis[0].ticker.desired_num_ticks = 12
+    p15.yaxis[0].ticker.num_minor_ticks = 3
+    p15.yaxis.major_label_overrides = {0:'00:00', 0.5:'00:30', 1:'01:00', 1.5:'01:30', 2:'02:00', 2.5:'02:30', 3:'03:00', 3.5:'03:30', 4:'04:00', 4.5:'04:30', 5:'05:00', 5.5:'05:30', 6:'06:00', 6.5:'06:30', 7:'07:00', 7.5:'07:30', 8:'08:00', 8.5:'08:30', 9:'09:00', 9.5:'09:30', 10:'10:00', 10.5:'10:30', 11:'11:00', 11.5:'11:30', 12:'12:00', 12.5:'12:30', 13:'13:00', 13.5:'13:30', 14:'14:00', 14.5:'14:30', 15:'15:00', 15.5:'15:30', 16:'16:00', 16.5:'16:30', 17:'17:00', 17.5:'17:30', 18:'18:00', 18.5:'18:30', 19:'19:00', 19.5:'19:30', 20:'20:00', 20.5:'20:30', 21:'21:00', 21.5:'21:30', 22:'22:00', 22.5:'22:30', 23:'23:00', 23.5:'23:30', 24:'00:00'}
     p15.yaxis.minor_tick_line_color = None
-    p15.ygrid[0].ticker.desired_num_ticks = 1
-    for date_itr in range(len(results_combined_arr_c2)):
-      for internal_itr in range(len(results_combined_arr_c2[date_itr])):
-          if results_combined_arr_c2[date_itr][internal_itr][2] == 0: # 0 = palegreen color = within conditions
-              p15.quad(left=interval_c2['start'][date_itr],right=interval_c2['end'][date_itr],bottom=results_combined_arr_c2[date_itr][internal_itr][0], top=results_combined_arr_c2[date_itr][internal_itr][1], color=RGB(93,255,156)) # palegreen
-          if results_combined_arr_c2[date_itr][internal_itr][2] == 1: # 1 = red color = all exceeding
-              p15.quad(left=interval_c2['start'][date_itr],right=interval_c2['end'][date_itr],bottom=results_combined_arr_c2[date_itr][internal_itr][0], top=results_combined_arr_c2[date_itr][internal_itr][1], color=RGB(255,0,0)) # red
-          if results_combined_arr_c2[date_itr][internal_itr][2] == 2: # 2 = orange color = wind exceeding
-              p15.quad(left=interval_c2['start'][date_itr],right=interval_c2['end'][date_itr],bottom=results_combined_arr_c2[date_itr][internal_itr][0], top=results_combined_arr_c2[date_itr][internal_itr][1], color=RGB(255,168,0)) # orange
-          if results_combined_arr_c2[date_itr][internal_itr][2] == 3: # 3 = cyan color = icing risk
-              p15.quad(left=interval_c2['start'][date_itr],right=interval_c2['end'][date_itr],bottom=results_combined_arr_c2[date_itr][internal_itr][0], top=results_combined_arr_c2[date_itr][internal_itr][1], color=RGB(146,66,22)) # brown or saddlebrown
-          if results_combined_arr_c2[date_itr][internal_itr][2] == 4: # 3 = magenta color = rain risk
-              p15.quad(left=interval_c2['start'][date_itr],right=interval_c2['end'][date_itr],bottom=results_combined_arr_c2[date_itr][internal_itr][0], top=results_combined_arr_c2[date_itr][internal_itr][1], color=RGB(255,0,175)) # hotpink
-          if results_combined_arr_c2[date_itr][internal_itr][2] == 5: # 5 = magenta color = snowfall risk
-              p15.quad(left=interval_c2['start'][date_itr],right=interval_c2['end'][date_itr],bottom=results_combined_arr_c2[date_itr][internal_itr][0], top=results_combined_arr_c2[date_itr][internal_itr][1], color=RGB(255,0,255)) # magenta
-          if results_combined_arr_c2[date_itr][internal_itr][2] == 6: # 6 = royalblue color = temp exceeding
-              p15.quad(left=interval_c2['start'][date_itr],right=interval_c2['end'][date_itr],bottom=results_combined_arr_c2[date_itr][internal_itr][0], top=results_combined_arr_c2[date_itr][internal_itr][1], color=RGB(91,13,223)) # royalblue
-    # Add axis labels
-    p15.xaxis.axis_label = "Date [MM/YYYY]"
-    p15.yaxis.axis_label = "Time of day"
-    # Set LaTex font ('cmr' but system only has 'cmr10')
-    p15.xaxis.axis_label_text_font = "cmr10"
-    p15.xaxis.major_label_text_font = "cmr10"
-    p15.yaxis.axis_label_text_font = "cmr10"
-    p15.yaxis.major_label_text_font = "cmr10"
     # Add lines to illustrate daylight. The times are based on the spring mean day https://www.dmi.dk/nyheder/arkiv/nyheder-2012/daglaengden-dykker-under-ti-timer/
-    p15.line([interval_c2['start'][0], interval_c2['end'][reader_c2.days]], [8.15, 8.15],   line_color="white", line_dash="2 4")
-    p15.line([interval_c2['start'][0], interval_c2['end'][reader_c2.days]], [20.15, 20.15], line_color="white", line_dash="2 4")
+    p15.line([interval_c2['start'][0], interval_c2['end'][reader_c2.days-1]], [8.15-1, 8.15-1],   line_color="black", line_dash="2 4", legend="Average sunrise and sunset")
+    p15.line([interval_c2['start'][0], interval_c2['end'][reader_c2.days-1]], [20.15-1, 20.15-1], line_color="black", line_dash="2 4")
+    custom_legend(p15) # Format legend
     # %%%%%%%%% Illustrative COMBINED analysis plot - END %%%%%%%%%
-
     export_plot__png_eps_pdf(p15, reader_c2.city) # %%%%%%%%% Save plot p14 as svg and pdf %%%%%%%%%
 
     # %%%%%%%%% Analysis COMBINED - NOTE Both cities %%%%%%%%%
@@ -974,48 +1042,59 @@ if __name__ == '__main__':
     # %%%%%%%%% Illustrative COMBINED analysis plot - START %%%%%%%%%
     start_time_c1c2 = reader_c1.DateSGMT[0].strftime('%m/%d/%Y')
     #print start_time
-    rng_c1c2 = pd.date_range(start=start_time_c1c2, periods=reader_c1.days+1, freq='D' ) # reader_c1.days+1
+    rng_c1c2 = pd.date_range(start=start_time_c1c2, periods=reader_c1.days, freq='D' ) # reader_c1.days+1
     #print rng_c1c2
     interval_c1c2 = pd.DataFrame({'start' : rng_c1c2 })
     interval_c1c2['end'] = interval_c1c2['start'] + pd.Timedelta(hours=24)#pd.Timedelta(hours=23,minutes=59,seconds=59)
-    #print interval_c1c2,"\n\n"
+    #print(interval_c1c2)
 
-    p16 = figure(x_axis_type='datetime', plot_height=floor(reader_c1.plotHeight/3*2),plot_width=reader_c1.plotWidth, tools="box_zoom,reset,save", x_range=(interval_c1c2['start'][0], interval_c1c2['end'][reader_c1.days]), y_range=(0, 23)) # the plot format/size is set by heigh and width and the sizing_mode makes it reponsive
+    p16 = figure(x_axis_type='datetime', plot_height=floor(reader_c1.plotHeight/3*2),plot_width=reader_c1.plotWidth, tools="box_zoom,reset,save", x_range=(interval_c1c2['start'][0], interval_c1c2['end'][reader_c1.days-1]), y_range=(0, 24)) # the plot format/size is set by heigh and width and the sizing_mode makes it reponsive
     # formatting
+    draw_quads(p16, results_combined_arr_c1c2, interval_c1c2)
+    change_plot_axis_names(p16, "Date [m/Y]", "Time of day [H:M]")
+    latex_plot_font(p16)
+    p16.xaxis[0].ticker.desired_num_ticks = 12
+    p16.yaxis[0].ticker.desired_num_ticks = 12
+    p16.yaxis[0].ticker.num_minor_ticks = 3
+    p16.yaxis.major_label_overrides = {0:'00:00', 0.5:'00:30', 1:'01:00', 1.5:'01:30', 2:'02:00', 2.5:'02:30', 3:'03:00', 3.5:'03:30', 4:'04:00', 4.5:'04:30', 5:'05:00', 5.5:'05:30', 6:'06:00', 6.5:'06:30', 7:'07:00', 7.5:'07:30', 8:'08:00', 8.5:'08:30', 9:'09:00', 9.5:'09:30', 10:'10:00', 10.5:'10:30', 11:'11:00', 11.5:'11:30', 12:'12:00', 12.5:'12:30', 13:'13:00', 13.5:'13:30', 14:'14:00', 14.5:'14:30', 15:'15:00', 15.5:'15:30', 16:'16:00', 16.5:'16:30', 17:'17:00', 17.5:'17:30', 18:'18:00', 18.5:'18:30', 19:'19:00', 19.5:'19:30', 20:'20:00', 20.5:'20:30', 21:'21:00', 21.5:'21:30', 22:'22:00', 22.5:'22:30', 23:'23:00', 23.5:'23:30', 24:'00:00'}
     p16.yaxis.minor_tick_line_color = None
-    p16.ygrid[0].ticker.desired_num_ticks = 1
-    for date_itr in range(len(results_combined_arr_c1c2)):
-      for internal_itr in range(len(results_combined_arr_c1c2[date_itr])):
-          if results_combined_arr_c1c2[date_itr][internal_itr][2] == 0: # 0 = palegreen color = within conditions
-              p16.quad(left=interval_c1c2['start'][date_itr],right=interval_c1c2['end'][date_itr],bottom=results_combined_arr_c1c2[date_itr][internal_itr][0], top=results_combined_arr_c1c2[date_itr][internal_itr][1], color=RGB(93,255,156)) # palegreen
-          if results_combined_arr_c1c2[date_itr][internal_itr][2] == 1: # 1 = red color = all exceeding
-              p16.quad(left=interval_c1c2['start'][date_itr],right=interval_c1c2['end'][date_itr],bottom=results_combined_arr_c1c2[date_itr][internal_itr][0], top=results_combined_arr_c1c2[date_itr][internal_itr][1], color=RGB(255,0,0)) # red
-          if results_combined_arr_c1c2[date_itr][internal_itr][2] == 2: # 2 = orange color = wind exceeding
-              p16.quad(left=interval_c1c2['start'][date_itr],right=interval_c1c2['end'][date_itr],bottom=results_combined_arr_c1c2[date_itr][internal_itr][0], top=results_combined_arr_c1c2[date_itr][internal_itr][1], color=RGB(255,168,0)) # orange
-          if results_combined_arr_c1c2[date_itr][internal_itr][2] == 3: # 3 = cyan color = icing risk
-              p16.quad(left=interval_c1c2['start'][date_itr],right=interval_c1c2['end'][date_itr],bottom=results_combined_arr_c1c2[date_itr][internal_itr][0], top=results_combined_arr_c1c2[date_itr][internal_itr][1], color=RGB(146,66,22)) # brown or saddlebrown
-          if results_combined_arr_c1c2[date_itr][internal_itr][2] == 4: # 3 = magenta color = rain risk
-              p16.quad(left=interval_c1c2['start'][date_itr],right=interval_c1c2['end'][date_itr],bottom=results_combined_arr_c1c2[date_itr][internal_itr][0], top=results_combined_arr_c1c2[date_itr][internal_itr][1], color=RGB(255,0,175)) # hotpink
-          if results_combined_arr_c1c2[date_itr][internal_itr][2] == 5: # 5 = magenta color = snowfall risk
-              p16.quad(left=interval_c1c2['start'][date_itr],right=interval_c1c2['end'][date_itr],bottom=results_combined_arr_c1c2[date_itr][internal_itr][0], top=results_combined_arr_c1c2[date_itr][internal_itr][1], color=RGB(255,0,255)) # magenta
-          if results_combined_arr_c1c2[date_itr][internal_itr][2] == 6: # 6 = royalblue color = temp exceeding
-              p16.quad(left=interval_c1c2['start'][date_itr],right=interval_c1c2['end'][date_itr],bottom=results_combined_arr_c1c2[date_itr][internal_itr][0], top=results_combined_arr_c1c2[date_itr][internal_itr][1], color=RGB(91,13,223)) # royalblue
-    # Add axis labels
-    p16.xaxis.axis_label = "Date [MM/YYYY]"
-    p16.yaxis.axis_label = "Time of day"
-    # Set LaTex font ('cmr' but system only has 'cmr10')
-    p16.xaxis.axis_label_text_font = "cmr10"
-    p16.xaxis.major_label_text_font = "cmr10"
-    p16.yaxis.axis_label_text_font = "cmr10"
-    p16.yaxis.major_label_text_font = "cmr10"
     # Add lines to illustrate daylight. The times are based on the spring mean day https://www.dmi.dk/nyheder/arkiv/nyheder-2012/daglaengden-dykker-under-ti-timer/
-    p16.line([interval_c1c2['start'][0], interval_c1c2['end'][reader_c1.days]], [8.15, 8.15],   line_color="white", line_dash="2 4")
-    p16.line([interval_c1c2['start'][0], interval_c1c2['end'][reader_c1.days]], [20.15, 20.15], line_color="white", line_dash="2 4")
+    p16.line([interval_c1c2['start'][0], interval_c1c2['end'][reader_c1.days-1]], [8.15-1, 8.15-1],   line_color="black", line_dash="2 4", legend="Average sunrise and sunset")
+    p16.line([interval_c1c2['start'][0], interval_c1c2['end'][reader_c1.days-1]], [20.15-1, 20.15-1], line_color="black", line_dash="2 4")
+    custom_legend(p16) # Format legend
     # %%%%%%%%% Illustrative COMBINED analysis plot - END %%%%%%%%%
-
     export_plot__png_eps_pdf(p16, '%s_and_%s' % (reader_c1.city, reader_c2.city)) # %%%%%%%%% Save plot p16 as svg and pdf %%%%%%%%%
 
+    # %%% Histogram
+    most_occurance = max(periods_combined_c1c2,key=periods_combined_c1c2.count)
+    occurance_no = periods_combined_c1c2.count(most_occurance)
+    max_x = ceil(max(periods_combined_c1c2))
+    min_x = floor(min(periods_combined_c1c2))
+    data_points = len(periods_combined_c1c2)
+    # %%%%%%%%% histogram of Consequitive COMBINED hours - START %%%%%%%%%
+    hist,bins=np.histogram(periods_combined_c1c2) #,bins=10
+    if droneChoice == 'DJIP4':
+        p17 = figure(tools="save",plot_width=reader_c1.plotHeight,plot_height=200, x_range=(min_x-1, max_x+1), y_range=(0,100)) # title="Combined analysis", y_range=(0,floor(max(hist)*1.15)) , y_range=(0,100)
+    else:
+        p17 = figure(tools="save",plot_width=reader_c1.plotHeight,plot_height=200, x_range=(min_x-1, max_x+1), y_range=(0,floor(max(hist)*1.15))) # title="Combined analysis", y_range=(0,floor(max(hist)*1.15)) , y_range=(0,100)
+    p17.quad(top=hist, bottom=0, left=bins[:-1], right=bins[1:],line_color=RGB(0,0,0), color=RGB(116,173,209))
+    p17.xaxis.axis_label = 'Consequitive hours outside operational conditions'
+    p17.yaxis.axis_label = 'Frequency'#'Occurences'
+    if droneChoice == 'DJIP4':
+        citation = Label(x=bins[0]+1, y=100-16, x_units='data', y_units='data',
+                     text=str(hist[0]), render_mode='canvas',
+                     border_line_color='black', border_line_alpha=0.0,
+                     background_fill_color='white', background_fill_alpha=0.0, text_font_size="10pt", text_font = 'cmr10', text_color=RGB(255,255,255))
 
+        p17.add_layout(citation)
+        # p17.add_layout(Arrow(end=OpenHead(line_color=RGB(255,255,255), line_width=2, size=6), line_color=RGB(255,255,255), x_start=bins[0]+4, y_start=90, x_end=bins[0]+4, y_end=98))
+        p17.line([bins[0]+4, bins[0]+4], [90, 98], line_color=RGB(255,255,255))
+        p17.line([bins[0]+4, bins[0]+3], [98, 94], line_color=RGB(255,255,255))
+        p17.line([bins[0]+4, bins[0]+5], [98, 94], line_color=RGB(255,255,255))
+    latex_plot_font(p17)
+    export_plot__png_eps_pdf(p17, 'hist_'+reader_c1.city+'_and_'+reader_c2.city) # %%%%%%%%% Save plot p14 as svg and pdf %%%%%%%%%
+
+    sys.exit(0)
 
     # %%%%%%%%%%%%%%%%%% Bokeh layout building %%%%%%%%%%%%%%%%%%
 
@@ -1028,7 +1107,7 @@ if __name__ == '__main__':
 
     # %%%%%%%%% TEXT elements - START %%%%%%%%%
     # divTemplate = Div(text="", width = 800)
-    divHeader = Div(text="""<center><h1>Drone planning using weather data</h1><br /><h2>Data 1: IBM, %s, %0d</h2><h2>Data 2: IBM, %s, %0d</h2><p><i>Data visualzation and analysis by <a href="https://github.com/TobiasLundby" target="_blank">Tobias Lundby</a>, 2018</i></p></center>""" % (reader_c1.city, reader_c1.year, reader_c2.city, reader_c2.year)) # , width=200, height=100
+    divHeader = Div(text="""<center><h1>Drone planning using weather data</h1><br /><h2>Data source 1: IBM, %s, %0d</h2><h2>Data source 2: IBM, %s, %0d</h2><p><i>Data visualzation and analysis by <a href="https://github.com/TobiasLundby" target="_blank">Tobias Lundby</a>, 2019</i></p></center>""" % (reader_c1.city, reader_c1.year, reader_c2.city, reader_c2.year)) # , width=200, height=100
     divVisualization_c1 = Div(text="""<h2>Visualization %s</h2>""" % (reader_c1.city))
     divWind = Div(text="""<h3>Wind</h3>""")
     divTemp = Div(text="""<h3>Temperature</h3>""")
@@ -1037,13 +1116,13 @@ if __name__ == '__main__':
     divCombined = Div(text="""<h3>Combined weather analysis - single city</h3><p>Wind, temperature, icing percipitation, and snowfall</p>""", width = reader_c1.plotWidth)
     divAnalysis = Div(text="""<h2>Data analysis</h2>""")
     divP14Title = Div(text="<h3>Illustrative weather analysis - combined wind, temperature, icing percipitation, and snowfall</h3>")
-    divExplanationP14 = Div(text="""<p><center>light green = flying OK<br>red = flying not OK; wind, icing, precipitation, snowfall, and temperature exceeding limits<br>orange = flying disencouraged, wind exceeding limit<br>brown = flying disencouraged, icing risk<br>pink = flying disencouraged, rain exceeding limit<br>magenta = flying disencouraged, snowfall exceeding limit<br>blue = flying disencouraged, temperature exceeding limit<br><i>The dashed white lines represents the avg spring daytime (08:09-20:09); source dmi.dk</i></center></p>""")
+    divExplanationP14 = Div(text="""<p><center>transparent = flying OK<br>red = flying not OK; wind, icing, precipitation, snowfall, and temperature exceeding limits<br>orange = flying disencouraged, wind exceeding limit<br>yellow = flying disencouraged, icing risk<br>light blue = flying disencouraged, rain exceeding limit<br>blue = flying disencouraged, snowfall exceeding limit<br>dark blue = flying disencouraged, temperature exceeding limit<br><i>The dashed black lines represents the avg spring daytime GMT (07:09-19:09); source dmi.dk</i></center></p>""")
     divVisualization_c2 = Div(text="""<h2>Visualization %s</h2>""" % (reader_c2.city))
     divP15Title = Div(text="<h3>Illustrative weather analysis - combined wind, temperature, icing percipitation, and snowfall</h3>")
-    divExplanationP15 = Div(text="""<p><center>light green = flying OK<br>red = flying not OK; wind, icing, precipitation, snowfall, and temperature exceeding limits<br>orange = flying disencouraged, wind exceeding limit<br>brown = flying disencouraged, icing risk<br>pink = flying disencouraged, rain exceeding limit<br>magenta = flying disencouraged, snowfall exceeding limit<br>blue = flying disencouraged, temperature exceeding limit<br><i>The dashed white lines represents the avg spring daytime (08:09-20:09); source dmi.dk</i></center></p>""")
+    divExplanationP15 = Div(text="""<p><center>transparent = flying OK<br>red = flying not OK; wind, icing, precipitation, snowfall, and temperature exceeding limits<br>orange = flying disencouraged, wind exceeding limit<br>yellow = flying disencouraged, icing risk<br>light blue = flying disencouraged, rain exceeding limit<br>blue = flying disencouraged, snowfall exceeding limit<br>dark blue = flying disencouraged, temperature exceeding limit<br><i>The dashed black lines represents the avg spring daytime GMT (07:09-19:09); source dmi.dk</i></center></p>""")
     divVisualization_c1c2 = Div(text="""<h2>Visualization %s and %s</h2>""" % (reader_c1.city, reader_c2.city))
     divP16Title = Div(text="<h3>Illustrative weather analysis - combined wind, temperature, icing percipitation, and snowfall</h3>")
-    divExplanationP16 = Div(text="""<p><center>light green = flying OK<br>red = flying not OK; wind, icing, precipitation, snowfall, and temperature exceeding limits<br>orange = flying disencouraged, wind exceeding limit<br>brown = flying disencouraged, icing risk<br>pink = flying disencouraged, rain exceeding limit<br>magenta = flying disencouraged, snowfall exceeding limit<br>blue = flying disencouraged, temperature exceeding limit<br><i>The dashed white lines represents the avg spring daytime (08:09-20:09); source dmi.dk</i></center></p>""")
+    divExplanationP16 = Div(text="""<p><center>transparent = flying OK<br>red = flying not OK; wind, icing, precipitation, snowfall, and temperature exceeding limits<br>orange = flying disencouraged, wind exceeding limit<br>yellow = flying disencouraged, icing risk<br>light blue = flying disencouraged, rain exceeding limit<br>blue = flying disencouraged, snowfall exceeding limit<br>dark blue = flying disencouraged, temperature exceeding limit<br><i>The dashed black lines represents the avg spring daytime GMT (07:09-19:09); source dmi.dk</i></center></p>""")
 
     # %%%%%%%%% TEXT elements - START %%%%%%%%%
 
